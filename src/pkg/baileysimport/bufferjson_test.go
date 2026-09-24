@@ -68,7 +68,11 @@ func TestUnwrapJSON(t *testing.T) {
 }
 
 func TestUnwrapString(t *testing.T) {
-	for input, want := range map[string]string{`"123"`: "123", `"\"123\""`: "123"} {
+	for input, want := range map[string]string{
+		`"123"`:             "123",
+		`"\"123\""`:         "123",
+		`"\"\\\"123\\\"\""`: "123",
+	} {
 		got, err := unwrapString(json.RawMessage(input))
 		if err != nil || got != want {
 			t.Errorf("%s: got %q, %v", input, got, err)

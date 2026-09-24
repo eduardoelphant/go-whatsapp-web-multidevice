@@ -162,19 +162,25 @@ func unwrapJSON(raw json.RawMessage, allowBuffer bool) (json.RawMessage, error) 
 	return nil, fmt.Errorf("value is nested too deeply")
 }
 
-// unwrapString decodes a JSON string value, accepting one extra level of
-// string encoding (a JSON string that itself contains a JSON string).
+// unwrapString decodes a JSON string value, peeling any extra levels of string
+// encoding (a JSON string that itself contains a JSON string). Some auth stores
+// stringify before persisting and again when exporting, so a plain value such
+// as a LID mapping can arrive wrapped two or three times.
 func unwrapString(raw json.RawMessage) (string, error) {
 	var s string
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return "", fmt.Errorf("expected a string: %w", err)
 	}
-	trimmed := strings.TrimSpace(s)
-	if strings.HasPrefix(trimmed, `"`) {
-		var inner string
-		if err := json.Unmarshal([]byte(trimmed), &inner); err == nil {
-			return inner, nil
+	for range 4 {
+		trimmed := strings.TrimSpace(s)
+		if !strings.HasPrefix(trimmed, `"`) {
+			break
 		}
+		var inner string
+		if err := json.Unmarshal([]byte(trimmed), &inner); err != nil {
+			break
+		}
+		s = inner
 	}
 	return s, nil
 }
