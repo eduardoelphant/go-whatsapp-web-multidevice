@@ -28,15 +28,25 @@ func InitWaDB(ctx context.Context, DBURI string) *sqlstore.Container {
 
 // initDatabase creates and returns a database store container based on the configured URI
 func initDatabase(ctx context.Context, dbLog waLog.Logger, DBURI string) (*sqlstore.Container, error) {
+	driver, dsn, err := ResolveDBDriver(DBURI)
+	if err != nil {
+		return nil, err
+	}
+	return sqlstore.New(ctx, driver, dsn, dbLog)
+}
+
+// ResolveDBDriver maps a --db-uri / --db-keys-uri value to the database/sql
+// driver name and DSN used for the whatsmeow store, so that tools opening the
+// same store (such as import-baileys) apply identical SQLite pragmas.
+func ResolveDBDriver(DBURI string) (driver string, dsn string, err error) {
 	// Strip surrounding quotes that may come from .env file parsing
 	DBURI = strings.Trim(DBURI, `"'`)
 
 	if strings.HasPrefix(DBURI, "file:") {
-		DBURI = sqlite.FormatChatStorageURI(DBURI, true, true)
-		return sqlstore.New(ctx, sqlite.DriverName, DBURI, dbLog)
+		return sqlite.DriverName, sqlite.FormatChatStorageURI(DBURI, true, true), nil
 	} else if strings.HasPrefix(DBURI, "postgres:") {
-		return sqlstore.New(ctx, "postgres", DBURI, dbLog)
+		return "postgres", DBURI, nil
 	}
 
-	return nil, fmt.Errorf("unknown database type: %s. Currently only sqlite3(file:) and postgres are supported", DBURI)
+	return "", "", fmt.Errorf("unknown database type: %s. Currently only sqlite3(file:) and postgres are supported", DBURI)
 }
