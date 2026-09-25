@@ -215,8 +215,10 @@ Delivery: one worker per destination URL sends rows oldest first. A failing row 
 behind it until it succeeds or is given up. Network errors, timeouts, `5xx`, `408` and `429` retry
 after 10 s, 30 s, 1, 2, 5, 10 and 30 minutes, then every hour; `Retry-After` on `429` is honored. A
 row still failing 72 hours after it was queued becomes `dead`; any other `4xx` makes it `dead` at
-once. Queued rows survive restarts; a row in flight during a crash is sent again. Delivered rows are
-kept 7 days, dead rows 30 days.
+once. Queued rows survive restarts, OS crashes and power loss (the outbox is written with
+`synchronous=FULL`); a row in flight during a crash is sent again. Delivered rows are kept 7 days,
+dead rows 30 days. Logs and `last_error` show destination URLs without query string, fragment or
+credentials.
 
 Contract (durable mode only):
 
@@ -238,7 +240,7 @@ Operations API (Basic Auth; `404` in direct mode):
 | `GET /webhooks/stats` | counts per status and per URL, the oldest pending row and its age |
 | `GET /webhooks/deliveries?status=&limit=&before_id=` | rows newest first, without bodies (`limit` 1-500, default 50) |
 | `GET /webhooks/deliveries/:event_id` | one row with its body |
-| `POST /webhooks/deliveries/:event_id/redeliver` | back to `pending`, attempts reset, same `event_id`, sent with `X-Webhook-Replay` |
+| `POST /webhooks/deliveries/:event_id/redeliver` | a delivered or dead row back to `pending`, attempts reset, same `event_id`, sent with `X-Webhook-Replay`; `409` while the row is still pending |
 | `POST /webhooks/replay?since=<RFC3339>[&url=]` | every delivered or dead row queued since then goes back to `pending` |
 
 A redelivered or replayed row keeps its id, so it is sent before newer rows of the same URL.
