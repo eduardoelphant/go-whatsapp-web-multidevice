@@ -26,5 +26,8 @@ jobs:
       - name: Test
         working-directory: src
         run: go test ./...
+      - name: Contract tests
+        working-directory: contract
+        run: go test ./...
       - name: Sync script tests
         run: bash .github/scripts/elphant-sync-tag_test.sh
