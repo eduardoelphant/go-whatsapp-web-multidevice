@@ -23,6 +23,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/valyala/fasthttp v1.72.0
 	go.mau.fi/libsignal v0.2.2
+	go.mau.fi/util v0.10.1
 	go.mau.fi/whatsmeow v0.0.0-20260921121126-35ae40906e74
 	golang.org/x/image v0.44.0
 	google.golang.org/protobuf v1.36.12
@@ -63,7 +64,6 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.37 // indirect
 	github.com/xyproto/randomstring v1.2.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	go.mau.fi/util v0.10.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect

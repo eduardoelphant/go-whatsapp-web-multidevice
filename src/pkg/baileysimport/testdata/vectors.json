@@ -1,0 +1,86 @@
+{
+ "bob": {
+  "jid": "5511900000001:7@s.whatsapp.net",
+  "lid": "100000000000001:7@lid",
+  "address": "5511900000001:7"
+ },
+ "alice": {
+  "jid": "5511900000002:3@s.whatsapp.net",
+  "address": "5511900000002:3"
+ },
+ "pairwise": [
+  {
+   "from": "5511900000002:3",
+   "type": "pkmsg",
+   "body": "MwgDEiEFlHtPCfdVlQF84eJWUNH+d4ysaI4MqlYC45wYPjuz6CgaIQVhnuRMbzHBLpedKMOSDf0aYnCfVDm7nxf3fklGZV79FiJCMwohBe+B9vhXYrJBBTp3LJpivM1UTa0s6gOCzh43f7AEn4tiEAEYACIQjIVvfszi+VaEMnUvHdI5QiQXDrhqlEgEKOYBMAE=",
+   "plaintext": "a2"
+  },
+  {
+   "from": "5511900000002:3",
+   "type": "msg",
+   "body": "MwohBYJZVOFztxAIpUjE+H6hRRiYGmElwSqzh/0opSKs7rFpEAEYAiIQwX9P7ja3+rsDAN+BUzRcHFhjrECYuBjr",
+   "plaintext": "a5"
+  },
+  {
+   "from": "5511900000002:3",
+   "type": "msg",
+   "body": "MwohBRV8NO8U98YCBMVdHEicAE1n66qC+637h/478awRKyRLEAAYAyIQjNzkgRzfXgpAC6razc0rowoB8XORltBw",
+   "plaintext": "a8"
+  },
+  {
+   "from": "5511900000002:3",
+   "type": "msg",
+   "body": "MwohBYJZVOFztxAIpUjE+H6hRRiYGmElwSqzh/0opSKs7rFpEAMYAiIQNYBkZhfT7BIu/6ecdyZK33OEf9xPuW6s",
+   "plaintext": "a7"
+  },
+  {
+   "from": "200000000000003_1:0",
+   "type": "pkmsg",
+   "body": "MwgFEiEF6OjbEMPDnY23FyiyCv20BZ2nudEpiakvvjH4PuVaHRsaIQVEaBGzCzO8TAD+w+1QGS7AzBWGZN3jv49zvak6MVGHUCJCMwohBdQRjJPd2InIE9KwLzI01Deb6I9CA9VjE0GjqVGx55AwEAAYACIQ7SFiZitxVXeqDMSLZfBNUjdBAf7MjrzDKEMwAQ==",
+   "plaintext": "c1"
+  },
+  {
+   "from": "300000000000005_1:0",
+   "type": "msg",
+   "body": "MwohBeIAhwCI/c2ztuZP/QEPK1JD7LV6vW77/lC5LZlr81JXEAAYACIQX4p5R83ZV6dOD+snqwKSgKSBXUBWW2WA",
+   "plaintext": "e2"
+  }
+ ],
+ "reply": {
+  "to": "5511900000002:3",
+  "plaintext": "r1",
+  "type": "msg",
+  "body": "MwohBUVP0ngVEst+ADfIsbjaMRjd9SCB19j/WcC0gAODnmh7EAEYASIQTpfO4am5s9hjLwSBbFqHGuJb7Q3n7xZb"
+ },
+ "prekeyReply": {
+  "to": "5511900000004:0",
+  "plaintext": "d2",
+  "type": "pkmsg",
+  "body": "MwgJEiEFjUhSGXJWMJtodNf0fhbTBPBZD5l2hy3A2yytbEtsB2waIQVbKVozadqkBME6wjZEWA8s8LzhxFhPTuLUvwLX/6ObRSJCMwohBUAlV/+mJ16ntf9XQlWd2zLlSEh51Jm8H/MUV4RLKHIiEAEYACIQIF3vnf+xL/lVOlwyXffirXcbEkVNICU5KHswAQ=="
+ },
+ "group": {
+  "id": "120363000000000001@g.us",
+  "ownSender": "5511900000001:7",
+  "pending": [
+   {
+    "sender": "5511900000002:3",
+    "body": "Mwjvl8zUARACGhDV8WnHeSRYP4a6smk0YH8DidIClIPwgjnQAJD3CnXNnH2JBUxVcP6psvaSLoJXiBXtFeg/hu5pXidJCQQVqVKKz8e0f7m0wf3S/LymDkQziw==",
+    "plaintext": "g2"
+   },
+   {
+    "sender": "5511900000002:3",
+    "body": "Mwjvl8zUARAGGhBis/o773jcv3ZrEpkQF4C3F5xtWJ50UxT1f/dDizXxBW7PzfRl0lVg8AxGjQJO/B1zOld/2aWgZ+m2X5sdz8ZcpyujNTHWjl3XzfPai/ddgA==",
+    "plaintext": "g4"
+   },
+   {
+    "sender": "5511900000002:3",
+    "body": "Mwic/bfNARAAGhBL9drYm6oazVqXVhYq63xH7ubU7Hph8Kuz030NVwvq7c9fEzJ4+td5PftSrHyApTcLhjV83GtEy5IDt+bPZoetsVu4QggaErH7Dm7VCdW4iw==",
+    "plaintext": "g5"
+   }
+  ]
+ },
+ "appStateKeyIds": [
+  "////AQID",
+  "AAAAACoA"
+ ]
+}

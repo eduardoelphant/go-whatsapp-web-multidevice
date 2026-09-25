@@ -1,0 +1,28 @@
+name: Elphant CI
+
+on:
+  push:
+    branches: [elphant]
+  pull_request:
+    branches: [elphant]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+      - name: Vet
+        working-directory: src
+        run: go vet ./...
+      - name: Test
+        working-directory: src
+        run: go test ./...
+      - name: Sync script tests
+        run: bash .github/scripts/elphant-sync-tag_test.sh

@@ -79,7 +79,6 @@ func init() {
 
 // initEnvConfig loads configuration from environment variables
 func initEnvConfig() {
-	fmt.Println(viper.AllSettings())
 	// Application settings
 	if envPort := viper.GetString("app_port"); envPort != "" {
 		config.AppPort = envPort
@@ -674,6 +673,9 @@ func initChatStorage() (*sql.DB, error) {
 }
 
 func initApp() {
+	if commandSkipsAppInit(os.Args[1:]) {
+		return
+	}
 	if config.AppDebug {
 		config.WhatsappLogLevel = "DEBUG"
 		logrus.SetLevel(logrus.DebugLevel)
@@ -734,6 +736,14 @@ func initApp() {
 		case <-time.After(10 * time.Second):
 		}
 	}
+}
+
+// commandSkipsAppInit reports whether the command selected by args is marked
+// with skipAppInitAnnotation. cobra.OnInitialize hooks run for every command
+// and do not receive it, so the command is resolved from the arguments.
+func commandSkipsAppInit(args []string) bool {
+	cmd, _, err := rootCmd.Find(args)
+	return err == nil && cmd != nil && cmd.Annotations[skipAppInitAnnotation] == "true"
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

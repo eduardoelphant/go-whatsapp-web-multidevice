@@ -3,7 +3,6 @@ package whatsapp
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -31,6 +30,10 @@ func handler(ctx context.Context, instance *DeviceInstance, rawEvt any) {
 	chatStorageRepo := instance.GetChatStorage()
 	client := instance.GetClient()
 
+	// Fork (elphant): session.status webhook. Runs before the switch so the body
+	// captures the device JID before handlers such as handleLoggedOut clear it.
+	handleSessionEvent(ctx, instance, rawEvt)
+
 	switch evt := rawEvt.(type) {
 	case *events.DeleteForMe:
 		handleDeleteForMe(ctx, evt, chatStorageRepo, instance.JID(), client)
@@ -47,10 +50,15 @@ func handler(ctx context.Context, instance *DeviceInstance, rawEvt any) {
 		handlePairPasskeyError(instance, evt)
 	case *events.LoggedOut:
 		handleLoggedOut(instance)
-	case *events.Connected, *events.PushNameSetting:
+	case *events.Connected:
+		// Fork (elphant): a successful connection ends any stream replaced state.
+		clearStreamReplaced(client)
+		handleConnectionEvents(ctx, client, instance)
+	case *events.PushNameSetting:
 		handleConnectionEvents(ctx, client, instance)
 	case *events.StreamReplaced:
-		handleStreamReplaced(ctx)
+		// Fork (elphant): stop only this device instead of os.Exit. See stream_replaced.go.
+		handleStreamReplaced(instance)
 	case *events.Message:
 		handleMessage(ctx, evt, chatStorageRepo, client)
 	case *events.UndecryptableMessage:
@@ -301,10 +309,6 @@ func handleConnectionEvents(_ context.Context, client *whatsmeow.Client, instanc
 	// Send configured presence when connecting and when the pushname is changed.
 	// This makes sure that outgoing messages always have the right pushname.
 	sendConfiguredPresence(context.Background(), client)
-}
-
-func handleStreamReplaced(_ context.Context) {
-	os.Exit(0)
 }
 
 func handleReceipt(ctx context.Context, evt *events.Receipt, deviceID string, client *whatsmeow.Client) {
