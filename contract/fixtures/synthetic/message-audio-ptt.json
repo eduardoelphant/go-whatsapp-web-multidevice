@@ -20,8 +20,8 @@
     "media": {
       "kind": "audio",
       "mime": "audio/ogg; codecs=opus",
-      "size": null,
-      "sha256": null,
+      "size": 12000,
+      "sha256": "0304",
       "filename": null,
       "duration": 7,
       "ptt": true,

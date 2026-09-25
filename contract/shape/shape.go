@@ -16,8 +16,13 @@ type Fixture struct {
 	Stable map[string]any
 }
 
+// Report lists what real traffic shows that the synthetic fixtures do not:
+// Missing are event/type groups with no synthetic fixture, Uncovered are
+// non-null paths no synthetic fixture of the group has, KindMismatches are
+// paths whose JSON kind differs. Nullability combinations alone are not gaps.
 type Report struct {
 	Missing        []string
+	Uncovered      []string
 	KindMismatches []string
 }
 
@@ -86,37 +91,61 @@ func Kinds(stable map[string]any) map[string]string {
 	return kinds
 }
 
+func nonNullPaths(stable map[string]any) map[string]bool {
+	paths := map[string]bool{}
+	walk("", stable, func(p string, v any) {
+		if v != nil {
+			paths[p] = true
+		}
+	})
+	return paths
+}
+
 func Compare(synthetic, real []Fixture) Report {
 	var report Report
-	synSigs := map[string]bool{}
+	covered := map[string]map[string]bool{}
 	byGroup := map[string][]Fixture{}
 	for _, f := range synthetic {
-		synSigs[Signature(f.Event, f.Stable)] = true
 		typ, _ := f.Stable["type"].(string)
-		byGroup[f.Event+"|"+typ] = append(byGroup[f.Event+"|"+typ], f)
+		group := f.Event + "|" + typ
+		byGroup[group] = append(byGroup[group], f)
+		if covered[group] == nil {
+			covered[group] = map[string]bool{}
+		}
+		for p := range nonNullPaths(f.Stable) {
+			covered[group][p] = true
+		}
 	}
 	seen := map[string]bool{}
-	for _, r := range real {
-		sig := Signature(r.Event, r.Stable)
-		if !synSigs[sig] {
-			report.Missing = append(report.Missing, fmt.Sprintf("real shape without synthetic fixture: %s (%s)", sig, r.File))
+	add := func(list *[]string, line string) {
+		if !seen[line] {
+			seen[line] = true
+			*list = append(*list, line)
 		}
+	}
+	for _, r := range real {
 		typ, _ := r.Stable["type"].(string)
 		group := r.Event + "|" + typ
+		if covered[group] == nil {
+			add(&report.Missing, fmt.Sprintf("%s has no synthetic fixture (%s)", group, r.File))
+			continue
+		}
+		for p := range nonNullPaths(r.Stable) {
+			if !covered[group][p] {
+				add(&report.Uncovered, fmt.Sprintf("%s %s is never non-null in synthetic fixtures (%s)", group, p, r.File))
+			}
+		}
 		realKinds := Kinds(r.Stable)
 		for _, s := range byGroup[group] {
 			for path, sk := range Kinds(s.Stable) {
 				if rk, ok := realKinds[path]; ok && rk != sk {
-					line := fmt.Sprintf("%s %s: real=%s synthetic=%s (%s vs %s)", group, path, rk, sk, r.File, s.File)
-					if !seen[line] {
-						seen[line] = true
-						report.KindMismatches = append(report.KindMismatches, line)
-					}
+					add(&report.KindMismatches, fmt.Sprintf("%s %s: real=%s synthetic=%s (%s vs %s)", group, path, rk, sk, r.File, s.File))
 				}
 			}
 		}
 	}
 	sort.Strings(report.Missing)
+	sort.Strings(report.Uncovered)
 	sort.Strings(report.KindMismatches)
 	return report
 }

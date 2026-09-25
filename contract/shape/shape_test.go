@@ -26,15 +26,24 @@ func TestSignatureIgnoresValuesButNotNullness(t *testing.T) {
 	}
 }
 
-func TestCompareReportsMissingShapesAndKindMismatches(t *testing.T) {
+func TestCompareReportsCoverageGapsAndKindMismatches(t *testing.T) {
 	synthetic := []Fixture{{File: "s1.json", Event: "message", Stable: stable("x", map[string]any{"kind": "image", "size": 1.0})}}
 	real := []Fixture{
-		{File: "r1.json", Event: "message", Stable: stable("y", map[string]any{"kind": "image", "size": 2.0})},
-		{File: "r2.json", Event: "message", Stable: stable(nil, map[string]any{"kind": "image", "size": "big"})},
+		// Only a nullability combination the synthetic set does not have: covered.
+		{File: "r1.json", Event: "message", Stable: stable(nil, map[string]any{"kind": "image", "size": 2.0})},
+		// A non-null path no synthetic fixture of the same event/type has.
+		{File: "r2.json", Event: "message", Stable: stable("y", map[string]any{"kind": "image", "size": 3.0, "sha256": "<sha256>"})},
+		// A kind conflict.
+		{File: "r3.json", Event: "message", Stable: stable("z", map[string]any{"kind": "image", "size": "big"})},
+		// An event/type with no synthetic fixture at all.
+		{File: "r4.json", Event: "message.ack", Stable: map[string]any{"status": "read"}},
 	}
 	report := Compare(synthetic, real)
-	if len(report.Missing) != 1 || !strings.Contains(report.Missing[0], "r2.json") {
-		t.Fatalf("missing = %v, want only r2.json", report.Missing)
+	if len(report.Missing) != 1 || !strings.Contains(report.Missing[0], "message.ack|") || !strings.Contains(report.Missing[0], "r4.json") {
+		t.Fatalf("missing = %v, want only message.ack from r4.json", report.Missing)
+	}
+	if len(report.Uncovered) != 1 || !strings.Contains(report.Uncovered[0], "media.sha256") || !strings.Contains(report.Uncovered[0], "r2.json") {
+		t.Fatalf("uncovered = %v, want media.sha256 from r2.json", report.Uncovered)
 	}
 	if len(report.KindMismatches) != 1 || !strings.Contains(report.KindMismatches[0], "media.size: real=string synthetic=number") {
 		t.Fatalf("kind mismatches = %v", report.KindMismatches)

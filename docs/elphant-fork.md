@@ -146,5 +146,6 @@ With `WHATSAPP_STABLE_AUDIT_DIR` set as a real environment variable (it is not r
 anonymized, at most 3 samples per shape, under `<dir>/<event>/<type>/`. Samples of `type:
 "unknown"` messages get a `.fields.txt` sidecar with the names (never the values) of the populated
 WhatsApp proto fields. Writing never delays delivery: when the disk is slow, samples are dropped. Reviewed samples go to
-`contract/fixtures/real/`, and `cd contract && go run ./cmd/compare` reports real shapes without a
-synthetic fixture.
+`contract/fixtures/real/`, and `cd contract && go run ./cmd/compare` reports event/type groups
+with no synthetic fixture (`MISSING`), non-null paths the synthetic fixtures never exercise
+(`UNCOVERED`) and JSON kind conflicts (`KIND`). Nullability combinations alone are not gaps.

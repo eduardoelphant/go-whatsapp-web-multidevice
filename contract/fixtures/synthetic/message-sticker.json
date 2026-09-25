@@ -20,8 +20,8 @@
     "media": {
       "kind": "sticker",
       "mime": "image/webp",
-      "size": null,
-      "sha256": null,
+      "size": 30000,
+      "sha256": "0708",
       "filename": null,
       "duration": null,
       "ptt": false,

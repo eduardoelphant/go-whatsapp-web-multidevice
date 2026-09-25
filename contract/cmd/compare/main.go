@@ -28,11 +28,14 @@ func main() {
 	for _, line := range report.Missing {
 		fmt.Println("MISSING", line)
 	}
+	for _, line := range report.Uncovered {
+		fmt.Println("UNCOVERED", line)
+	}
 	for _, line := range report.KindMismatches {
 		fmt.Println("KIND", line)
 	}
-	fmt.Printf("synthetic=%d real=%d missing=%d kind_mismatches=%d\n", len(synthetic), len(real), len(report.Missing), len(report.KindMismatches))
-	if len(report.Missing)+len(report.KindMismatches) > 0 {
+	fmt.Printf("synthetic=%d real=%d missing=%d uncovered=%d kind_mismatches=%d\n", len(synthetic), len(real), len(report.Missing), len(report.Uncovered), len(report.KindMismatches))
+	if len(report.Missing)+len(report.Uncovered)+len(report.KindMismatches) > 0 {
 		os.Exit(1)
 	}
 }
