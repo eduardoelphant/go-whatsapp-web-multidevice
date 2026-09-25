@@ -4,32 +4,35 @@
     "chat": {
       "is_group": true,
       "lid": null,
-      "pn": "\u003cjid\u003e@g.us"
+      "pn": "<jid>@g.us"
     },
     "contact": null,
     "forwarded": false,
-    "id": "\u003cid\u003e",
+    "id": "<id>",
     "is_from_me": false,
     "location": null,
     "media": null,
     "quoted": {
-      "id": "\u003cid\u003e",
+      "id": "<id>",
       "sender": {
-        "lid": "\u003cjid\u003e@lid",
-        "pn": "\u003cjid\u003e@s.whatsapp.net"
+        "lid": "<jid>@lid",
+        "pn": "<jid>@s.whatsapp.net"
       },
       "text": null,
       "type": "audio"
     },
     "schema": 1,
     "sender": {
-      "lid": "\u003cjid\u003e@lid",
-      "pn": "\u003cjid\u003e@s.whatsapp.net",
-      "push_name": "\u003ctext:19\u003e"
+      "lid": "<jid>@lid",
+      "pn": "<jid>@s.whatsapp.net",
+      "push_name": "<text:19>"
     },
-    "text": "\u003ctext:40\u003e",
+    "text": "<text:40>",
     "timestamp": "2000-01-01T00:00:00Z",
     "type": "text",
-    "view_once": false
+    "view_once": false,
+    "interactive": null,
+    "reply": null,
+    "referral": null
   }
 }

@@ -15,15 +15,28 @@
       "lid": "100000000000001@lid",
       "push_name": "Contact One"
     },
-    "type": "text",
-    "text": "hi there",
+    "type": "interactive",
+    "text": "Escolha",
     "media": null,
     "location": null,
     "contact": null,
     "quoted": null,
     "forwarded": false,
     "view_once": false,
-    "interactive": null,
+    "interactive": {
+      "kind": "buttons",
+      "header": "Loja X",
+      "footer": "Rodapé",
+      "buttons": [
+        {
+          "kind": "reply",
+          "id": "b1",
+          "text": "Atendente",
+          "value": null
+        }
+      ],
+      "sections": []
+    },
     "reply": null,
     "referral": null
   }

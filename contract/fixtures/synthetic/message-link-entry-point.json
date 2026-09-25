@@ -16,7 +16,7 @@
       "push_name": "Contact One"
     },
     "type": "text",
-    "text": "hi there",
+    "text": "oi",
     "media": null,
     "location": null,
     "contact": null,
@@ -25,6 +25,24 @@
     "view_once": false,
     "interactive": null,
     "reply": null,
-    "referral": null
+    "referral": {
+      "source_type": null,
+      "source_app": null,
+      "source_id": null,
+      "source_url": null,
+      "ctwa_clid": null,
+      "ref": null,
+      "title": null,
+      "body": null,
+      "media_type": null,
+      "thumbnail_url": null,
+      "media_url": null,
+      "entry_point": {
+        "source": null,
+        "app": null,
+        "external_source": "newsletter",
+        "external_medium": "email"
+      }
+    }
   }
 }

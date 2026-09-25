@@ -33,6 +33,11 @@ const (
 	TypeContact  = "contact"
 	TypePoll     = "poll"
 	TypeUnknown  = "unknown"
+
+	// TypeInteractive is a message with buttons, a template, a list or a
+	// native flow; TypeInteractiveReply is the choice someone made on one.
+	TypeInteractive      = "interactive"
+	TypeInteractiveReply = "interactive_reply"
 )
 
 // Resolver maps between phone-number JIDs and LID JIDs. A failed or empty
@@ -103,14 +108,76 @@ type Quoted struct {
 
 type Message struct {
 	Base
-	Type      string    `json:"type"`
-	Text      *string   `json:"text"`
-	Media     *Media    `json:"media"`
-	Location  *Location `json:"location"`
-	Contact   *Contact  `json:"contact"`
-	Quoted    *Quoted   `json:"quoted"`
-	Forwarded bool      `json:"forwarded"`
-	ViewOnce  bool      `json:"view_once"`
+	Type        string       `json:"type"`
+	Text        *string      `json:"text"`
+	Media       *Media       `json:"media"`
+	Location    *Location    `json:"location"`
+	Contact     *Contact     `json:"contact"`
+	Quoted      *Quoted      `json:"quoted"`
+	Forwarded   bool         `json:"forwarded"`
+	ViewOnce    bool         `json:"view_once"`
+	Interactive *Interactive `json:"interactive"`
+	Reply       *Reply       `json:"reply"`
+	Referral    *Referral    `json:"referral"`
+}
+
+// Interactive describes a message with buttons, a template, a list or a
+// native flow. Buttons and Sections are never null.
+type Interactive struct {
+	Kind     string    `json:"kind"`
+	Header   *string   `json:"header"`
+	Footer   *string   `json:"footer"`
+	Buttons  []Button  `json:"buttons"`
+	Sections []Section `json:"sections"`
+}
+
+type Button struct {
+	Kind  string  `json:"kind"`
+	ID    *string `json:"id"`
+	Text  *string `json:"text"`
+	Value *string `json:"value"`
+}
+
+type Section struct {
+	Title *string `json:"title"`
+	Rows  []Row   `json:"rows"`
+}
+
+type Row struct {
+	ID          *string `json:"id"`
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
+}
+
+// Reply is the option chosen on an interactive message; its text is in
+// Message.Text.
+type Reply struct {
+	Kind string  `json:"kind"`
+	ID   *string `json:"id"`
+}
+
+// Referral carries Click-to-WhatsApp ad attribution and the conversation
+// entry point (wa.me links with source/medium).
+type Referral struct {
+	SourceType   *string    `json:"source_type"`
+	SourceApp    *string    `json:"source_app"`
+	SourceID     *string    `json:"source_id"`
+	SourceURL    *string    `json:"source_url"`
+	CtwaClid     *string    `json:"ctwa_clid"`
+	Ref          *string    `json:"ref"`
+	Title        *string    `json:"title"`
+	Body         *string    `json:"body"`
+	MediaType    *string    `json:"media_type"`
+	ThumbnailURL *string    `json:"thumbnail_url"`
+	MediaURL     *string    `json:"media_url"`
+	EntryPoint   EntryPoint `json:"entry_point"`
+}
+
+type EntryPoint struct {
+	Source         *string `json:"source"`
+	App            *string `json:"app"`
+	ExternalSource *string `json:"external_source"`
+	ExternalMedium *string `json:"external_medium"`
 }
 
 type Edited struct {

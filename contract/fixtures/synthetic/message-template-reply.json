@@ -15,8 +15,8 @@
       "lid": "100000000000001@lid",
       "push_name": "Contact One"
     },
-    "type": "text",
-    "text": "hi there",
+    "type": "interactive_reply",
+    "text": "OK",
     "media": null,
     "location": null,
     "contact": null,
@@ -24,7 +24,10 @@
     "forwarded": false,
     "view_once": false,
     "interactive": null,
-    "reply": null,
+    "reply": {
+      "kind": "template",
+      "id": "q1"
+    },
     "referral": null
   }
 }

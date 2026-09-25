@@ -136,3 +136,29 @@ func TestAuditStableDropsWhenBusy(t *testing.T) {
 		t.Fatalf("a busy audit must drop the sample, wrote %v", files)
 	}
 }
+
+func TestAnonymizeStableKeepsAdSourceButNotTrackingIDs(t *testing.T) {
+	referral := map[string]any{"referral": map[string]any{
+		"source_type": "ad", "source_app": "instagram", "media_type": "image", "source_id": "120211234567890123",
+		"ctwa_clid": "ARAkLclid", "source_url": "https://fb.me/xyz", "title": "Promo da Maria",
+		"entry_point": map[string]any{"source": "ctwa_ad", "app": "instagram", "external_source": "cliente_joao", "external_medium": "email"},
+	}}
+	anon := anonymizeStable(referral, "").(map[string]any)["referral"].(map[string]any)
+	for key, want := range map[string]string{"source_type": "ad", "source_app": "instagram", "media_type": "image"} {
+		if anon[key] != want {
+			t.Errorf("%s = %v, want %s kept", key, anon[key], want)
+		}
+	}
+	ep := anon["entry_point"].(map[string]any)
+	if ep["source"] != "ctwa_ad" || ep["app"] != "instagram" {
+		t.Errorf("entry_point source/app = %v/%v, want kept", ep["source"], ep["app"])
+	}
+	for _, key := range []string{"source_id", "ctwa_clid", "source_url", "title"} {
+		if v, _ := anon[key].(string); !strings.HasPrefix(v, "<") {
+			t.Errorf("%s = %v, want a placeholder", key, anon[key])
+		}
+	}
+	if v, _ := ep["external_source"].(string); !strings.HasPrefix(v, "<") {
+		t.Errorf("external_source = %v, want a placeholder", ep["external_source"])
+	}
+}

@@ -28,6 +28,9 @@
     },
     "quoted": null,
     "forwarded": false,
-    "view_once": false
+    "view_once": false,
+    "interactive": null,
+    "reply": null,
+    "referral": null
   }
 }

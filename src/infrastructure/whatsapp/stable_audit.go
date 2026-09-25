@@ -32,7 +32,11 @@ var (
 )
 
 // Values kept verbatim: closed sets that carry no personal data.
-var stableAuditKeep = map[string]bool{"schema": true, "type": true, "kind": true, "mime": true, "status": true}
+var stableAuditKeep = map[string]bool{
+	"schema": true, "type": true, "kind": true, "mime": true, "status": true,
+	// Ad attribution: where a conversation came from, not who is in it.
+	"source_type": true, "source_app": true, "media_type": true, "source": true, "app": true,
+}
 
 // auditStable saves an anonymized sample of stable in the background. For
 // type "unknown" messages, protoFields lists the populated proto field names

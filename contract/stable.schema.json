@@ -2,106 +2,749 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "GOWA fork payload.stable, schema 1",
   "type": "object",
-  "required": ["event", "stable"],
+  "required": [
+    "event",
+    "stable"
+  ],
   "additionalProperties": false,
   "properties": {
-    "event": { "enum": ["message", "message.edited", "message.reaction", "message.revoked", "message.ack"] },
-    "stable": { "type": "object" }
+    "event": {
+      "enum": [
+        "message",
+        "message.edited",
+        "message.reaction",
+        "message.revoked",
+        "message.ack"
+      ]
+    },
+    "stable": {
+      "type": "object"
+    }
   },
   "allOf": [
-    { "if": { "properties": { "event": { "const": "message" } } }, "then": { "properties": { "stable": { "$ref": "#/$defs/message" } } } },
-    { "if": { "properties": { "event": { "const": "message.edited" } } }, "then": { "properties": { "stable": { "$ref": "#/$defs/edited" } } } },
-    { "if": { "properties": { "event": { "const": "message.reaction" } } }, "then": { "properties": { "stable": { "$ref": "#/$defs/reaction" } } } },
-    { "if": { "properties": { "event": { "const": "message.revoked" } } }, "then": { "properties": { "stable": { "$ref": "#/$defs/revoked" } } } },
-    { "if": { "properties": { "event": { "const": "message.ack" } } }, "then": { "properties": { "stable": { "$ref": "#/$defs/ack" } } } }
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "message"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "stable": {
+            "$ref": "#/$defs/message"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "message.edited"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "stable": {
+            "$ref": "#/$defs/edited"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "message.reaction"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "stable": {
+            "$ref": "#/$defs/reaction"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "message.revoked"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "stable": {
+            "$ref": "#/$defs/revoked"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "message.ack"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "stable": {
+            "$ref": "#/$defs/ack"
+          }
+        }
+      }
+    }
   ],
   "$defs": {
-    "nstr": { "type": ["string", "null"] },
-    "nint": { "type": ["integer", "null"] },
-    "jid": { "type": ["string", "null"], "pattern": "^[^@]+@[a-z.]+$" },
-    "messageType": { "enum": ["text", "image", "video", "audio", "document", "sticker", "location", "contact", "poll", "unknown"] },
+    "nstr": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nint": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "jid": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[^@]+@[a-z.]+$"
+    },
+    "messageType": {
+      "enum": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "document",
+        "sticker",
+        "location",
+        "contact",
+        "poll",
+        "unknown",
+        "interactive",
+        "interactive_reply"
+      ]
+    },
     "party": {
-      "type": "object", "additionalProperties": false, "required": ["pn", "lid"],
-      "properties": { "pn": { "$ref": "#/$defs/jid" }, "lid": { "$ref": "#/$defs/jid" } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pn",
+        "lid"
+      ],
+      "properties": {
+        "pn": {
+          "$ref": "#/$defs/jid"
+        },
+        "lid": {
+          "$ref": "#/$defs/jid"
+        }
+      }
     },
     "base": {
-      "required": ["schema", "id", "timestamp", "is_from_me", "chat", "sender"],
+      "required": [
+        "schema",
+        "id",
+        "timestamp",
+        "is_from_me",
+        "chat",
+        "sender"
+      ],
       "properties": {
-        "schema": { "const": 1 },
-        "id": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" },
-        "is_from_me": { "type": "boolean" },
+        "schema": {
+          "const": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "is_from_me": {
+          "type": "boolean"
+        },
         "chat": {
-          "type": "object", "additionalProperties": false, "required": ["pn", "lid", "is_group"],
-          "properties": { "pn": { "$ref": "#/$defs/jid" }, "lid": { "$ref": "#/$defs/jid" }, "is_group": { "type": "boolean" } }
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pn",
+            "lid",
+            "is_group"
+          ],
+          "properties": {
+            "pn": {
+              "$ref": "#/$defs/jid"
+            },
+            "lid": {
+              "$ref": "#/$defs/jid"
+            },
+            "is_group": {
+              "type": "boolean"
+            }
+          }
         },
         "sender": {
-          "type": "object", "additionalProperties": false, "required": ["pn", "lid", "push_name"],
-          "properties": { "pn": { "$ref": "#/$defs/jid" }, "lid": { "$ref": "#/$defs/jid" }, "push_name": { "$ref": "#/$defs/nstr" } }
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pn",
+            "lid",
+            "push_name"
+          ],
+          "properties": {
+            "pn": {
+              "$ref": "#/$defs/jid"
+            },
+            "lid": {
+              "$ref": "#/$defs/jid"
+            },
+            "push_name": {
+              "$ref": "#/$defs/nstr"
+            }
+          }
         }
       }
     },
     "media": {
-      "type": "object", "additionalProperties": false,
-      "required": ["kind", "mime", "size", "sha256", "filename", "duration", "ptt", "width", "height", "url"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "mime",
+        "size",
+        "sha256",
+        "filename",
+        "duration",
+        "ptt",
+        "width",
+        "height",
+        "url"
+      ],
       "properties": {
-        "kind": { "enum": ["image", "video", "audio", "document", "sticker"] },
-        "mime": { "$ref": "#/$defs/nstr" },
-        "size": { "$ref": "#/$defs/nint" },
-        "sha256": { "$ref": "#/$defs/nstr" },
-        "filename": { "$ref": "#/$defs/nstr" },
-        "duration": { "$ref": "#/$defs/nint" },
-        "ptt": { "type": "boolean" },
-        "width": { "$ref": "#/$defs/nint" },
-        "height": { "$ref": "#/$defs/nint" },
-        "url": { "type": "string", "pattern": "^/message/[^/]+/media$" }
+        "kind": {
+          "enum": [
+            "image",
+            "video",
+            "audio",
+            "document",
+            "sticker"
+          ]
+        },
+        "mime": {
+          "$ref": "#/$defs/nstr"
+        },
+        "size": {
+          "$ref": "#/$defs/nint"
+        },
+        "sha256": {
+          "$ref": "#/$defs/nstr"
+        },
+        "filename": {
+          "$ref": "#/$defs/nstr"
+        },
+        "duration": {
+          "$ref": "#/$defs/nint"
+        },
+        "ptt": {
+          "type": "boolean"
+        },
+        "width": {
+          "$ref": "#/$defs/nint"
+        },
+        "height": {
+          "$ref": "#/$defs/nint"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^/message/[^/]+/media$"
+        }
       }
     },
     "location": {
-      "type": "object", "additionalProperties": false, "required": ["latitude", "longitude", "name", "address"],
-      "properties": { "latitude": { "type": "number" }, "longitude": { "type": "number" }, "name": { "$ref": "#/$defs/nstr" }, "address": { "$ref": "#/$defs/nstr" } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "latitude",
+        "longitude",
+        "name",
+        "address"
+      ],
+      "properties": {
+        "latitude": {
+          "type": "number"
+        },
+        "longitude": {
+          "type": "number"
+        },
+        "name": {
+          "$ref": "#/$defs/nstr"
+        },
+        "address": {
+          "$ref": "#/$defs/nstr"
+        }
+      }
     },
     "contact": {
-      "type": "object", "additionalProperties": false, "required": ["name", "vcard", "phones"],
-      "properties": { "name": { "$ref": "#/$defs/nstr" }, "vcard": { "$ref": "#/$defs/nstr" }, "phones": { "type": "array", "items": { "type": "string" } } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "vcard",
+        "phones"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nstr"
+        },
+        "vcard": {
+          "$ref": "#/$defs/nstr"
+        },
+        "phones": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     },
     "quoted": {
-      "type": "object", "additionalProperties": false, "required": ["id", "type", "text", "sender"],
-      "properties": { "id": { "type": "string" }, "type": { "$ref": "#/$defs/messageType" }, "text": { "$ref": "#/$defs/nstr" }, "sender": { "$ref": "#/$defs/party" } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "text",
+        "sender"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/messageType"
+        },
+        "text": {
+          "$ref": "#/$defs/nstr"
+        },
+        "sender": {
+          "$ref": "#/$defs/party"
+        }
+      }
     },
     "message": {
-      "type": "object", "allOf": [{ "$ref": "#/$defs/base" }], "unevaluatedProperties": false,
-      "required": ["type", "text", "media", "location", "contact", "quoted", "forwarded", "view_once"],
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
+      "unevaluatedProperties": false,
+      "required": [
+        "type",
+        "text",
+        "media",
+        "location",
+        "contact",
+        "quoted",
+        "forwarded",
+        "view_once",
+        "interactive",
+        "reply",
+        "referral"
+      ],
       "properties": {
-        "type": { "$ref": "#/$defs/messageType" },
-        "text": { "$ref": "#/$defs/nstr" },
-        "media": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/media" }] },
-        "location": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/location" }] },
-        "contact": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/contact" }] },
-        "quoted": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/quoted" }] },
-        "forwarded": { "type": "boolean" },
-        "view_once": { "type": "boolean" }
+        "type": {
+          "$ref": "#/$defs/messageType"
+        },
+        "text": {
+          "$ref": "#/$defs/nstr"
+        },
+        "media": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/media"
+            }
+          ]
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/location"
+            }
+          ]
+        },
+        "contact": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/contact"
+            }
+          ]
+        },
+        "quoted": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/quoted"
+            }
+          ]
+        },
+        "forwarded": {
+          "type": "boolean"
+        },
+        "view_once": {
+          "type": "boolean"
+        },
+        "interactive": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/interactive"
+            }
+          ]
+        },
+        "reply": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/reply"
+            }
+          ]
+        },
+        "referral": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/referral"
+            }
+          ]
+        }
       }
     },
     "edited": {
-      "type": "object", "allOf": [{ "$ref": "#/$defs/base" }], "unevaluatedProperties": false,
-      "required": ["target_id", "text"],
-      "properties": { "target_id": { "type": "string" }, "text": { "$ref": "#/$defs/nstr" } }
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
+      "unevaluatedProperties": false,
+      "required": [
+        "target_id",
+        "text"
+      ],
+      "properties": {
+        "target_id": {
+          "type": "string"
+        },
+        "text": {
+          "$ref": "#/$defs/nstr"
+        }
+      }
     },
     "reaction": {
-      "type": "object", "allOf": [{ "$ref": "#/$defs/base" }], "unevaluatedProperties": false,
-      "required": ["target_id", "emoji"],
-      "properties": { "target_id": { "type": "string" }, "emoji": { "$ref": "#/$defs/nstr" } }
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
+      "unevaluatedProperties": false,
+      "required": [
+        "target_id",
+        "emoji"
+      ],
+      "properties": {
+        "target_id": {
+          "type": "string"
+        },
+        "emoji": {
+          "$ref": "#/$defs/nstr"
+        }
+      }
     },
     "revoked": {
-      "type": "object", "allOf": [{ "$ref": "#/$defs/base" }], "unevaluatedProperties": false,
-      "required": ["target_id"],
-      "properties": { "target_id": { "type": "string" } }
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
+      "unevaluatedProperties": false,
+      "required": [
+        "target_id"
+      ],
+      "properties": {
+        "target_id": {
+          "type": "string"
+        }
+      }
     },
     "ack": {
-      "type": "object", "allOf": [{ "$ref": "#/$defs/base" }], "unevaluatedProperties": false,
-      "required": ["status", "ids"],
-      "properties": { "status": { "enum": ["delivered", "read", "played"] }, "ids": { "type": "array", "items": { "type": "string" } } }
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
+      "unevaluatedProperties": false,
+      "required": [
+        "status",
+        "ids"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "delivered",
+            "read",
+            "played"
+          ]
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "interactive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "header",
+        "footer",
+        "buttons",
+        "sections"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "buttons",
+            "template",
+            "list",
+            "native_flow"
+          ]
+        },
+        "header": {
+          "$ref": "#/$defs/nstr"
+        },
+        "footer": {
+          "$ref": "#/$defs/nstr"
+        },
+        "buttons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/button"
+          }
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/section"
+          }
+        }
+      }
+    },
+    "button": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "text",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "reply",
+            "url",
+            "call",
+            "copy",
+            "menu",
+            "other"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/nstr"
+        },
+        "text": {
+          "$ref": "#/$defs/nstr"
+        },
+        "value": {
+          "$ref": "#/$defs/nstr"
+        }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "rows"
+      ],
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/nstr"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/row"
+          }
+        }
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nstr"
+        },
+        "title": {
+          "$ref": "#/$defs/nstr"
+        },
+        "description": {
+          "$ref": "#/$defs/nstr"
+        }
+      }
+    },
+    "reply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "buttons",
+            "template",
+            "list",
+            "native_flow"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/nstr"
+        }
+      }
+    },
+    "referral": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_type",
+        "source_app",
+        "source_id",
+        "source_url",
+        "ctwa_clid",
+        "ref",
+        "title",
+        "body",
+        "media_type",
+        "thumbnail_url",
+        "media_url",
+        "entry_point"
+      ],
+      "properties": {
+        "source_type": {
+          "$ref": "#/$defs/nstr"
+        },
+        "source_app": {
+          "$ref": "#/$defs/nstr"
+        },
+        "source_id": {
+          "$ref": "#/$defs/nstr"
+        },
+        "source_url": {
+          "$ref": "#/$defs/nstr"
+        },
+        "ctwa_clid": {
+          "$ref": "#/$defs/nstr"
+        },
+        "ref": {
+          "$ref": "#/$defs/nstr"
+        },
+        "title": {
+          "$ref": "#/$defs/nstr"
+        },
+        "body": {
+          "$ref": "#/$defs/nstr"
+        },
+        "media_type": {
+          "$ref": "#/$defs/nstr"
+        },
+        "thumbnail_url": {
+          "$ref": "#/$defs/nstr"
+        },
+        "media_url": {
+          "$ref": "#/$defs/nstr"
+        },
+        "entry_point": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "app",
+            "external_source",
+            "external_medium"
+          ],
+          "properties": {
+            "source": {
+              "$ref": "#/$defs/nstr"
+            },
+            "app": {
+              "$ref": "#/$defs/nstr"
+            },
+            "external_source": {
+              "$ref": "#/$defs/nstr"
+            },
+            "external_medium": {
+              "$ref": "#/$defs/nstr"
+            }
+          }
+        }
+      }
     }
   }
 }

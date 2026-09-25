@@ -39,9 +39,16 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 	content, nestedViewOnce := unwrap(msg)
 	typ, text, media, loc, contact := classify(content, evt.Info.ID)
 	m := Message{Base: b, Type: typ, Text: text, Media: media, Location: loc, Contact: contact, ViewOnce: evt.IsViewOnce || nestedViewOnce}
+	switch typ {
+	case TypeInteractive:
+		m.Interactive, _ = interactiveOf(content)
+	case TypeInteractiveReply:
+		m.Reply, _ = replyOf(content)
+	}
 	if ci := contextInfo(content); ci != nil {
 		m.Forwarded = ci.GetIsForwarded()
 		m.Quoted = quoted(ctx, ci, r)
+		m.Referral = referralOf(ci)
 	}
 	return EventMessage, m
 }
@@ -152,6 +159,12 @@ func classify(msg *waE2E.Message, messageID string) (string, *string, *Media, *L
 	case msg.GetPollCreationMessageV6() != nil:
 		return TypePoll, strPtr(msg.GetPollCreationMessageV6().GetName()), nil, nil, nil
 	}
+	if in, text := interactiveOf(msg); in != nil {
+		return TypeInteractive, text, nil, nil, nil
+	}
+	if reply, text := replyOf(msg); reply != nil {
+		return TypeInteractiveReply, text, nil, nil, nil
+	}
 	return TypeUnknown, nil, nil, nil, nil
 }
 
@@ -194,6 +207,14 @@ func contextInfo(msg *waE2E.Message) *waE2E.ContextInfo {
 		msg.GetPollCreationMessageV3().GetContextInfo(),
 		msg.GetPollCreationMessageV5().GetContextInfo(),
 		msg.GetPollCreationMessageV6().GetContextInfo(),
+		msg.GetButtonsMessage().GetContextInfo(),
+		msg.GetTemplateMessage().GetContextInfo(),
+		msg.GetListMessage().GetContextInfo(),
+		msg.GetInteractiveMessage().GetContextInfo(),
+		msg.GetButtonsResponseMessage().GetContextInfo(),
+		msg.GetTemplateButtonReplyMessage().GetContextInfo(),
+		msg.GetListResponseMessage().GetContextInfo(),
+		msg.GetInteractiveResponseMessage().GetContextInfo(),
 	} {
 		if ci != nil {
 			return ci

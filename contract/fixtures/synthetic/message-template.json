@@ -1,0 +1,55 @@
+{
+  "event": "message",
+  "stable": {
+    "schema": 1,
+    "id": "3EB0000000000000000001",
+    "timestamp": "2026-09-25T12:00:00Z",
+    "is_from_me": false,
+    "chat": {
+      "pn": "5511900000001@s.whatsapp.net",
+      "lid": "100000000000001@lid",
+      "is_group": false
+    },
+    "sender": {
+      "pn": "5511900000001@s.whatsapp.net",
+      "lid": "100000000000001@lid",
+      "push_name": "Contact One"
+    },
+    "type": "interactive",
+    "text": "Seu pedido saiu",
+    "media": null,
+    "location": null,
+    "contact": null,
+    "quoted": null,
+    "forwarded": false,
+    "view_once": false,
+    "interactive": {
+      "kind": "template",
+      "header": "Pedido",
+      "footer": "Obrigado",
+      "buttons": [
+        {
+          "kind": "reply",
+          "id": "q1",
+          "text": "OK",
+          "value": null
+        },
+        {
+          "kind": "url",
+          "id": null,
+          "text": "Rastrear",
+          "value": "https://x.test/t"
+        },
+        {
+          "kind": "call",
+          "id": null,
+          "text": "Ligar",
+          "value": "+5511900000000"
+        }
+      ],
+      "sections": []
+    },
+    "reply": null,
+    "referral": null
+  }
+}

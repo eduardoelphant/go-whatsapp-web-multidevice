@@ -3,12 +3,12 @@
   "stable": {
     "chat": {
       "is_group": false,
-      "lid": "\u003cjid\u003e@lid",
-      "pn": "\u003cjid\u003e@s.whatsapp.net"
+      "lid": "<jid>@lid",
+      "pn": "<jid>@s.whatsapp.net"
     },
     "contact": null,
     "forwarded": false,
-    "id": "\u003cid\u003e",
+    "id": "<id>",
     "is_from_me": true,
     "location": null,
     "media": {
@@ -18,21 +18,24 @@
       "kind": "audio",
       "mime": "audio/ogg; codecs=opus",
       "ptt": true,
-      "sha256": "\u003csha256\u003e",
+      "sha256": "<sha256>",
       "size": 0,
-      "url": "/message/\u003cid\u003e/media",
+      "url": "/message/<id>/media",
       "width": null
     },
     "quoted": null,
     "schema": 1,
     "sender": {
-      "lid": "\u003cjid\u003e@lid",
-      "pn": "\u003cjid\u003e@s.whatsapp.net",
-      "push_name": "\u003ctext:14\u003e"
+      "lid": "<jid>@lid",
+      "pn": "<jid>@s.whatsapp.net",
+      "push_name": "<text:14>"
     },
     "text": null,
     "timestamp": "2000-01-01T00:00:00Z",
     "type": "audio",
-    "view_once": false
+    "view_once": false,
+    "interactive": null,
+    "reply": null,
+    "referral": null
   }
 }

@@ -66,14 +66,26 @@ func TestSchemaRejectsContractViolations(t *testing.T) {
 		return copyDoc
 	}
 	cases := map[string]any{
-		"missing chat.lid": mutate(func(_, s map[string]any) { delete(s["chat"].(map[string]any), "lid") }),
-		"text is a number": mutate(func(_, s map[string]any) { s["text"] = json.Number("5") }),
-		"unknown key":      mutate(func(_, s map[string]any) { s["extra"] = true }),
-		"unknown type":     mutate(func(_, s map[string]any) { s["type"] = "gif" }),
-		"missing media":    mutate(func(_, s map[string]any) { delete(s, "media") }),
-		"bad media url":    mutate(func(_, s map[string]any) { s["media"].(map[string]any)["url"] = "https://x/y" }),
-		"unknown event":    mutate(func(d, _ map[string]any) { d["event"] = "message.deleted" }),
-		"schema 2":         mutate(func(_, s map[string]any) { s["schema"] = json.Number("2") }),
+		"missing chat.lid":    mutate(func(_, s map[string]any) { delete(s["chat"].(map[string]any), "lid") }),
+		"text is a number":    mutate(func(_, s map[string]any) { s["text"] = json.Number("5") }),
+		"unknown key":         mutate(func(_, s map[string]any) { s["extra"] = true }),
+		"unknown type":        mutate(func(_, s map[string]any) { s["type"] = "gif" }),
+		"missing media":       mutate(func(_, s map[string]any) { delete(s, "media") }),
+		"bad media url":       mutate(func(_, s map[string]any) { s["media"].(map[string]any)["url"] = "https://x/y" }),
+		"unknown event":       mutate(func(d, _ map[string]any) { d["event"] = "message.deleted" }),
+		"schema 2":            mutate(func(_, s map[string]any) { s["schema"] = json.Number("2") }),
+		"missing interactive": mutate(func(_, s map[string]any) { delete(s, "interactive") }),
+		"bad interactive kind": mutate(func(_, s map[string]any) {
+			s["interactive"] = map[string]any{"kind": "carousel", "header": nil, "footer": nil, "buttons": []any{}, "sections": []any{}}
+		}),
+		"bad button kind": mutate(func(_, s map[string]any) {
+			s["interactive"] = map[string]any{"kind": "buttons", "header": nil, "footer": nil, "sections": []any{},
+				"buttons": []any{map[string]any{"kind": "pay", "id": nil, "text": nil, "value": nil}}}
+		}),
+		"referral without entry_point": mutate(func(_, s map[string]any) {
+			s["referral"] = map[string]any{"source_type": "ad", "source_app": nil, "source_id": nil, "source_url": nil, "ctwa_clid": nil,
+				"ref": nil, "title": nil, "body": nil, "media_type": nil, "thumbnail_url": nil, "media_url": nil}
+		}),
 	}
 	for name, doc := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -1,0 +1,78 @@
+{
+  "event": "message",
+  "stable": {
+    "schema": 1,
+    "id": "3EB0000000000000000001",
+    "timestamp": "2026-09-25T12:00:00Z",
+    "is_from_me": false,
+    "chat": {
+      "pn": "5511900000001@s.whatsapp.net",
+      "lid": "100000000000001@lid",
+      "is_group": false
+    },
+    "sender": {
+      "pn": "5511900000001@s.whatsapp.net",
+      "lid": "100000000000001@lid",
+      "push_name": "Contact One"
+    },
+    "type": "interactive",
+    "text": "Aproveite",
+    "media": null,
+    "location": null,
+    "contact": null,
+    "quoted": null,
+    "forwarded": false,
+    "view_once": false,
+    "interactive": {
+      "kind": "native_flow",
+      "header": "Oferta",
+      "footer": "até sexta",
+      "buttons": [
+        {
+          "kind": "reply",
+          "id": "n1",
+          "text": "Quero",
+          "value": null
+        },
+        {
+          "kind": "call",
+          "id": null,
+          "text": "Ligar",
+          "value": "+5511900000000"
+        },
+        {
+          "kind": "copy",
+          "id": null,
+          "text": "Copiar",
+          "value": "CUPOM10"
+        },
+        {
+          "kind": "menu",
+          "id": null,
+          "text": "Tamanhos",
+          "value": null
+        },
+        {
+          "kind": "other",
+          "id": null,
+          "text": "Enviar localização",
+          "value": null
+        }
+      ],
+      "sections": [
+        {
+          "title": "Camisetas",
+          "rows": [
+            {
+              "id": "s1",
+              "title": "P",
+              "description": "pequeno"
+            }
+          ]
+        }
+      ]
+    },
+    "reply": null,
+    "referral": null
+  }
+}

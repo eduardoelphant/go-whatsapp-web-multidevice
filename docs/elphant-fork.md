@@ -119,9 +119,27 @@ The contract is `contract/stable.schema.json`; examples are in `contract/fixture
 ```
 
 Per event: `message` adds `type`, `text`, `media`, `location`, `contact`, `quoted`, `forwarded`,
-`view_once`; `message.edited` adds `target_id`, `text`; `message.reaction` adds `target_id`,
+`view_once`, `interactive`, `reply` and `referral`; `message.edited` adds `target_id`, `text`; `message.reaction` adds `target_id`,
 `emoji` (`null` = removed); `message.revoked` adds `target_id`; `message.ack` adds `status`
 (`delivered`, `read`, `played`) and `ids`.
+
+Buttons and templates:
+
+- `type: "interactive"`: a message with buttons, a template, a list or a native flow (usually
+  from business accounts and bots). `text` is its body; `interactive` has `kind` (`buttons`,
+  `template`, `list`, `native_flow`), `header`, `footer`, `buttons` (each with `kind`: `reply`,
+  `url`, `call`, `copy`, `menu` or `other`, plus `id`, `text` and `value`, the link, phone number
+  or code) and `sections` (list rows with `id`, `title`, `description`). Header media and carousels
+  are not included.
+- `type: "interactive_reply"`: the option someone chose. `text` is the chosen label; `reply` has
+  `kind` and `id`; `quoted` points to the interactive message when WhatsApp says which one.
+
+Ads and entry points: `referral` is set when the message came from a Click-to-WhatsApp ad
+(Facebook/Instagram) or from a link carrying source/medium. It has `source_type`, `source_app`,
+`source_id` (the ad id), `source_url`, `ctwa_clid` (the click id used by Meta's Conversions API),
+`ref`, `title`, `body`, `media_type`, `thumbnail_url`, `media_url` and `entry_point` (`source`,
+`app`, `external_source`, `external_medium`). WhatsApp sends it only on the first message after
+the click, so store it when it arrives.
 
 On `message.ack`, `is_from_me` tells the direction: `false` means the contact received or read
 your messages listed in `ids`; `true` means you read the contact's messages on another device

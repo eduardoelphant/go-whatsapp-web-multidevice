@@ -16,7 +16,7 @@
       "push_name": "Contact One"
     },
     "type": "text",
-    "text": "hi there",
+    "text": "Olá, vi o anúncio",
     "media": null,
     "location": null,
     "contact": null,
@@ -25,6 +25,24 @@
     "view_once": false,
     "interactive": null,
     "reply": null,
-    "referral": null
+    "referral": {
+      "source_type": "ad",
+      "source_app": "instagram",
+      "source_id": "120211234567890123",
+      "source_url": "https://fb.me/xyz",
+      "ctwa_clid": "ARAkLclid",
+      "ref": "promo-primavera",
+      "title": "Promo",
+      "body": "Fale conosco",
+      "media_type": "image",
+      "thumbnail_url": "https://x.test/thumb.jpg",
+      "media_url": "https://x.test/ad.jpg",
+      "entry_point": {
+        "source": "ctwa_ad",
+        "app": "instagram",
+        "external_source": "meta",
+        "external_medium": "paid"
+      }
+    }
   }
 }

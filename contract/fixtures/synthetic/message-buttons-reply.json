@@ -15,16 +15,27 @@
       "lid": "100000000000001@lid",
       "push_name": "Contact One"
     },
-    "type": "text",
-    "text": "hi there",
+    "type": "interactive_reply",
+    "text": "Atendente",
     "media": null,
     "location": null,
     "contact": null,
-    "quoted": null,
+    "quoted": {
+      "id": "3EB0000000000000000000",
+      "type": "interactive",
+      "text": "Escolha",
+      "sender": {
+        "pn": null,
+        "lid": null
+      }
+    },
     "forwarded": false,
     "view_once": false,
     "interactive": null,
-    "reply": null,
+    "reply": {
+      "kind": "buttons",
+      "id": "b1"
+    },
     "referral": null
   }
 }

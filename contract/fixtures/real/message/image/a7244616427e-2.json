@@ -4,11 +4,11 @@
     "chat": {
       "is_group": true,
       "lid": null,
-      "pn": "\u003cjid\u003e@g.us"
+      "pn": "<jid>@g.us"
     },
     "contact": null,
     "forwarded": false,
-    "id": "\u003cid\u003e",
+    "id": "<id>",
     "is_from_me": false,
     "location": null,
     "media": {
@@ -18,21 +18,24 @@
       "kind": "image",
       "mime": "image/jpeg",
       "ptt": false,
-      "sha256": "\u003csha256\u003e",
+      "sha256": "<sha256>",
       "size": 0,
-      "url": "/message/\u003cid\u003e/media",
+      "url": "/message/<id>/media",
       "width": 0
     },
     "quoted": null,
     "schema": 1,
     "sender": {
-      "lid": "\u003cjid\u003e@lid",
-      "pn": "\u003cjid\u003e@s.whatsapp.net",
-      "push_name": "\u003ctext:7\u003e"
+      "lid": "<jid>@lid",
+      "pn": "<jid>@s.whatsapp.net",
+      "push_name": "<text:7>"
     },
     "text": null,
     "timestamp": "2000-01-01T00:00:00Z",
     "type": "image",
-    "view_once": false
+    "view_once": false,
+    "interactive": null,
+    "reply": null,
+    "referral": null
   }
 }

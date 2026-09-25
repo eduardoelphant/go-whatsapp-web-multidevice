@@ -74,7 +74,7 @@ func TestBuildMessageTypes(t *testing.T) {
 		{"poll v4", &waE2E.Message{PollCreationMessageV4: &waE2E.FutureProofMessage{Message: &waE2E.Message{PollCreationMessage: &waE2E.PollCreationMessage{Name: proto.String("Dinner?")}}}}, TypePoll, "Dinner?", ""},
 		{"poll v5", &waE2E.Message{PollCreationMessageV5: &waE2E.PollCreationMessage{Name: proto.String("Coffee?")}}, TypePoll, "Coffee?", ""},
 		{"poll v6", &waE2E.Message{PollCreationMessageV6: &waE2E.PollCreationMessage{Name: proto.String("Tea?")}}, TypePoll, "Tea?", ""},
-		{"unknown", &waE2E.Message{ButtonsMessage: &waE2E.ButtonsMessage{ContentText: proto.String("pick")}}, TypeUnknown, "<nil>", ""},
+		{"unknown", &waE2E.Message{GroupInviteMessage: &waE2E.GroupInviteMessage{GroupName: proto.String("g")}}, TypeUnknown, "<nil>", ""},
 		{"empty", &waE2E.Message{}, TypeUnknown, "<nil>", ""},
 	}
 	for _, tc := range cases {

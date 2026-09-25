@@ -15,15 +15,39 @@
       "lid": "100000000000001@lid",
       "push_name": "Contact One"
     },
-    "type": "text",
-    "text": "hi there",
+    "type": "interactive",
+    "text": "Veja as opções",
     "media": null,
     "location": null,
     "contact": null,
     "quoted": null,
     "forwarded": false,
     "view_once": false,
-    "interactive": null,
+    "interactive": {
+      "kind": "list",
+      "header": "Menu",
+      "footer": "fim",
+      "buttons": [
+        {
+          "kind": "menu",
+          "id": null,
+          "text": "Abrir",
+          "value": null
+        }
+      ],
+      "sections": [
+        {
+          "title": "Produtos",
+          "rows": [
+            {
+              "id": "r1",
+              "title": "Camiseta",
+              "description": "M"
+            }
+          ]
+        }
+      ]
+    },
     "reply": null,
     "referral": null
   }
