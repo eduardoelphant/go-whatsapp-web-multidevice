@@ -28,6 +28,10 @@ type DeviceInstance struct {
 	passkeyChallenge     *types.WebAuthnPublicKey
 	passkeyCode          string
 	passkeySkipHandoffUX bool
+
+	// Fork (elphant): set when the session was opened elsewhere (StreamReplaced);
+	// cleared on the next successful connection. See stream_replaced.go.
+	streamReplaced bool
 }
 
 func NewDeviceInstance(deviceID string, client *whatsmeow.Client, chatStorageRepo domainChatStorage.IChatStorageRepository) *DeviceInstance {
@@ -237,4 +241,26 @@ func (d *DeviceInstance) TriggerLoggedOut() {
 	if callback != nil {
 		callback(deviceID)
 	}
+}
+
+// MarkStreamReplaced records that this device's session was taken over elsewhere.
+func (d *DeviceInstance) MarkStreamReplaced() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.streamReplaced = true
+}
+
+// ClearStreamReplaced removes the stream replaced mark.
+func (d *DeviceInstance) ClearStreamReplaced() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.streamReplaced = false
+}
+
+// StreamReplaced reports whether the session was taken over elsewhere and has not
+// reconnected since.
+func (d *DeviceInstance) StreamReplaced() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.streamReplaced
 }
