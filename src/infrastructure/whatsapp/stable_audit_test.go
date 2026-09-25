@@ -48,7 +48,7 @@ func TestAnonymizeStableRemovesPersonalData(t *testing.T) {
 func TestWriteStableAuditCapsSamplesPerShape(t *testing.T) {
 	dir := t.TempDir()
 	for i := 0; i < 5; i++ {
-		if err := writeStableAudit(dir, "message", sampleStable()); err != nil {
+		if err := writeStableAudit(dir, "message", sampleStable(), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -59,7 +59,7 @@ func TestWriteStableAuditCapsSamplesPerShape(t *testing.T) {
 
 	other := sampleStable()
 	other["text"] = nil
-	if err := writeStableAudit(dir, "message", other); err != nil {
+	if err := writeStableAudit(dir, "message", other, nil); err != nil {
 		t.Fatal(err)
 	}
 	files, _ = filepath.Glob(filepath.Join(dir, "message", "image", "*.json"))
@@ -76,14 +76,63 @@ func TestWriteStableAuditCapsSamplesPerShape(t *testing.T) {
 
 func TestAuditStableIsNoOpWithoutDir(t *testing.T) {
 	t.Setenv("WHATSAPP_STABLE_AUDIT_DIR", "")
-	auditStable("message", sampleStable())
+	auditStable("message", sampleStable(), nil)
 }
 
 func TestAuditStableReturnsImmediately(t *testing.T) {
 	t.Setenv("WHATSAPP_STABLE_AUDIT_DIR", "/dev/null/not-a-dir")
 	start := time.Now()
-	auditStable("message", sampleStable())
+	auditStable("message", sampleStable(), nil)
 	if time.Since(start) > 50*time.Millisecond {
 		t.Fatal("auditStable must not wait for the disk")
+	}
+}
+
+func TestAnonymizeStableReplacesReactionText(t *testing.T) {
+	anon := anonymizeStable(map[string]any{"emoji": "secret words"}, "").(map[string]any)
+	if anon["emoji"] != "<emoji>" {
+		t.Fatalf("emoji = %v, want <emoji>", anon["emoji"])
+	}
+}
+
+func TestStableShapeKeyCountsArrayElements(t *testing.T) {
+	withPhone := map[string]any{"type": "contact", "contact": map[string]any{"phones": []any{"<phone>"}}}
+	without := map[string]any{"type": "contact", "contact": map[string]any{"phones": []any{}}}
+	if stableShapeKey("message", withPhone) == stableShapeKey("message", without) {
+		t.Fatal("phones [] and [x] must be different shapes")
+	}
+}
+
+func TestWriteStableAuditWritesProtoFieldsSidecar(t *testing.T) {
+	dir := t.TempDir()
+	unknown := map[string]any{"type": "unknown", "text": nil}
+	if err := writeStableAudit(dir, "message", unknown, []string{"buttonsMessage", "messageContextInfo"}); err != nil {
+		t.Fatal(err)
+	}
+	sidecars, _ := filepath.Glob(filepath.Join(dir, "message", "unknown", "*.fields.txt"))
+	if len(sidecars) != 1 {
+		t.Fatalf("sidecars = %v, want one", sidecars)
+	}
+	raw, _ := os.ReadFile(sidecars[0])
+	if string(raw) != "buttonsMessage\nmessageContextInfo\n" {
+		t.Fatalf("sidecar = %q", raw)
+	}
+}
+
+func TestAuditStableDropsWhenBusy(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("WHATSAPP_STABLE_AUDIT_DIR", dir)
+	for i := 0; i < cap(stableAuditSlots); i++ {
+		stableAuditSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for i := 0; i < cap(stableAuditSlots); i++ {
+			<-stableAuditSlots
+		}
+	})
+	auditStable("message", sampleStable(), nil)
+	time.Sleep(50 * time.Millisecond)
+	if files, _ := filepath.Glob(filepath.Join(dir, "*", "*", "*.json")); len(files) != 0 {
+		t.Fatalf("a busy audit must drop the sample, wrote %v", files)
 	}
 }

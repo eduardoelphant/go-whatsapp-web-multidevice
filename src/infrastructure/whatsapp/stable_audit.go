@@ -22,29 +22,46 @@ import (
 
 const stableAuditCap = 3
 
-var stableAuditMu sync.Mutex
+var (
+	stableAuditMu sync.Mutex
+	// stableAuditSlots bounds in-flight writes: with a slow or hung disk,
+	// samples are dropped instead of piling up goroutines.
+	stableAuditSlots = make(chan struct{}, 4)
+	// stableAuditFull remembers shapes that already have stableAuditCap samples.
+	stableAuditFull sync.Map
+)
 
 // Values kept verbatim: closed sets that carry no personal data.
-var stableAuditKeep = map[string]bool{"schema": true, "type": true, "kind": true, "mime": true, "status": true, "emoji": true}
+var stableAuditKeep = map[string]bool{"schema": true, "type": true, "kind": true, "mime": true, "status": true}
 
-func auditStable(event string, stable any) {
+// auditStable saves an anonymized sample of stable in the background. For
+// type "unknown" messages, protoFields lists the populated proto field names
+// (never values) so the sample says what the message actually was.
+func auditStable(event string, stable any, protoFields []string) {
 	dir := os.Getenv("WHATSAPP_STABLE_AUDIT_DIR")
 	if dir == "" {
 		return
 	}
+	select {
+	case stableAuditSlots <- struct{}{}:
+	default:
+		logrus.Debugf("[STABLE_AUDIT] busy, dropping a %s sample", event)
+		return
+	}
 	go func() {
+		defer func() { <-stableAuditSlots }()
 		defer func() {
 			if r := recover(); r != nil {
 				logrus.Warnf("[STABLE_AUDIT] panic: %v", r)
 			}
 		}()
-		if err := writeStableAudit(dir, event, stable); err != nil {
+		if err := writeStableAudit(dir, event, stable, protoFields); err != nil {
 			logrus.Warnf("[STABLE_AUDIT] %s: %v", event, err)
 		}
 	}()
 }
 
-func writeStableAudit(dir, event string, stable any) error {
+func writeStableAudit(dir, event string, stable any, protoFields []string) error {
 	raw, err := json.Marshal(stable)
 	if err != nil {
 		return err
@@ -61,6 +78,11 @@ func writeStableAudit(dir, event string, stable any) error {
 	key := stableShapeKey(event, anon)
 	sub := filepath.Join(dir, event, typ)
 
+	fullKey := filepath.Join(sub, key)
+	if _, full := stableAuditFull.Load(fullKey); full {
+		return nil
+	}
+
 	stableAuditMu.Lock()
 	defer stableAuditMu.Unlock()
 	if err := os.MkdirAll(sub, 0o750); err != nil {
@@ -68,13 +90,21 @@ func writeStableAudit(dir, event string, stable any) error {
 	}
 	existing, _ := filepath.Glob(filepath.Join(sub, key+"-*.json"))
 	if len(existing) >= stableAuditCap {
+		stableAuditFull.Store(fullKey, struct{}{})
 		return nil
 	}
 	out, err := json.MarshalIndent(map[string]any{"event": event, "stable": anon}, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(sub, fmt.Sprintf("%s-%d.json", key, len(existing)+1)), append(out, '\n'), 0o640)
+	name := fmt.Sprintf("%s-%d", key, len(existing)+1)
+	if err := os.WriteFile(filepath.Join(sub, name+".json"), append(out, '\n'), 0o640); err != nil {
+		return err
+	}
+	if len(protoFields) > 0 {
+		return os.WriteFile(filepath.Join(sub, name+".fields.txt"), []byte(strings.Join(protoFields, "\n")+"\n"), 0o640)
+	}
+	return nil
 }
 
 // anonymizeStable replaces personal values with type-preserving placeholders.
@@ -111,6 +141,8 @@ func anonymizeStable(v any, key string) any {
 			return "<phone>"
 		case key == "timestamp":
 			return "2000-01-01T00:00:00Z"
+		case key == "emoji":
+			return "<emoji>"
 		default:
 			return fmt.Sprintf("<text:%d>", utf8.RuneCountInString(x))
 		}
@@ -140,7 +172,12 @@ func stableShapeKey(event string, tree map[string]any) string {
 				walk(p, child)
 			}
 		case []any:
+			// Same rule as contract/shape.Signature: array elements count as
+			// "<path>[]" so [] and [x] are different shapes.
 			for _, child := range x {
+				if child != nil {
+					paths = append(paths, prefix+"[]")
+				}
 				walk(prefix+"[]", child)
 			}
 		}

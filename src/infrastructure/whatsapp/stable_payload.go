@@ -37,7 +37,11 @@ func (r stableResolver) LIDForPN(ctx context.Context, pn types.JID) (types.JID, 
 func addStablePayload(ctx context.Context, client *whatsmeow.Client, evt *events.Message, msg *waE2E.Message, payload map[string]any) {
 	event, stable := stablepayload.Build(ctx, evt, msg, newStableResolver(client))
 	payload["stable"] = stable
-	auditStable(event, stable)
+	var protoFields []string
+	if m, ok := stable.(stablepayload.Message); ok && m.Type == stablepayload.TypeUnknown {
+		protoFields = populatedMessageFields(msg)
+	}
+	auditStable(event, stable, protoFields)
 }
 
 // addStableAck sets payload.stable on a message.ack webhook body.
@@ -48,5 +52,5 @@ func addStableAck(ctx context.Context, client *whatsmeow.Client, evt *events.Rec
 	}
 	stable := stablepayload.BuildAck(ctx, evt, newStableResolver(client))
 	inner["stable"] = stable
-	auditStable(stablepayload.EventAck, stable)
+	auditStable(stablepayload.EventAck, stable, nil)
 }
