@@ -182,3 +182,55 @@ WhatsApp proto fields. Writing never delays delivery: when the disk is slow, sam
 `contract/fixtures/real/`, and `cd contract && go run ./cmd/compare` reports event/type groups
 with no synthetic fixture (`MISSING`), non-null paths the synthetic fixtures never exercise
 (`UNCOVERED`) and JSON kind conflicts (`KIND`). Nullability combinations alone are not gaps.
+
+## Durable webhook delivery
+
+Upstream sends each webhook from a goroutine started after WhatsApp was already told the message
+arrived, and gives up after 5 attempts over about 15 seconds. An event is lost when the receiver is
+down for longer, or when the process stops in between.
+
+Set `WHATSAPP_WEBHOOK_DELIVERY=durable` (default `direct`, the upstream behavior) to queue every
+webhook event except `chat_presence` in a SQLite outbox at `WHATSAPP_WEBHOOK_OUTBOX_DB` (default
+`file:storages/webhook-outbox.db`). Both variables are read from the process environment only,
+not from `.env`.
+
+- Message events, `message.ack` and `session.status` are written to the outbox inside the WhatsApp
+  event handler. If the write fails, the handler reports failure and whatsmeow does not acknowledge
+  the message, so WhatsApp delivers it again. Durable mode turns on whatsmeow's decrypted-event
+  buffer, so the redelivered message is read back instead of failing to decrypt.
+- A message redelivered this way runs the whole handler again: chat storage, Chatwoot and
+  auto-reply (a second auto-reply) included.
+- Group, label, call, newsletter and app-state events are queued from their existing goroutines; a
+  crash between the WhatsApp acknowledgement and the write can still lose one of them.
+- `chat_presence` (typing) is sent directly, as upstream does.
+- With `WHATSAPP_AUTO_DOWNLOAD_MEDIA=true` the media download happens inside the handler and slows
+  message processing down. Keep it off; fetch media with `GET /message/:message_id/media`.
+
+Delivery: one worker per destination URL sends rows oldest first. A failing row holds back the rows
+behind it until it succeeds or is given up. Network errors, timeouts, `5xx`, `408` and `429` retry
+after 10 s, 30 s, 1, 2, 5, 10 and 30 minutes, then every hour; `Retry-After` on `429` is honored. A
+row still failing 72 hours after it was queued becomes `dead`; any other `4xx` makes it `dead` at
+once. Queued rows survive restarts; a row in flight during a crash is sent again. Delivered rows are
+kept 7 days, dead rows 30 days.
+
+Contract (durable mode only):
+
+- The body gets a top-level `event_id` (ULID), the same on every attempt, redelivery and replay.
+  Each destination URL gets its own `event_id` for the same event.
+- Headers: `X-Webhook-Id` (the `event_id`), `X-Webhook-Timestamp` (when the event was queued,
+  RFC3339 UTC), `X-Webhook-Attempt` (1, 2, 3…) and `X-Webhook-Replay: true` on redeliveries and
+  replays. `X-Hub-Signature-256` is unchanged. The secret is read from the current configuration at
+  every attempt, so a rotated secret applies to queued rows.
+- Answer `2xx` to confirm, and deduplicate by `event_id`: the same event can arrive more than once.
+
+Operations API (Basic Auth; `404` in direct mode):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /webhooks/stats` | counts per status and per URL, the oldest pending row and its age |
+| `GET /webhooks/deliveries?status=&limit=&before_id=` | rows newest first, without bodies (`limit` 1-500, default 50) |
+| `GET /webhooks/deliveries/:event_id` | one row with its body |
+| `POST /webhooks/deliveries/:event_id/redeliver` | back to `pending`, attempts reset, same `event_id`, sent with `X-Webhook-Replay` |
+| `POST /webhooks/replay?since=<RFC3339>[&url=]` | every delivered or dead row queued since then goes back to `pending` |
+
+A redelivered or replayed row keeps its id, so it is sent before newer rows of the same URL.
