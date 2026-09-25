@@ -194,12 +194,17 @@ webhook event except `chat_presence` in a SQLite outbox at `WHATSAPP_WEBHOOK_OUT
 `file:storages/webhook-outbox.db`). Both variables are read from the process environment only,
 not from `.env`.
 
-- Message events, `message.ack` and `session.status` are written to the outbox inside the WhatsApp
-  event handler. If the write fails, the handler reports failure and whatsmeow does not acknowledge
-  the message, so WhatsApp delivers it again. Durable mode turns on whatsmeow's decrypted-event
-  buffer, so the redelivered message is read back instead of failing to decrypt.
+- Message events are written to the outbox inside the WhatsApp event handler. If the write fails,
+  the handler reports failure and whatsmeow does not acknowledge the message, so WhatsApp delivers
+  it again. Durable mode turns on whatsmeow's decrypted-event buffer, so the redelivered message is
+  read back instead of failing to decrypt.
+- WhatsApp redelivers an unacknowledged message when the connection is re-established, so a failed
+  write holds that message back, behind newer ones, until the next reconnect.
 - A message redelivered this way runs the whole handler again: chat storage, Chatwoot and
   auto-reply (a second auto-reply) included.
+- `message.ack` and `session.status` are written inside the handler too, so they are queued in
+  order. whatsmeow acknowledges receipts before handlers run, so a failed write loses that
+  `message.ack`.
 - Group, label, call, newsletter and app-state events are queued from their existing goroutines; a
   crash between the WhatsApp acknowledgement and the write can still lose one of them.
 - `chat_presence` (typing) is sent directly, as upstream does.
@@ -222,6 +227,9 @@ Contract (durable mode only):
   replays. `X-Hub-Signature-256` is unchanged. The secret is read from the current configuration at
   every attempt, so a rotated secret applies to queued rows.
 - Answer `2xx` to confirm, and deduplicate by `event_id`: the same event can arrive more than once.
+- Also deduplicate message events by `device_id`, `event` and `payload.stable.id`. When a message
+  goes to two URLs and only one write fails, the redelivered message is queued again for both, so
+  the URL that already had it gets it a second time under a new `event_id`.
 
 Operations API (Basic Auth; `404` in direct mode):
 
