@@ -98,3 +98,40 @@ not forwarded to Chatwoot.
 
 `qr_code` lets anyone who holds it render the QR image, so use HTTPS webhook targets. Pairing still
 requires the account owner's phone to scan it.
+
+## `payload.stable`
+
+Every message webhook event (`message`, `message.edited`, `message.reaction`,
+`message.revoked`, `message.ack`) carries `payload.stable`, a closed object whose keys are always
+present (`null` when unknown) and never change type. The existing payload fields are unchanged.
+The contract is `contract/stable.schema.json`; examples are in `contract/fixtures/synthetic/`.
+
+```json
+"stable": {
+  "schema": 1, "id": "3EB0…", "timestamp": "2026-09-25T12:00:00Z", "is_from_me": false,
+  "chat": { "pn": "5511…@s.whatsapp.net", "lid": "123…@lid", "is_group": false },
+  "sender": { "pn": "5511…@s.whatsapp.net", "lid": "123…@lid", "push_name": "Fulano" },
+  "type": "image", "text": "caption", "media": { "kind": "image", "mime": "image/jpeg", "size": 2048,
+  "sha256": "…", "filename": null, "duration": null, "ptt": false, "width": 640, "height": 480,
+  "url": "/message/3EB0…/media" }, "location": null, "contact": null, "quoted": null,
+  "forwarded": false, "view_once": false
+}
+```
+
+Per event: `message` adds `type`, `text`, `media`, `location`, `contact`, `quoted`, `forwarded`,
+`view_once`; `message.edited` adds `target_id`, `text`; `message.reaction` adds `target_id`,
+`emoji` (`null` = removed); `message.revoked` adds `target_id`; `message.ack` adds `status`
+(`delivered`, `read`, `played`) and `ids`.
+
+## `GET /message/:message_id/media`
+
+Streams the media of a stored message (Basic Auth, `X-Device-Id`). The file goes through a temp
+file that is deleted after the response; nothing is written to `/statics`. `404` when the message
+has no media, `410` when WhatsApp no longer has it: download soon after the webhook arrives.
+
+## Stable payload audit
+
+With `WHATSAPP_STABLE_AUDIT_DIR` set, each new shape of `payload.stable` (event, type and non-null
+keys) is saved anonymized, at most 3 samples per shape. Reviewed samples go to
+`contract/fixtures/real/`, and `cd contract && go run ./cmd/compare` reports real shapes without a
+synthetic fixture.
