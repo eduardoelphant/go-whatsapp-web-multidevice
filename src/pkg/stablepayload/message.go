@@ -20,6 +20,18 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 	}
 	msg = unwrap(msg)
 	b := base(ctx, evt.Info, r)
+	if pm := msg.GetProtocolMessage(); pm != nil {
+		switch pm.GetType() {
+		case waE2E.ProtocolMessage_REVOKE:
+			return EventRevoked, Revoked{Base: b, TargetID: pm.GetKey().GetID()}
+		case waE2E.ProtocolMessage_MESSAGE_EDIT:
+			_, text, _, _, _ := classify(unwrap(pm.GetEditedMessage()), evt.Info.ID)
+			return EventEdited, Edited{Base: b, TargetID: pm.GetKey().GetID(), Text: text}
+		}
+	}
+	if rm := msg.GetReactionMessage(); rm != nil {
+		return EventReaction, Reaction{Base: b, TargetID: rm.GetKey().GetID(), Emoji: strPtr(rm.GetText())}
+	}
 
 	typ, text, media, loc, contact := classify(msg, evt.Info.ID)
 	m := Message{Base: b, Type: typ, Text: text, Media: media, Location: loc, Contact: contact, ViewOnce: evt.IsViewOnce}
