@@ -16,6 +16,10 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # SYNC_TOKEN lives in the "sync" environment, whose deployment branches are
+    # limited to elphant. Sync branches carry upstream's .github/workflows tree,
+    # and a new upstream workflow triggered on them must not see this token.
+    environment: sync
     env:
       BASE: ${{ inputs.base || 'elphant' }}
       UPSTREAM: https://github.com/aldinokemal/go-whatsapp-web-multidevice
