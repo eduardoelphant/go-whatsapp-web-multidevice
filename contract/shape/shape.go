@@ -121,9 +121,23 @@ func Compare(synthetic, real []Fixture) Report {
 	return report
 }
 
-// Load reads every {"event","stable"} fixture in dir.
+// Load reads every {"event","stable"} fixture under dir, including nested
+// directories (the audit writes <event>/<type>/<key>-N.json). A missing dir
+// yields no fixtures.
 func Load(dir string) ([]Fixture, error) {
-	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	var files []string
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) && path == dir {
+				return filepath.SkipDir
+			}
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(path) == ".json" {
+			files = append(files, path)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +154,8 @@ func Load(dir string) ([]Fixture, error) {
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			return nil, fmt.Errorf("%s: %w", file, err)
 		}
-		fixtures = append(fixtures, Fixture{File: filepath.Base(file), Event: doc.Event, Stable: doc.Stable})
+		rel, _ := filepath.Rel(dir, file)
+		fixtures = append(fixtures, Fixture{File: rel, Event: doc.Event, Stable: doc.Stable})
 	}
 	return fixtures, nil
 }

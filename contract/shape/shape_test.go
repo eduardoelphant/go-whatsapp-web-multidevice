@@ -1,6 +1,8 @@
 package shape
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -36,5 +38,26 @@ func TestCompareReportsMissingShapesAndKindMismatches(t *testing.T) {
 	}
 	if len(report.KindMismatches) != 1 || !strings.Contains(report.KindMismatches[0], "media.size: real=string synthetic=number") {
 		t.Fatalf("kind mismatches = %v", report.KindMismatches)
+	}
+}
+
+func TestLoadReadsNestedDirectories(t *testing.T) {
+	// The audit writes <event>/<type>/<key>-N.json; copying that tree into
+	// fixtures/real must not be silently ignored.
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "message", "image")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := `{"event":"message","stable":{"type":"image","text":null}}`
+	if err := os.WriteFile(filepath.Join(nested, "abc-1.json"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixtures, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixtures) != 1 || fixtures[0].Event != "message" {
+		t.Fatalf("Load = %+v, want the nested fixture", fixtures)
 	}
 }

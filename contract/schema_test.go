@@ -36,7 +36,7 @@ func loadJSON(t *testing.T, path string) any {
 
 func TestFixturesMatchSchema(t *testing.T) {
 	schema := compileSchema(t)
-	files, _ := filepath.Glob(filepath.Join("fixtures", "*", "*.json"))
+	files := fixtureFiles(t, "fixtures")
 	synthetic := 0
 	for _, f := range files {
 		if strings.Contains(f, "synthetic") {
@@ -82,4 +82,37 @@ func TestSchemaRejectsContractViolations(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFixtureFilesIncludesNested(t *testing.T) {
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "real", "message", "image")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "abc-1.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := fixtureFiles(t, dir); len(got) != 1 {
+		t.Fatalf("fixtureFiles = %v, want the nested file", got)
+	}
+}
+
+// fixtureFiles lists every .json under root, nested directories included.
+func fixtureFiles(t *testing.T, root string) []string {
+	t.Helper()
+	var files []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(path) == ".json" {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
 }
