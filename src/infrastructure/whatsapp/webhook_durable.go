@@ -133,12 +133,27 @@ func resolveWebhookSecret(_ context.Context, ref string) (string, bool, error) {
 	return secret, insecure, nil
 }
 
+// forwardLogFormats returns forwardToWebhooks' start and done log formats:
+// in durable mode the event is only queued there, not delivered.
+func forwardLogFormats() (start, done string) {
+	if durableWebhooksEnabled() {
+		return "Queueing %s for %d configured webhook(s)", "%s queued for all webhook(s)"
+	}
+	return "Forwarding %s to %d configured webhook(s)", "%s forwarded to all webhook(s)"
+}
+
 type handlerFailureKey struct{}
 
 // withHandlerFailureFlag returns a context that markHandlerFailed can flag.
 func withHandlerFailureFlag(ctx context.Context) (context.Context, *atomic.Bool) {
 	failed := new(atomic.Bool)
 	return context.WithValue(ctx, handlerFailureKey{}, failed), failed
+}
+
+// withoutHandlerFailureFlag hides the flag from deliveries whose failure
+// must only be logged, such as session.status.
+func withoutHandlerFailureFlag(ctx context.Context) context.Context {
+	return context.WithValue(ctx, handlerFailureKey{}, nil)
 }
 
 // markHandlerFailed flags the event handler run that ctx belongs to; it is a

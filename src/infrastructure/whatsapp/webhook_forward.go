@@ -345,7 +345,8 @@ func sessionIDForJID(jid string) string {
 // Partial failures (some succeed, some fail) are logged but do not cause a return error.
 func forwardToWebhooks(ctx context.Context, payload map[string]any, eventName string, webhookURLs []string, webhookConfig *domainChatStorage.DeviceWebhookConfig) error {
 	total := len(webhookURLs)
-	logrus.Infof("Forwarding %s to %d configured webhook(s)", eventName, total)
+	startLog, doneLog := forwardLogFormats() // Fork (elphant): durable mode only queues. See webhook_durable.go.
+	logrus.Infof(startLog, eventName, total)
 
 	if total == 0 {
 		return nil
@@ -371,7 +372,7 @@ func forwardToWebhooks(ctx context.Context, payload map[string]any, eventName st
 			return fmt.Errorf("all %d webhook(s) failed for %s", total, eventName)
 		}
 	} else {
-		logrus.Infof("%s forwarded to all webhook(s)", eventName)
+		logrus.Infof(doneLog, eventName)
 	}
 
 	return nil

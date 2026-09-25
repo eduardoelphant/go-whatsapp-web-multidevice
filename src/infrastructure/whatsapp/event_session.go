@@ -156,7 +156,8 @@ func EmitSessionStatus(ctx context.Context, instance *DeviceInstance, status Ses
 	// Report under the slot that owns the client; see canonicalInstance.
 	body := buildSessionStatusBody(canonicalInstance(instance), status)
 	sessionStatusDispatch(func() {
-		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		// A queue failure only logs: session.status is not a WhatsApp message to withhold.
+		webhookCtx, cancel := context.WithTimeout(withoutHandlerFailureFlag(context.WithoutCancel(ctx)), 30*time.Second)
 		defer cancel()
 		if err := forwardPayloadToConfiguredWebhooks(webhookCtx, body, SessionStatusEvent); err != nil {
 			logrus.Errorf("Failed to forward %s %q for device %s: %v", SessionStatusEvent, status.Status, instance.ID(), err)
