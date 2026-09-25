@@ -698,6 +698,12 @@ func initApp() {
 	chatStorageRepo = chatstorage.NewStorageRepository(chatStorageDB)
 	chatStorageRepo.InitializeSchema()
 
+	// Fork (elphant): durable webhook outbox; no-op unless WHATSAPP_WEBHOOK_DELIVERY=durable.
+	// Before InitWaCLI: clients read the mode when they are created.
+	if err := whatsapp.StartDurableWebhooks(ctx); err != nil {
+		logrus.Fatalf("failed to start durable webhooks: %v", err)
+	}
+
 	whatsappDB := whatsapp.InitWaDB(ctx, config.DBURI)
 	var keysDB *sqlstore.Container
 	if config.DBKeysURI != "" {
