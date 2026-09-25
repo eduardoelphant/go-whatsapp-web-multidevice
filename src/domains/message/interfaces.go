@@ -24,4 +24,5 @@ type IMessageManagement interface {
 type IMessageUsecase interface {
 	IMessageActions
 	IMessageManagement
+	IMessageMediaStream // Fork (elphant): see media_stream.go
 }

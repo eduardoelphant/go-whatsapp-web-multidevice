@@ -33,6 +33,7 @@ func InitRestMessage(app fiber.Router, service domainMessage.IMessageUsecase, se
 	app.Post("/message/:message_id/unstar", rest.UnstarMessage)
 	app.Post("/message/:message_id/forward", rest.ForwardMessage)
 	app.Get("/message/:message_id/download", rest.DownloadMedia)
+	app.Get("/message/:message_id/media", rest.StreamMedia) // Fork (elphant): see message_media.go
 	return rest
 }
 
