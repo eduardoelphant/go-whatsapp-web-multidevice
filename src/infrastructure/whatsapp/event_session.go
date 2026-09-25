@@ -153,7 +153,8 @@ func EmitSessionStatus(ctx context.Context, instance *DeviceInstance, status Ses
 	if instance == nil {
 		return
 	}
-	body := buildSessionStatusBody(instance, status)
+	// Report under the slot that owns the client; see canonicalInstance.
+	body := buildSessionStatusBody(canonicalInstance(instance), status)
 	sessionStatusDispatch(func() {
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()

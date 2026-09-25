@@ -6,12 +6,16 @@ import (
 
 	domainDevice "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/device"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
 func TestHandlerStreamReplacedMarksOnlyAffectedDevice(t *testing.T) {
-	affected := NewDeviceInstance("replaced-a", nil, nil)
-	other := NewDeviceInstance("replaced-b", nil, nil)
+	affectedClient := &whatsmeow.Client{}
+	otherClient := &whatsmeow.Client{}
+	affected := NewDeviceInstance("replaced-a", affectedClient, nil)
+	NewDeviceInstance("replaced-b", otherClient, nil)
+	t.Cleanup(func() { clearStreamReplaced(affectedClient) })
 
 	go handler(context.Background(), affected, &events.StreamReplaced{})
 
@@ -23,28 +27,30 @@ func TestHandlerStreamReplacedMarksOnlyAffectedDevice(t *testing.T) {
 	if result["device_id"] != "replaced-a" {
 		t.Fatalf("broadcast device_id = %q, want replaced-a", result["device_id"])
 	}
-	if !affected.StreamReplaced() {
-		t.Fatal("affected device should be marked stream replaced")
+	if ShouldAutoReconnect(affectedClient) {
+		t.Fatal("affected client should be skipped by the reconnect checker")
 	}
 	if affected.State() != domainDevice.DeviceStateDisconnected {
 		t.Fatalf("affected state = %s, want disconnected", affected.State())
 	}
-	if other.StreamReplaced() {
-		t.Fatal("other device must not be marked")
+	if !ShouldAutoReconnect(otherClient) {
+		t.Fatal("other client must not be affected")
 	}
 }
 
 func TestHandlerConnectedClearsStreamReplaced(t *testing.T) {
-	instance := NewDeviceInstance("replaced-c", nil, nil)
-	instance.MarkStreamReplaced()
+	client := &whatsmeow.Client{Store: &store.Device{}}
+	instance := NewDeviceInstance("replaced-c", client, nil)
+	markStreamReplaced(client)
+	t.Cleanup(func() { clearStreamReplaced(client) })
 
 	handler(context.Background(), instance, &events.PushNameSetting{})
-	if !instance.StreamReplaced() {
+	if ShouldAutoReconnect(client) {
 		t.Fatal("PushNameSetting must not clear the stream replaced mark")
 	}
 
 	handler(context.Background(), instance, &events.Connected{})
-	if instance.StreamReplaced() {
+	if !ShouldAutoReconnect(client) {
 		t.Fatal("Connected should clear the stream replaced mark")
 	}
 }
@@ -66,30 +72,49 @@ func withDeviceManager(t *testing.T, m *DeviceManager) {
 func TestShouldAutoReconnect(t *testing.T) {
 	marked := &whatsmeow.Client{}
 	unmarked := &whatsmeow.Client{}
-	unknown := &whatsmeow.Client{}
-
-	markedInstance := NewDeviceInstance("auto-marked", marked, nil)
-	markedInstance.MarkStreamReplaced()
-	manager := NewDeviceManager(nil, nil, nil)
-	manager.AddDevice(markedInstance)
-	manager.AddDevice(NewDeviceInstance("auto-unmarked", unmarked, nil))
-	withDeviceManager(t, manager)
+	markStreamReplaced(marked)
+	t.Cleanup(func() { clearStreamReplaced(marked) })
 
 	if ShouldAutoReconnect(marked) {
-		t.Error("marked device must not auto-reconnect")
+		t.Error("marked client must not auto-reconnect")
 	}
 	if !ShouldAutoReconnect(unmarked) {
-		t.Error("unmarked device should auto-reconnect")
-	}
-	if !ShouldAutoReconnect(unknown) {
-		t.Error("client without an instance should keep auto-reconnecting")
+		t.Error("unmarked client should auto-reconnect")
 	}
 	if !ShouldAutoReconnect(nil) {
-		t.Error("nil client should report true (no instance to block)")
+		t.Error("nil client should report true (nothing to block)")
+	}
+}
+
+// At startup the default client's event handler stays bound to the instance
+// InitWaCLI created, while loadFromRegistry moves the same client into the named
+// slot's instance. Events then arrive on an instance the manager no longer holds.
+func newMovedClient(t *testing.T) (client *whatsmeow.Client, orphan *DeviceInstance) {
+	t.Helper()
+	client = &whatsmeow.Client{Store: &store.Device{}}
+	orphan = NewDeviceInstance("5511999999999:12@s.whatsapp.net", client, nil)
+	manager := NewDeviceManager(nil, nil, nil)
+	manager.AddDevice(NewDeviceInstance("org_2", client, nil))
+	withDeviceManager(t, manager)
+	return client, orphan
+}
+
+func TestStreamReplacedOnClientMovedToRegistrySlot(t *testing.T) {
+	client, orphan := newMovedClient(t)
+	t.Cleanup(func() { clearStreamReplaced(client) })
+
+	go handler(context.Background(), orphan, &events.StreamReplaced{})
+	msg := recvBroadcast(t)
+	result, _ := msg.Result.(map[string]string)
+	if result["device_id"] != "org_2" {
+		t.Errorf("broadcast device_id = %q, want the slot id org_2", result["device_id"])
+	}
+	if ShouldAutoReconnect(client) {
+		t.Fatal("the reconnect checker must skip a client whose session was replaced")
 	}
 
-	withDeviceManager(t, nil)
-	if !ShouldAutoReconnect(marked) {
-		t.Error("without a device manager every client should auto-reconnect")
+	handler(context.Background(), orphan, &events.Connected{})
+	if !ShouldAutoReconnect(client) {
+		t.Fatal("Connected should let the checker reconnect the client again")
 	}
 }

@@ -52,7 +52,7 @@ func handler(ctx context.Context, instance *DeviceInstance, rawEvt any) {
 		handleLoggedOut(instance)
 	case *events.Connected:
 		// Fork (elphant): a successful connection ends any stream replaced state.
-		instance.ClearStreamReplaced()
+		clearStreamReplaced(client)
 		handleConnectionEvents(ctx, client, instance)
 	case *events.PushNameSetting:
 		handleConnectionEvents(ctx, client, instance)

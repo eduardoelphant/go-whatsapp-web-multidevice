@@ -360,3 +360,15 @@ func TestHandlerPasskeyRequestEmitsSessionStatus(t *testing.T) {
 		t.Fatalf("status = %v, want %s", payload["status"], SessionStatusPasskeyRequired)
 	}
 }
+
+func TestSessionStatusUsesSlotOfMovedClient(t *testing.T) {
+	_, orphan := newMovedClient(t)
+	got := captureSessionWebhooks(t)
+
+	handler(context.Background(), orphan, &events.KeepAliveRestored{})
+
+	body := waitSessionWebhook(t, got, "org_2")
+	if body["session_id"] != "org_2" {
+		t.Fatalf("session_id = %v, want org_2", body["session_id"])
+	}
+}
