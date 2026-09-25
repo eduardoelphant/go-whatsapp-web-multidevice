@@ -7,25 +7,41 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing fork tag to build (e.g. v9.4.0-elphant.1)"
+        description: "Existing fork tag to build (e.g. v9.5.0-elphant.1)"
         required: true
+      force:
+        description: "Rebuild even if the image tag already exists"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-  packages: write
 
 env:
   IMAGE: ghcr.io/eduardoelphant/gowa
   TAG: ${{ inputs.tag || github.ref_name }}
+  FORCE: ${{ inputs.force || false }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - name: Check the tag
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-elphant\.[0-9]+$ ]]; then
+            echo "::error::Tag '$TAG' does not match vX.Y.Z-elphant.N"
+            exit 1
+          fi
+          # Published tags are immutable: rollbacks must pull the same bits.
+          if [ "$FORCE" != "true" ] && docker manifest inspect "$IMAGE:$TAG" > /dev/null 2>&1; then
+            echo "::error::$IMAGE:$TAG already exists; dispatch with force to rebuild it"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/setup-go@v7
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
@@ -37,6 +53,9 @@ jobs:
 
   build:
     needs: test
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         include:
@@ -46,16 +65,17 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.TAG }}
-      - uses: docker/login-action@v4
+          persist-credentials: false
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ./docker/golang.Dockerfile
@@ -67,12 +87,14 @@ jobs:
   manifest:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Create the multi-arch manifest
         run: docker buildx imagetools create -t "$IMAGE:$TAG" "$IMAGE:$TAG-amd64" "$IMAGE:$TAG-arm64"

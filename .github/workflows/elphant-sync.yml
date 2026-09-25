@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: elphant-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -27,7 +31,7 @@ jobs:
       # SYNC_TOKEN (fine-grained, this fork only: Contents, Pull requests and
       # Workflows read/write). GITHUB_TOKEN cannot push upstream commits that
       # touch .github/workflows, and PRs it opens do not trigger Elphant CI.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.BASE }}
           fetch-depth: 0
@@ -43,7 +47,9 @@ jobs:
         run: |
           tag=$(bash .github/scripts/elphant-sync-tag.sh "origin/$BASE")
           if [ -n "$tag" ]; then
-            existing=$(gh pr list --head "sync/$tag" --state all --json number --jq 'length')
+            existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "sync/$tag" --state all \
+              --json headRepositoryOwner \
+              --jq "[.[] | select(.headRepositoryOwner.login == \"$GITHUB_REPOSITORY_OWNER\")] | length")
             if [ "$existing" != "0" ]; then
               echo "A PR for sync/$tag already exists (open or closed); nothing to do."
               tag=""
@@ -59,6 +65,7 @@ jobs:
         run: |
           git push --force origin "$(git rev-parse "$TAG^{commit}"):refs/heads/sync/$TAG"
           gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
             --base "$BASE" \
             --head "sync/$TAG" \
             --title "sync: upstream $TAG" \
