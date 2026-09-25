@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -92,6 +93,9 @@ func (handler WebhookOutbox) Redeliver(c fiber.Ctx) error {
 		return outboxOff(c)
 	}
 	row, err := outbox.Redeliver(c.Context(), c.Params("event_id"))
+	if errors.Is(err, webhookoutbox.ErrAlreadyPending) {
+		return c.Status(http.StatusConflict).JSON(utils.ResponseData{Status: http.StatusConflict, Code: "DELIVERY_PENDING", Message: "the delivery is still queued; its worker will send it"})
+	}
 	if err != nil {
 		return outboxFailure(c, err)
 	}

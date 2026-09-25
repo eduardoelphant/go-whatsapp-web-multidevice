@@ -121,3 +121,19 @@ func TestWebhookOutboxRoutes(t *testing.T) {
 		t.Fatalf("replay %d %v", status, body)
 	}
 }
+
+func TestRedeliverOfAPendingRowIsAConflict(t *testing.T) {
+	store, err := webhookoutbox.OpenStore("file:" + filepath.Join(t.TempDir(), "outbox.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	resolve := func(context.Context, string) (string, bool, error) { return "", false, nil }
+	outbox := webhookoutbox.New(store, resolve, webhookoutbox.DefaultPolicy)
+	row, _ := outbox.Enqueue(context.Background(), "http://a.test/hook", "global", "message", map[string]any{"event": "message"})
+
+	status, body := callOutbox(t, newOutboxTestApp(outbox), http.MethodPost, "/webhooks/deliveries/"+row.EventID+"/redeliver")
+	if status != http.StatusConflict || body["code"] != "DELIVERY_PENDING" {
+		t.Fatalf("redeliver pending = %d %v", status, body)
+	}
+}
