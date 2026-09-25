@@ -264,3 +264,18 @@ func TestStartDurableWebhooksModes(t *testing.T) {
 		t.Fatalf("durable mode: err %v, enabled %v", err, durableWebhooksEnabled())
 	}
 }
+
+func TestDurableSubmitQueuesAfterTheCallerDeadlinePassed(t *testing.T) {
+	outbox := useTestOutbox(t)
+	// The caller's deadline can be spent building the payload (media download).
+	ctx, cancel := context.WithTimeout(context.Background(), -time.Second)
+	defer cancel()
+	ctx, failed := withHandlerFailureFlag(ctx)
+
+	if err := submitWebhookDurable(ctx, map[string]any{"event": "message"}, "http://a.test/hook", nil); err != nil || failed.Load() {
+		t.Fatalf("err = %v, failed = %v", err, failed.Load())
+	}
+	if rows := pendingRows(t, outbox); len(rows) != 1 {
+		t.Fatalf("rows %+v", rows)
+	}
+}

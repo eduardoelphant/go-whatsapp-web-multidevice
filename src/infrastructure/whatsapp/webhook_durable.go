@@ -25,6 +25,9 @@ const (
 	webhookDeliveryEnv = "WHATSAPP_WEBHOOK_DELIVERY"
 	webhookOutboxDBEnv = "WHATSAPP_WEBHOOK_OUTBOX_DB"
 	defaultOutboxDBURI = "file:storages/webhook-outbox.db"
+	// outboxWriteTimeout bounds one outbox insert. It is separate from the
+	// caller's deadline, which building the payload (media download) can spend.
+	outboxWriteTimeout = 10 * time.Second
 )
 
 // durableOutbox is nil in direct mode.
@@ -76,7 +79,9 @@ func submitWebhookDurable(ctx context.Context, payload map[string]any, url strin
 		// A typing indicator is worthless hours later: send it directly.
 		return submitWebhook(ctx, payload, url, webhookConfig)
 	}
-	if _, err := durableOutbox.Enqueue(ctx, url, webhookConfigRef(payload, webhookConfig), eventName, payload); err != nil {
+	enqueueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), outboxWriteTimeout)
+	defer cancel()
+	if _, err := durableOutbox.Enqueue(enqueueCtx, url, webhookConfigRef(payload, webhookConfig), eventName, payload); err != nil {
 		markHandlerFailed(ctx)
 		return fmt.Errorf("queue webhook %s for %s: %w", eventName, url, err)
 	}
