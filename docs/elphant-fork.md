@@ -123,15 +123,28 @@ Per event: `message` adds `type`, `text`, `media`, `location`, `contact`, `quote
 `emoji` (`null` = removed); `message.revoked` adds `target_id`; `message.ack` adds `status`
 (`delivered`, `read`, `played`) and `ids`.
 
+On `message.ack`, `is_from_me` tells the direction: `false` means the contact received or read
+your messages listed in `ids`; `true` means you read the contact's messages on another device
+(WhatsApp's "read self" receipt).
+
 ## `GET /message/:message_id/media`
 
 Streams the media of a stored message (Basic Auth, `X-Device-Id`). The file goes through a temp
 file that is deleted after the response; nothing is written to `/statics`. `404` when the message
 has no media, `410` when WhatsApp no longer has it: download soon after the webhook arrives.
 
+- `stable.media.url` is relative to the server root; with `APP_BASE_PATH` set, prefix it.
+- The response `Content-Type` is sniffed from the file (with the extension as fallback); the
+  webhook's `stable.media.mime` is the authoritative value.
+- The download has its own 10-minute deadline (the global request timeout is 45 s). The temp file
+  lives in the container's temp directory until the response ends.
+
 ## Stable payload audit
 
-With `WHATSAPP_STABLE_AUDIT_DIR` set, each new shape of `payload.stable` (event, type and non-null
-keys) is saved anonymized, at most 3 samples per shape. Reviewed samples go to
+With `WHATSAPP_STABLE_AUDIT_DIR` set as a real environment variable (it is not read from
+`src/.env`), each new shape of `payload.stable` (event, type and non-null keys) is saved
+anonymized, at most 3 samples per shape, under `<dir>/<event>/<type>/`. Samples of `type:
+"unknown"` messages get a `.fields.txt` sidecar with the names (never the values) of the populated
+WhatsApp proto fields. Writing never delays delivery: when the disk is slow, samples are dropped. Reviewed samples go to
 `contract/fixtures/real/`, and `cd contract && go run ./cmd/compare` reports real shapes without a
 synthetic fixture.
