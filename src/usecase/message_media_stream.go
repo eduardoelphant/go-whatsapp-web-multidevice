@@ -67,7 +67,9 @@ func (service serviceMessage) StreamMedia(ctx context.Context, messageID string)
 		return domainMessage.MediaStream{}, err
 	}
 	if err := mediaStreamDownloadFn(ctx, client, downloadable, file); err != nil {
-		if errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith404) || errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith410) {
+		// whatsmeow stops retrying on 403, 404 and 410: the CDN no longer has the file.
+		if errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403) || errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith404) ||
+			errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith410) {
 			return fail(domainMessage.ErrMediaGone)
 		}
 		return fail(fmt.Errorf("download media %s: %w", messageID, err))

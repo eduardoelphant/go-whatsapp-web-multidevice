@@ -53,12 +53,21 @@ func TestStreamMediaNotFound(t *testing.T) {
 }
 
 func TestStreamMediaGone(t *testing.T) {
-	withDownload(t, func(context.Context, *whatsmeow.Client, whatsmeow.DownloadableMessage, *os.File) error {
-		return whatsmeow.ErrMediaDownloadFailedWith410
-	})
-	svc := serviceMessage{chatStorageRepo: mediaStreamRepo{msg: storedImage}}
-	if _, err := svc.StreamMedia(mediaStreamCtx(), "IMG1"); !errors.Is(err, domainMessage.ErrMediaGone) {
-		t.Fatalf("err = %v, want ErrMediaGone", err)
+	// whatsmeow stops retrying on 403, 404 and 410: all mean the CDN no longer has the file.
+	for name, cdnErr := range map[string]error{
+		"403": whatsmeow.ErrMediaDownloadFailedWith403,
+		"404": whatsmeow.ErrMediaDownloadFailedWith404,
+		"410": whatsmeow.ErrMediaDownloadFailedWith410,
+	} {
+		t.Run(name, func(t *testing.T) {
+			withDownload(t, func(context.Context, *whatsmeow.Client, whatsmeow.DownloadableMessage, *os.File) error {
+				return cdnErr
+			})
+			svc := serviceMessage{chatStorageRepo: mediaStreamRepo{msg: storedImage}}
+			if _, err := svc.StreamMedia(mediaStreamCtx(), "IMG1"); !errors.Is(err, domainMessage.ErrMediaGone) {
+				t.Fatalf("err = %v, want ErrMediaGone", err)
+			}
+		})
 	}
 }
 
