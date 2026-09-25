@@ -26,6 +26,9 @@ jobs:
       - name: Test
         working-directory: src
         run: go test ./...
+      - name: Contract vet
+        working-directory: contract
+        run: go vet ./...
       - name: Contract tests
         working-directory: contract
         run: go test ./...

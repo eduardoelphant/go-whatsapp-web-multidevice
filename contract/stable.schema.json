@@ -101,7 +101,7 @@
     "ack": {
       "type": "object", "allOf": [{ "$ref": "#/$defs/base" }], "unevaluatedProperties": false,
       "required": ["status", "ids"],
-      "properties": { "status": { "enum": ["delivered", "read", "played"] }, "ids": { "type": "array", "minItems": 1, "items": { "type": "string" } } }
+      "properties": { "status": { "enum": ["delivered", "read", "played"] }, "ids": { "type": "array", "items": { "type": "string" } } }
     }
   }
 }

@@ -7,6 +7,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.mau.fi/whatsmeow/proto/waCommon"
@@ -109,5 +110,19 @@ func TestGoldenFixtures(t *testing.T) {
 				t.Fatalf("fixture %s drifted; rerun with -update if intended\n--- got\n%s", path, got)
 			}
 		})
+	}
+}
+
+func TestNoOrphanFixtures(t *testing.T) {
+	cases := goldenCases()
+	files, err := filepath.Glob(filepath.Join(fixtureDir, "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		name := strings.TrimSuffix(filepath.Base(f), ".json")
+		if _, ok := cases[name]; !ok {
+			t.Errorf("fixture %s has no golden case; delete it or add the case", f)
+		}
 	}
 }
