@@ -324,6 +324,11 @@ func handleReceipt(ctx context.Context, evt *events.Receipt, deviceID string, cl
 
 	// Forward receipt (ack) event to webhook or Chatwoot if configured
 	// Note: Receipt events are not rate limited as they are critical for message delivery status
+	if sendReceipt && durableWebhooksEnabled() {
+		// Fork (elphant): queue the ack in the handler. See webhook_durable.go.
+		forwardReceiptDurably(ctx, evt, deviceID, client)
+		return
+	}
 	if sendReceipt {
 		go func(e *events.Receipt, c *whatsmeow.Client) {
 			webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)

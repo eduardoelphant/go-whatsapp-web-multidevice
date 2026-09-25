@@ -193,6 +193,11 @@ func handleWebhookForward(ctx context.Context, evt *events.Message, client *what
 	if len(preparedPoll) > 0 {
 		pollPayload = preparedPoll[0]
 	}
+	if durableWebhooksEnabled() {
+		// Fork (elphant): queue in the handler so a failed write withholds the ack. See webhook_durable.go.
+		forwardMessageDurably(ctx, client, evt, pollPayload)
+		return
+	}
 	go func(e *events.Message, c *whatsmeow.Client, poll *webhookPollPayload) {
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()

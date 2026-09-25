@@ -118,9 +118,8 @@ func InitWaCLI(ctx context.Context, storeContainer, keysStoreContainer *sqlstore
 	deviceRepo := newDeviceChatStorage(instanceID, chatStorageRepo)
 	instance := NewDeviceInstance(instanceID, client, deviceRepo)
 
-	client.AddEventHandler(func(rawEvt any) {
-		handler(ctx, instance, rawEvt)
-	})
+	// Fork (elphant): success-status handler for durable webhooks. See webhook_durable.go.
+	registerEventHandler(ctx, client, instance)
 
 	// Register device instance in the manager for multi-device awareness
 	// Use EnsureDefault to avoid creating duplicates when a device with matching JID already exists

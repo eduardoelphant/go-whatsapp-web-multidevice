@@ -6,11 +6,14 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/webhookoutbox"
 	"github.com/sirupsen/logrus"
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types/events"
 )
 
 // Fork (elphant): durable webhook delivery (G3). With
@@ -138,5 +141,45 @@ func withHandlerFailureFlag(ctx context.Context) (context.Context, *atomic.Bool)
 func markHandlerFailed(ctx context.Context) {
 	if failed, ok := ctx.Value(handlerFailureKey{}).(*atomic.Bool); ok {
 		failed.Store(true)
+	}
+}
+
+// registerEventHandler attaches the device event handler with a success
+// status. In durable mode the client also keeps decrypted events in
+// whatsmeow's buffer: a message whose handler failed is not acked, and when
+// WhatsApp redelivers it, whatsmeow reads it back from the buffer instead of
+// failing to decrypt it a second time.
+func registerEventHandler(ctx context.Context, client *whatsmeow.Client, instance *DeviceInstance) {
+	client.EnableDecryptedEventBuffer = durableWebhooksEnabled()
+	client.AddEventHandlerWithSuccessStatus(func(rawEvt any) bool {
+		return handleEventWithStatus(ctx, instance, rawEvt)
+	})
+}
+
+// handleEventWithStatus runs the handler and reports false when a webhook of
+// this event could not be queued. It is always true in direct mode.
+func handleEventWithStatus(ctx context.Context, instance *DeviceInstance, rawEvt any) bool {
+	ctx, failed := withHandlerFailureFlag(ctx)
+	handler(ctx, instance, rawEvt)
+	return !failed.Load()
+}
+
+// forwardMessageDurably is handleWebhookForward in durable mode: it runs in
+// the event handler, so a queue error reaches handleEventWithStatus before
+// whatsmeow acks the message.
+func forwardMessageDurably(ctx context.Context, client *whatsmeow.Client, evt *events.Message, poll *webhookPollPayload) {
+	webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := forwardMessageToWebhook(webhookCtx, client, evt, poll); err != nil {
+		logrus.Error("Failed forward to webhook: ", err)
+	}
+}
+
+// forwardReceiptDurably is the receipt forward of handleReceipt in durable mode.
+func forwardReceiptDurably(ctx context.Context, evt *events.Receipt, deviceID string, client *whatsmeow.Client) {
+	webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := forwardReceiptToWebhook(webhookCtx, evt, deviceID, client); err != nil {
+		logrus.Errorf("Failed to forward ack event to webhook: %v", err)
 	}
 }

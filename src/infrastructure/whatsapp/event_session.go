@@ -164,9 +164,20 @@ func EmitSessionStatus(ctx context.Context, instance *DeviceInstance, status Ses
 	})
 }
 
-// sessionStatusDispatch runs a session.status delivery off the caller's
-// goroutine. Tests replace it to wait for deliveries or to skip them.
-var sessionStatusDispatch = func(deliver func()) { go deliver() }
+// sessionStatusDispatch runs a session.status delivery. Tests replace it to
+// wait for deliveries or to skip them.
+var sessionStatusDispatch = dispatchSessionStatus
+
+// dispatchSessionStatus delivers off the caller's goroutine, except in
+// durable mode: there delivery is only an outbox write, so it runs in the
+// caller and events are queued in the order they happened.
+func dispatchSessionStatus(deliver func()) {
+	if durableWebhooksEnabled() {
+		deliver()
+		return
+	}
+	go deliver()
+}
 
 // handleSessionEvent emits session.status for lifecycle events and ignores the rest.
 func handleSessionEvent(ctx context.Context, instance *DeviceInstance, rawEvt any) {

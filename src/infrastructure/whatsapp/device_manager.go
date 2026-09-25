@@ -850,9 +850,8 @@ func (m *DeviceManager) EnsureClient(ctx context.Context, deviceID string) (*Dev
 		inst.SetChatStorage(repo)
 	}
 
-	client.AddEventHandler(func(rawEvt any) {
-		handler(ctx, inst, rawEvt)
-	})
+	// Fork (elphant): success-status handler for durable webhooks. See webhook_durable.go.
+	registerEventHandler(ctx, client, inst)
 
 	inst.SetOnLoggedOut(func(deviceID string) {
 		// On remote logout (device unlinked from the phone) keep the slot so it can
