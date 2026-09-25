@@ -122,6 +122,14 @@ func sessionStatusFromEvent(rawEvt any, now time.Time) (SessionStatus, bool) {
 		}, true
 	case *events.PairSuccess:
 		return SessionStatus{Status: SessionStatusPairSuccess}, true
+	case *events.PairPasskeyRequest:
+		return SessionStatus{Status: SessionStatusPasskeyRequired}, true
+	case *events.PairPasskeyConfirmation:
+		return SessionStatus{Status: SessionStatusPasskeyConfirmation}, true
+	case *events.PairError:
+		return SessionStatus{Status: SessionStatusPairError, Reason: sessionErrorReason(evt.Error)}, true
+	case *events.PairPasskeyError:
+		return SessionStatus{Status: SessionStatusPairError, Reason: sessionErrorReason(evt.Error)}, true
 	}
 	return SessionStatus{}, false
 }
@@ -160,4 +168,21 @@ func handleSessionEvent(ctx context.Context, instance *DeviceInstance, rawEvt an
 	if status, ok := sessionStatusFromEvent(rawEvt, time.Now()); ok {
 		EmitSessionStatus(ctx, instance, status)
 	}
+}
+
+// NewQRSessionStatus describes a QR code handed out by the login QR channel.
+// The code expires after timeout, when the channel hands out the next one.
+func NewQRSessionStatus(code string, timeout time.Duration, now time.Time) SessionStatus {
+	return SessionStatus{
+		Status:    SessionStatusQR,
+		QRCode:    &code,
+		ExpiresAt: sessionPtr(now.Add(timeout)),
+	}
+}
+
+func sessionErrorReason(err error) *string {
+	if err == nil {
+		return nil
+	}
+	return sessionPtr(err.Error())
 }

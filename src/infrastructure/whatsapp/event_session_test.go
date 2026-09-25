@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -268,5 +269,62 @@ func TestSessionStatusRespectsEventWhitelist(t *testing.T) {
 func TestSessionStatusNotForwardedToChatwoot(t *testing.T) {
 	if shouldForwardEventToChatwoot(SessionStatusEvent) {
 		t.Fatal("session.status must not be forwarded to Chatwoot")
+	}
+}
+
+func TestSessionStatusFromPairingEvents(t *testing.T) {
+	cases := []struct {
+		name string
+		evt  any
+		want SessionStatus
+	}{
+		{"passkey request", &events.PairPasskeyRequest{}, SessionStatus{Status: SessionStatusPasskeyRequired}},
+		{"passkey confirmation", &events.PairPasskeyConfirmation{Code: "ABCD-EFGH"}, SessionStatus{Status: SessionStatusPasskeyConfirmation}},
+		{"pair error", &events.PairError{Error: errors.New("bad signature")},
+			SessionStatus{Status: SessionStatusPairError, Reason: sessionPtr("bad signature")}},
+		{"passkey error", &events.PairPasskeyError{Error: errors.New("assertion rejected")},
+			SessionStatus{Status: SessionStatusPairError, Reason: sessionPtr("assertion rejected")}},
+		{"pair error without error value", &events.PairError{}, SessionStatus{Status: SessionStatusPairError}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := sessionStatusFromEvent(tc.evt, sessionTestNow)
+			if !ok {
+				t.Fatalf("sessionStatusFromEvent(%T) returned ok=false", tc.evt)
+			}
+			if !reflect.DeepEqual(got.Payload(), tc.want.Payload()) {
+				t.Fatalf("payload = %#v, want %#v", got.Payload(), tc.want.Payload())
+			}
+		})
+	}
+}
+
+func TestNewQRSessionStatus(t *testing.T) {
+	payload := NewQRSessionStatus("2@abc,def", 60*time.Second, sessionTestNow).Payload()
+	want := map[string]any{
+		"status":     SessionStatusQR,
+		"reason":     nil,
+		"code":       nil,
+		"expires_at": "2026-09-24T12:01:00Z",
+		"qr_code":    "2@abc,def",
+	}
+	if !reflect.DeepEqual(payload, want) {
+		t.Fatalf("payload = %#v, want %#v", payload, want)
+	}
+}
+
+func TestHandlerPasskeyRequestEmitsSessionStatus(t *testing.T) {
+	got := captureSessionWebhooks(t)
+	instance := NewDeviceInstance("session-passkey", nil, nil)
+
+	go handler(context.Background(), instance, &events.PairPasskeyRequest{})
+	if msg := recvBroadcast(t); msg.Code != "PASSKEY_REQUEST" {
+		t.Fatalf("broadcast code = %s, want PASSKEY_REQUEST", msg.Code)
+	}
+
+	body := waitSessionWebhook(t, got, "session-passkey")
+	payload, _ := body["payload"].(map[string]any)
+	if payload["status"] != SessionStatusPasskeyRequired {
+		t.Fatalf("status = %v, want %s", payload["status"], SessionStatusPasskeyRequired)
 	}
 }

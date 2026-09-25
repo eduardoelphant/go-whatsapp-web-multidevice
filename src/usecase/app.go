@@ -79,6 +79,8 @@ func (service *serviceApp) Login(ctx context.Context, deviceID string) (response
 			response.Code = evt.Code
 			response.Duration = evt.Timeout / time.Second / 2
 			if evt.Event == "code" {
+				// Fork (elphant): session.status webhook for each QR code.
+				whatsapp.EmitSessionStatus(context.Background(), instance, whatsapp.NewQRSessionStatus(evt.Code, evt.Timeout, time.Now()))
 				qrPath := fmt.Sprintf("%s/scan-qr-%s.png", config.PathQrCode, fiberUtils.UUIDv4())
 				if err := qrcode.WriteFile(evt.Code, qrcode.Medium, 512, qrPath); err != nil {
 					logrus.Errorf("[LOGIN][%s] Error when write qr code to file: %v", deviceID, err)
@@ -90,12 +92,17 @@ func (service *serviceApp) Login(ctx context.Context, deviceID string) (response
 						logrus.Errorf("[LOGIN][%s] error when remove qrImage file: %v", deviceID, err)
 					}
 				}(qrPath, response.Duration)
+				// Fork (elphant): the HTTP caller reads only the first image. A blocking
+				// send stalled this loop from the third code on, so later codes and the
+				// timeout were never read. Drop paths nobody is waiting for.
 				select {
 				case chImage <- qrPath:
-				case <-qrCtx.Done():
-					logrus.Warnf("[LOGIN][%s] QR context canceled while sending QR path", deviceID)
-					return
+				default:
 				}
+			} else if evt.Event == whatsmeow.QRChannelTimeout.Event {
+				// Fork (elphant): the QR codes ran out without a scan.
+				logrus.Warnf("[LOGIN][%s] QR codes expired without a scan", deviceID)
+				whatsapp.EmitSessionStatus(context.Background(), instance, whatsapp.SessionStatus{Status: whatsapp.SessionStatusQRTimeout})
 			} else if evt.Event == whatsmeow.QRChannelEventPasskeyRequest || evt.Event == whatsmeow.QRChannelEventPasskeyResponse {
 				// Passkey events are broadcast by the global event handler and served via /app/passkey endpoints.
 				logrus.Infof("[LOGIN][%s] passkey pairing event: %s", deviceID, evt.Event)
