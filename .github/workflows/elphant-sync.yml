@@ -1,0 +1,63 @@
+name: Elphant upstream sync
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Branch that receives the sync PR"
+        required: false
+        default: elphant
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      BASE: ${{ inputs.base || 'elphant' }}
+      UPSTREAM: https://github.com/aldinokemal/go-whatsapp-web-multidevice
+    steps:
+      # SYNC_TOKEN (fine-grained, this fork only: Contents, Pull requests and
+      # Workflows read/write). GITHUB_TOKEN cannot push upstream commits that
+      # touch .github/workflows, and PRs it opens do not trigger Elphant CI.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.BASE }}
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Fetch upstream tags
+        run: git fetch --no-tags "$UPSTREAM.git" '+refs/tags/*:refs/tags/*'
+
+      - name: Pick the tag to sync
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          tag=$(bash .github/scripts/elphant-sync-tag.sh "origin/$BASE")
+          if [ -n "$tag" ]; then
+            existing=$(gh pr list --head "sync/$tag" --state all --json number --jq 'length')
+            if [ "$existing" != "0" ]; then
+              echo "A PR for sync/$tag already exists (open or closed); nothing to do."
+              tag=""
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Open the sync PR
+        if: steps.pick.outputs.tag != ''
+        env:
+          TAG: ${{ steps.pick.outputs.tag }}
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          git push --force origin "$(git rev-parse "$TAG^{commit}"):refs/heads/sync/$TAG"
+          gh pr create \
+            --base "$BASE" \
+            --head "sync/$TAG" \
+            --title "sync: upstream $TAG" \
+            --body "Upstream release: $UPSTREAM/releases/tag/$TAG
+
+          Merge with **Create a merge commit**. Never squash or rebase: the fork keeps the upstream history so every published image stays reproducible."
