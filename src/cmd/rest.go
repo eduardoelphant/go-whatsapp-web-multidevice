@@ -157,6 +157,9 @@ func restServer(_ *cobra.Command, _ []string) {
 	// App info (version, limits) for standalone UIs; no device required
 	rest.InitRestAppInfo(apiGroup)
 
+	// Fork (elphant): durable webhook outbox operations; 404 unless WHATSAPP_WEBHOOK_DELIVERY=durable.
+	rest.InitRestWebhookOutbox(apiGroup, whatsapp.DurableWebhookOutbox)
+
 	// MCP endpoint — same usecase instances as REST, so both surfaces share
 	// one whatsmeow session. With OAuth disabled it keeps the existing global
 	// Basic Auth behavior; OAuth-enabled MCP was already mounted above.
