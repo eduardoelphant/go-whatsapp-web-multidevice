@@ -2,7 +2,7 @@ package rest
 
 import (
 	"errors"
-	"fmt"
+	"mime"
 	"net/http"
 
 	domainMessage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/message"
@@ -24,8 +24,18 @@ func (controller *Message) StreamMedia(c fiber.Ctx) error {
 		utils.PanicIfNeeded(err)
 	}
 	c.Set(fiber.HeaderContentType, stream.Mime)
-	if stream.Filename != "" {
-		c.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", stream.Filename))
-	}
+	c.Set(fiber.HeaderContentDisposition, attachmentDisposition(stream.Filename))
 	return c.SendStream(stream.File, int(stream.Size))
+}
+
+// attachmentDisposition encodes the filename per RFC 2231/6266 (non-ASCII as
+// filename*=utf-8”…); an empty or unencodable name gives a bare "attachment".
+func attachmentDisposition(filename string) string {
+	if filename == "" {
+		return "attachment"
+	}
+	if v := mime.FormatMediaType("attachment", map[string]string{"filename": filename}); v != "" {
+		return v
+	}
+	return "attachment"
 }

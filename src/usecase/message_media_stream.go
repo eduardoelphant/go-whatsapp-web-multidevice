@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	domainMessage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/message"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
@@ -18,6 +21,10 @@ import (
 
 // Fork (elphant): streams a message's media to the caller through a temp
 // file that is deleted when the stream is closed; nothing lands in /statics.
+
+// mediaStreamDownloadTimeout replaces the global 45s request deadline for the
+// download itself, so large media does not fail halfway.
+const mediaStreamDownloadTimeout = 10 * time.Minute
 
 var mediaStreamDownloadFn = func(ctx context.Context, client *whatsmeow.Client, msg whatsmeow.DownloadableMessage, file *os.File) error {
 	return client.DownloadToFile(ctx, msg, file)
@@ -66,7 +73,9 @@ func (service serviceMessage) StreamMedia(ctx context.Context, messageID string)
 		_ = os.RemoveAll(dir)
 		return domainMessage.MediaStream{}, err
 	}
-	if err := mediaStreamDownloadFn(ctx, client, downloadable, file); err != nil {
+	dlCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), mediaStreamDownloadTimeout)
+	defer cancel()
+	if err := mediaStreamDownloadFn(dlCtx, client, downloadable, file); err != nil {
 		// whatsmeow stops retrying on 403, 404 and 410: the CDN no longer has the file.
 		if errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403) || errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith404) ||
 			errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith410) {
@@ -86,7 +95,28 @@ func (service serviceMessage) StreamMedia(ctx context.Context, messageID string)
 	return domainMessage.MediaStream{
 		File:     &tempMediaFile{File: file, dir: dir},
 		Size:     info.Size(),
-		Mime:     http.DetectContentType(head[:n]),
+		Mime:     mediaMime(http.DetectContentType(head[:n]), stored.MediaType, stored.Filename),
 		Filename: stored.Filename,
 	}, nil
+}
+
+// mediaMime refines the sniffed Content-Type: sniffing cannot tell a docx from
+// a zip or a voice note from generic Ogg, so generic results fall back to the
+// file extension, and Ogg audio is reported as audio/ogg. stable.media.mime
+// from the webhook stays the authoritative value.
+func mediaMime(sniffed, mediaType, filename string) string {
+	generic := sniffed == "application/octet-stream" || sniffed == "application/zip" ||
+		sniffed == "application/ogg" || strings.HasPrefix(sniffed, "text/plain")
+	if !generic {
+		return sniffed
+	}
+	if ext := filepath.Ext(filename); ext != "" {
+		if byExt := mime.TypeByExtension(strings.ToLower(ext)); byExt != "" {
+			return byExt
+		}
+	}
+	if mediaType == "audio" && sniffed == "application/ogg" {
+		return "audio/ogg"
+	}
+	return sniffed
 }

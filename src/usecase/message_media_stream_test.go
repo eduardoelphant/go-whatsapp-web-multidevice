@@ -17,10 +17,14 @@ import (
 
 type mediaStreamRepo struct {
 	domainChatStorage.IChatStorageRepository
-	msg *domainChatStorage.Message
+	msg      *domainChatStorage.Message
+	deviceID *string
 }
 
-func (r mediaStreamRepo) GetMessageByIDAndDevice(_, _ string) (*domainChatStorage.Message, error) {
+func (r mediaStreamRepo) GetMessageByIDAndDevice(deviceID, _ string) (*domainChatStorage.Message, error) {
+	if r.deviceID != nil {
+		*r.deviceID = deviceID
+	}
 	return r.msg, nil
 }
 
@@ -117,4 +121,55 @@ func dirOf(path string) string {
 		}
 	}
 	return path
+}
+
+func TestStreamMediaScopesTheLookupToTheDeviceStorageID(t *testing.T) {
+	withDownload(t, func(_ context.Context, _ *whatsmeow.Client, _ whatsmeow.DownloadableMessage, f *os.File) error {
+		_, err := f.Write([]byte("x"))
+		return err
+	})
+	var got string
+	svc := serviceMessage{chatStorageRepo: mediaStreamRepo{msg: storedImage, deviceID: &got}}
+	stream, err := svc.StreamMedia(mediaStreamCtx(), "IMG1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = stream.File.Close()
+	if got != "5511900000009@s.whatsapp.net" {
+		t.Fatalf("device id = %q, want the store JID without device suffix", got)
+	}
+}
+
+func TestStreamMediaDownloadOutlivesTheRequestDeadline(t *testing.T) {
+	withDownload(t, func(ctx context.Context, _ *whatsmeow.Client, _ whatsmeow.DownloadableMessage, f *os.File) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		_, err := f.Write([]byte("x"))
+		return err
+	})
+	ctx, cancel := context.WithCancel(mediaStreamCtx())
+	cancel() // the 45s request deadline already fired
+	svc := serviceMessage{chatStorageRepo: mediaStreamRepo{msg: storedImage}}
+	stream, err := svc.StreamMedia(ctx, "IMG1")
+	if err != nil {
+		t.Fatalf("err = %v, want the download to use its own deadline", err)
+	}
+	_ = stream.File.Close()
+}
+
+func TestMediaMime(t *testing.T) {
+	cases := []struct{ sniffed, mediaType, filename, want string }{
+		{"image/jpeg", "image", "", "image/jpeg"},
+		{"application/ogg", "audio", "", "audio/ogg"},
+		{"application/zip", "document", "report.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+		{"application/octet-stream", "document", "data.csv", "text/csv; charset=utf-8"},
+		{"application/octet-stream", "document", "noext", "application/octet-stream"},
+		{"application/pdf", "document", "a.pdf", "application/pdf"},
+	}
+	for _, tc := range cases {
+		if got := mediaMime(tc.sniffed, tc.mediaType, tc.filename); got != tc.want {
+			t.Errorf("mediaMime(%q, %q, %q) = %q, want %q", tc.sniffed, tc.mediaType, tc.filename, got, tc.want)
+		}
+	}
 }
