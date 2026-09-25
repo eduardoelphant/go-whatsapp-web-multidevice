@@ -154,14 +154,18 @@ func EmitSessionStatus(ctx context.Context, instance *DeviceInstance, status Ses
 		return
 	}
 	body := buildSessionStatusBody(instance, status)
-	go func() {
+	sessionStatusDispatch(func() {
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := forwardPayloadToConfiguredWebhooks(webhookCtx, body, SessionStatusEvent); err != nil {
 			logrus.Errorf("Failed to forward %s %q for device %s: %v", SessionStatusEvent, status.Status, instance.ID(), err)
 		}
-	}()
+	})
 }
+
+// sessionStatusDispatch runs a session.status delivery off the caller's
+// goroutine. Tests replace it to wait for deliveries or to skip them.
+var sessionStatusDispatch = func(deliver func()) { go deliver() }
 
 // handleSessionEvent emits session.status for lifecycle events and ignores the rest.
 func handleSessionEvent(ctx context.Context, instance *DeviceInstance, rawEvt any) {

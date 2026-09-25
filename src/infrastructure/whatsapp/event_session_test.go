@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,33 @@ import (
 )
 
 var sessionTestNow = time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+
+func init() {
+	// Every test in this package that calls handler would otherwise leave
+	// session.status deliveries running while later tests swap config and
+	// submitWebhookFn. Tests that check delivery opt in with trackSessionDispatch.
+	sessionStatusDispatch = func(func()) {}
+}
+
+// trackSessionDispatch delivers session.status asynchronously, as in
+// production, and waits for every delivery when the test ends. Call it after
+// registering cleanups that restore globals, so the wait runs before them.
+func trackSessionDispatch(t *testing.T) {
+	t.Helper()
+	previous := sessionStatusDispatch
+	var inFlight sync.WaitGroup
+	sessionStatusDispatch = func(deliver func()) {
+		inFlight.Add(1)
+		go func() {
+			defer inFlight.Done()
+			deliver()
+		}()
+	}
+	t.Cleanup(func() {
+		inFlight.Wait()
+		sessionStatusDispatch = previous
+	})
+}
 
 func TestSessionStatusFromEvent(t *testing.T) {
 	cases := []struct {
@@ -137,6 +165,7 @@ func captureSessionWebhooks(t *testing.T) <-chan map[string]any {
 		submitWebhookFn = originalSubmit
 		webhookStorageForTest = originalStorage
 	})
+	trackSessionDispatch(t)
 	return got
 }
 
@@ -209,12 +238,15 @@ func TestHandlerDoesNotBlockOnSlowSessionWebhook(t *testing.T) {
 		<-release
 		return nil
 	}
+	// Cleanups run last-registered first: release the stuck delivery, wait for
+	// it, then restore the globals it reads.
 	t.Cleanup(func() {
-		close(release)
 		config.WhatsappWebhook = originalWebhooks
 		submitWebhookFn = originalSubmit
 		webhookStorageForTest = originalStorage
 	})
+	trackSessionDispatch(t)
+	t.Cleanup(func() { close(release) })
 
 	done := make(chan struct{})
 	go func() {
