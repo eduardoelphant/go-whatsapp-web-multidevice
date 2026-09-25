@@ -1,0 +1,35 @@
+{
+  "event": "message",
+  "stable": {
+    "schema": 1,
+    "id": "3EB0000000000000000001",
+    "timestamp": "2026-09-25T12:00:00Z",
+    "is_from_me": false,
+    "chat": {
+      "pn": "5511900000001@s.whatsapp.net",
+      "lid": "100000000000001@lid",
+      "is_group": false
+    },
+    "sender": {
+      "pn": "5511900000001@s.whatsapp.net",
+      "lid": "100000000000001@lid",
+      "push_name": "Contact One"
+    },
+    "type": "text",
+    "text": "answer",
+    "media": null,
+    "location": null,
+    "contact": null,
+    "quoted": {
+      "id": "3EB0000000000000000000",
+      "type": "text",
+      "text": "question",
+      "sender": {
+        "pn": "5511900000001@s.whatsapp.net",
+        "lid": "100000000000001@lid"
+      }
+    },
+    "forwarded": false,
+    "view_once": false
+  }
+}
