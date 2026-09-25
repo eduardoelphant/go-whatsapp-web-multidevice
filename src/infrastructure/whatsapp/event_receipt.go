@@ -96,5 +96,7 @@ func forwardReceiptToWebhook(ctx context.Context, evt *events.Receipt, deviceID 
 	}
 
 	payload := createReceiptPayload(ctx, evt, deviceID, client)
+	// Fork (elphant): payload.stable contract. See stable_payload.go.
+	addStableAck(ctx, client, evt, payload)
 	return forwardPayloadToConfiguredWebhooks(ctx, payload, "message.ack")
 }
