@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/sqlite"
@@ -108,7 +109,15 @@ type Store struct {
 
 // OpenStore opens (and creates) the outbox database in WAL mode.
 func OpenStore(uri string) (*Store, error) {
-	db, err := sql.Open(sqlite.DriverName, sqlite.FormatChatStorageURI(uri, true, false))
+	// WAL plus synchronous=FULL: a queued event survives an OS crash or power
+	// loss, which is the point of the outbox.
+	dsn := sqlite.FormatChatStorageURI(uri, true, false)
+	if strings.Contains(dsn, "?") {
+		dsn += "&" + fullSyncParam
+	} else {
+		dsn += "?" + fullSyncParam
+	}
+	db, err := sql.Open(sqlite.DriverName, dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -268,18 +277,31 @@ func (s *Store) CountPending(ctx context.Context, targetURL string) (int64, erro
 	return n, err
 }
 
-// Redeliver puts one row back in the queue with attempts reset, the same
-// event_id and replay set. It returns nil when eventID is unknown.
+// ErrAlreadyPending is returned by Redeliver for a row that is still queued:
+// its worker may be sending it right now and would overwrite the reset.
+var ErrAlreadyPending = errors.New("webhook delivery is still pending")
+
+// Redeliver puts one delivered or dead row back in the queue with attempts
+// reset, the same event_id and replay set. It returns nil when eventID is
+// unknown and ErrAlreadyPending when the row is still queued.
 func (s *Store) Redeliver(ctx context.Context, eventID string) (*Row, error) {
 	now := ms(s.clock())
-	res, err := s.db.ExecContext(ctx, `UPDATE webhook_outbox SET `+requeueSet+` WHERE event_id = ?`, now, now, eventID)
+	res, err := s.db.ExecContext(ctx, `UPDATE webhook_outbox SET `+requeueSet+` WHERE event_id = ? AND status != 'pending'`, now, now, eventID)
 	if err != nil {
 		return nil, err
 	}
-	if n, err := res.RowsAffected(); err != nil || n == 0 {
+	n, err := res.RowsAffected()
+	if err != nil {
 		return nil, err
 	}
-	return s.Get(ctx, eventID)
+	row, err := s.Get(ctx, eventID)
+	if err != nil || row == nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, ErrAlreadyPending
+	}
+	return row, nil
 }
 
 // Replay puts every delivered or dead row created at or after since (only

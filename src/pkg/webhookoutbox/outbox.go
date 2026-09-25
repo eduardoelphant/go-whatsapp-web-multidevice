@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -33,6 +34,9 @@ type Policy struct {
 	Timeout time.Duration
 	// MaxRetryAfter caps a receiver's Retry-After.
 	MaxRetryAfter time.Duration
+	// IdleTimeout is how long a worker with an empty queue waits before it
+	// exits; the next row for its URL starts a new one.
+	IdleTimeout time.Duration
 }
 
 // DefaultPolicy retries after 10 s, 30 s, 1, 2, 5, 10 and 30 minutes, then
@@ -45,6 +49,7 @@ var DefaultPolicy = Policy{
 	MaxAge:        72 * time.Hour,
 	Timeout:       10 * time.Second,
 	MaxRetryAfter: time.Hour,
+	IdleTimeout:   10 * time.Minute,
 }
 
 func (p Policy) withDefaults() Policy {
@@ -59,6 +64,9 @@ func (p Policy) withDefaults() Policy {
 	}
 	if p.MaxRetryAfter <= 0 {
 		p.MaxRetryAfter = DefaultPolicy.MaxRetryAfter
+	}
+	if p.IdleTimeout <= 0 {
+		p.IdleTimeout = DefaultPolicy.IdleTimeout
 	}
 	return p
 }
@@ -178,7 +186,7 @@ func (o *Outbox) wake(targetURL string) {
 }
 
 // run sends the URL's rows oldest first until ctx ends.
-func (o *Outbox) run(ctx context.Context, targetURL string, wake <-chan struct{}) {
+func (o *Outbox) run(ctx context.Context, targetURL string, wake chan struct{}) {
 	failing := false
 	for {
 		row, err := o.store.Head(ctx, targetURL)
@@ -186,15 +194,13 @@ func (o *Outbox) run(ctx context.Context, targetURL string, wake <-chan struct{}
 		case ctx.Err() != nil:
 			return
 		case err != nil:
-			logrus.Errorf("Webhook outbox: read queue of %s: %v", targetURL, err)
+			logrus.Errorf("Webhook outbox: read queue of %s: %v", redactURL(targetURL), err)
 			if !o.pause(ctx) {
 				return
 			}
 		case row == nil:
-			select {
-			case <-ctx.Done():
+			if !o.idle(ctx, targetURL, wake) {
 				return
-			case <-wake:
 			}
 		case row.NextAttemptAt.After(o.store.now()):
 			if !o.waitUntil(ctx, wake, row.NextAttemptAt) {
@@ -204,6 +210,37 @@ func (o *Outbox) run(ctx context.Context, targetURL string, wake <-chan struct{}
 			failing = o.attempt(ctx, row, failing)
 		}
 	}
+}
+
+// idle waits for a new row. After IdleTimeout without one the worker leaves
+// the map and reports false; wake starts a new worker for the next row. The
+// check runs under o.mu, which wake holds while signalling, so no signal is lost.
+func (o *Outbox) idle(ctx context.Context, targetURL string, wake chan struct{}) bool {
+	timer := time.NewTimer(o.policy.IdleTimeout)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-wake:
+		return true
+	case <-timer.C:
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	select {
+	case <-wake:
+		return true
+	default:
+	}
+	delete(o.workers, targetURL)
+	return false
+}
+
+// workerCount reports how many URL workers are running.
+func (o *Outbox) workerCount() int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return len(o.workers)
 }
 
 // waitUntil blocks until at, a wake signal or the end of ctx (then false).
@@ -246,17 +283,17 @@ func (o *Outbox) attempt(ctx context.Context, row *Row, failing bool) bool {
 	case outcomeDelivered:
 		err = o.store.MarkDelivered(ctx, row.ID, attempts, code)
 		if err == nil && failing {
-			logrus.Infof("Webhook outbox: %s recovered (%d pending)", row.TargetURL, o.pending(ctx, row.TargetURL))
+			logrus.Infof("Webhook outbox: %s recovered (%d pending)", redactURL(row.TargetURL), o.pending(ctx, row.TargetURL))
 		}
 		failing = false
 	case outcomeDead:
 		err = o.store.MarkDead(ctx, row.ID, attempts, reason, code)
-		logrus.Warnf("Webhook outbox: %s rejected %s %s (%s); marked dead", row.TargetURL, row.EventName, row.EventID, reason)
+		logrus.Warnf("Webhook outbox: %s rejected %s %s (%s); marked dead", redactURL(row.TargetURL), row.EventName, row.EventID, reason)
 	default:
 		now := o.store.now()
 		if now.Sub(row.QueuedAt) >= o.policy.MaxAge {
 			err = o.store.MarkDead(ctx, row.ID, attempts, "gave up after "+o.policy.MaxAge.String()+": "+reason, code)
-			logrus.Warnf("Webhook outbox: %s still failing after %s; %s %s marked dead", row.TargetURL, o.policy.MaxAge, row.EventName, row.EventID)
+			logrus.Warnf("Webhook outbox: %s still failing after %s; %s %s marked dead", redactURL(row.TargetURL), o.policy.MaxAge, row.EventName, row.EventID)
 		} else {
 			wait := o.policy.delay(attempts)
 			if code == http.StatusTooManyRequests && retryAfter > 0 {
@@ -264,7 +301,7 @@ func (o *Outbox) attempt(ctx context.Context, row *Row, failing bool) bool {
 			}
 			err = o.store.MarkRetry(ctx, row.ID, attempts, now.Add(wait), reason, code)
 			if !failing {
-				logrus.Warnf("Webhook outbox: %s failing (%s); %d pending, retrying in %s", row.TargetURL, reason, o.pending(ctx, row.TargetURL), wait)
+				logrus.Warnf("Webhook outbox: %s failing (%s); %d pending, retrying in %s", redactURL(row.TargetURL), reason, o.pending(ctx, row.TargetURL), wait)
 			}
 		}
 		failing = true
@@ -369,9 +406,24 @@ func classify(code int, err error) outcome {
 	}
 }
 
+// redactURL keeps scheme, host and path; query, fragment and credentials
+// can carry tokens and never reach logs or last_error.
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<invalid URL>"
+	}
+	return (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}).String()
+}
+
 func describe(code int, err error) string {
 	if err != nil {
 		msg := err.Error()
+		// url.Error repeats the full request URL, query tokens included.
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			msg = urlErr.Op + " " + redactURL(urlErr.URL) + ": " + urlErr.Err.Error()
+		}
 		if len(msg) > 500 {
 			msg = msg[:500]
 		}
