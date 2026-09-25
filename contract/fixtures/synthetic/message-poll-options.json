@@ -15,8 +15,8 @@
       "lid": "100000000000001@lid",
       "push_name": "Contact One"
     },
-    "type": "unknown",
-    "text": null,
+    "type": "poll",
+    "text": "Almoço?",
     "media": null,
     "location": null,
     "contact": null,
@@ -26,7 +26,13 @@
     "interactive": null,
     "reply": null,
     "referral": null,
-    "poll": null,
+    "poll": {
+      "options": [
+        "Sim",
+        "Não"
+      ],
+      "selectable_count": 1
+    },
     "poll_vote": null,
     "call": null,
     "product": null,

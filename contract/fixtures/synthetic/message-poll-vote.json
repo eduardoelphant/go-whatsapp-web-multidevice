@@ -15,7 +15,7 @@
       "lid": "100000000000001@lid",
       "push_name": "Contact One"
     },
-    "type": "unknown",
+    "type": "poll_vote",
     "text": null,
     "media": null,
     "location": null,
@@ -27,7 +27,11 @@
     "reply": null,
     "referral": null,
     "poll": null,
-    "poll_vote": null,
+    "poll_vote": {
+      "poll_id": "3EB0000000000000000000",
+      "selected": [],
+      "resolution": "encrypted"
+    },
     "call": null,
     "product": null,
     "order": null

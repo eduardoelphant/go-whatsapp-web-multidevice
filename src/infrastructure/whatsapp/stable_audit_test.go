@@ -162,3 +162,27 @@ func TestAnonymizeStableKeepsAdSourceButNotTrackingIDs(t *testing.T) {
 		t.Errorf("external_source = %v, want a placeholder", ep["external_source"])
 	}
 }
+
+func TestAnonymizeStableKeepsCommerceAndCallEnums(t *testing.T) {
+	in := map[string]any{
+		"call":      map[string]any{"outcome": "missed", "call_type": "regular"},
+		"poll_vote": map[string]any{"poll_id": "P1", "selected": []any{"Sim"}, "resolution": "resolved"},
+		"product":   map[string]any{"currency": "BRL", "title": "Camiseta da Ana", "price_1000": 59900.0},
+		"poll":      map[string]any{"options": []any{"Sim", "Não"}},
+	}
+	anon := anonymizeStable(in, "").(map[string]any)
+	call := anon["call"].(map[string]any)
+	vote := anon["poll_vote"].(map[string]any)
+	product := anon["product"].(map[string]any)
+	if call["outcome"] != "missed" || call["call_type"] != "regular" || vote["resolution"] != "resolved" || product["currency"] != "BRL" {
+		t.Fatalf("closed-set values lost: call=%v vote=%v product=%v", call, vote, product)
+	}
+	if product["price_1000"] != 0.0 || vote["poll_id"] == "P1" || product["title"] == "Camiseta da Ana" {
+		t.Fatalf("personal values survived: vote=%v product=%v", vote, product)
+	}
+	for _, v := range append(vote["selected"].([]any), anon["poll"].(map[string]any)["options"].([]any)...) {
+		if s, _ := v.(string); !strings.HasPrefix(s, "<") {
+			t.Fatalf("poll option or vote kept verbatim: %v", v)
+		}
+	}
+}

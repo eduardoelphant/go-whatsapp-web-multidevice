@@ -136,7 +136,11 @@
         "poll",
         "unknown",
         "interactive",
-        "interactive_reply"
+        "interactive_reply",
+        "poll_vote",
+        "call",
+        "product",
+        "order"
       ]
     },
     "party": {
@@ -365,7 +369,12 @@
         "view_once",
         "interactive",
         "reply",
-        "referral"
+        "referral",
+        "poll",
+        "poll_vote",
+        "call",
+        "product",
+        "order"
       ],
       "properties": {
         "type": {
@@ -447,6 +456,56 @@
             },
             {
               "$ref": "#/$defs/referral"
+            }
+          ]
+        },
+        "poll": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/poll"
+            }
+          ]
+        },
+        "poll_vote": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/pollVote"
+            }
+          ]
+        },
+        "call": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/call"
+            }
+          ]
+        },
+        "product": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/product"
+            }
+          ]
+        },
+        "order": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/order"
             }
           ]
         }
@@ -743,6 +802,150 @@
               "$ref": "#/$defs/nstr"
             }
           }
+        }
+      }
+    },
+    "poll": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "options",
+        "selectable_count"
+      ],
+      "properties": {
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selectable_count": {
+          "$ref": "#/$defs/nint"
+        }
+      }
+    },
+    "pollVote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "poll_id",
+        "selected",
+        "resolution"
+      ],
+      "properties": {
+        "poll_id": {
+          "type": "string"
+        },
+        "selected": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resolution": {
+          "enum": [
+            "resolved",
+            "partially_resolved",
+            "definition_missing",
+            "decrypt_failed",
+            "encrypted"
+          ]
+        }
+      }
+    },
+    "call": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "video",
+        "duration",
+        "call_type"
+      ],
+      "properties": {
+        "outcome": {
+          "$ref": "#/$defs/nstr"
+        },
+        "video": {
+          "type": "boolean"
+        },
+        "duration": {
+          "$ref": "#/$defs/nint"
+        },
+        "call_type": {
+          "$ref": "#/$defs/nstr"
+        }
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "description",
+        "retailer_id",
+        "url",
+        "currency",
+        "price_1000",
+        "sale_price_1000"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nstr"
+        },
+        "title": {
+          "$ref": "#/$defs/nstr"
+        },
+        "description": {
+          "$ref": "#/$defs/nstr"
+        },
+        "retailer_id": {
+          "$ref": "#/$defs/nstr"
+        },
+        "url": {
+          "$ref": "#/$defs/nstr"
+        },
+        "currency": {
+          "$ref": "#/$defs/nstr"
+        },
+        "price_1000": {
+          "$ref": "#/$defs/nint"
+        },
+        "sale_price_1000": {
+          "$ref": "#/$defs/nint"
+        }
+      }
+    },
+    "order": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "item_count",
+        "status",
+        "currency",
+        "total_1000"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nstr"
+        },
+        "title": {
+          "$ref": "#/$defs/nstr"
+        },
+        "item_count": {
+          "$ref": "#/$defs/nint"
+        },
+        "status": {
+          "$ref": "#/$defs/nstr"
+        },
+        "currency": {
+          "$ref": "#/$defs/nstr"
+        },
+        "total_1000": {
+          "$ref": "#/$defs/nint"
         }
       }
     }

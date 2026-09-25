@@ -34,8 +34,17 @@ func (r stableResolver) LIDForPN(ctx context.Context, pn types.JID) (types.JID, 
 
 // addStablePayload sets payload["stable"] for a message event. msg is the
 // message buildEventPayload works on (the decrypted edit when applicable).
-func addStablePayload(ctx context.Context, client *whatsmeow.Client, evt *events.Message, msg *waE2E.Message, payload map[string]any) {
+// preparedPoll is GOWA's decrypted poll data, when the message is a poll vote.
+func addStablePayload(ctx context.Context, client *whatsmeow.Client, evt *events.Message, msg *waE2E.Message, payload map[string]any, preparedPoll ...*webhookPollPayload) {
 	event, stable := stablepayload.Build(ctx, evt, msg, newStableResolver(client))
+	if m, ok := stable.(stablepayload.Message); ok && m.Type == stablepayload.TypePollVote &&
+		len(preparedPoll) > 0 && preparedPoll[0] != nil && preparedPoll[0].Type == "vote" {
+		var selected []string
+		if preparedPoll[0].SelectedOptions != nil {
+			selected = *preparedPoll[0].SelectedOptions
+		}
+		stable = stablepayload.WithPollVote(m, preparedPoll[0].PollID, selected, preparedPoll[0].ResolutionStatus)
+	}
 	payload["stable"] = stable
 	var protoFields []string
 	if m, ok := stable.(stablepayload.Message); ok && m.Type == stablepayload.TypeUnknown {

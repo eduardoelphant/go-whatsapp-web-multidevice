@@ -124,7 +124,7 @@ func buildEventPayload(ctx context.Context, client *whatsmeow.Client, evt *event
 	}
 
 	// Fork (elphant): payload.stable contract. See stable_payload.go.
-	addStablePayload(ctx, client, evt, msg, payload)
+	addStablePayload(ctx, client, evt, msg, payload, preparedPoll...)
 
 	// Check for protocol messages (revoke, edit)
 	if protocolMessage := msg.GetProtocolMessage(); protocolMessage != nil {

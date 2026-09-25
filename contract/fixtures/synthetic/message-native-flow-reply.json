@@ -28,6 +28,11 @@
       "kind": "native_flow",
       "id": "n1"
     },
-    "referral": null
+    "referral": null,
+    "poll": null,
+    "poll_vote": null,
+    "call": null,
+    "product": null,
+    "order": null
   }
 }

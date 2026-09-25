@@ -86,8 +86,18 @@ func goldenCases() map[string]func() (string, any) {
 		"message-native-flow-reply": msg(&waE2E.Message{InteractiveResponseMessage: &waE2E.InteractiveResponseMessage{Body: &waE2E.InteractiveResponseMessage_Body{Text: proto.String("Quero")}, InteractiveResponseMessage: &waE2E.InteractiveResponseMessage_NativeFlowResponseMessage_{NativeFlowResponseMessage: &waE2E.InteractiveResponseMessage_NativeFlowResponseMessage{Name: proto.String("quick_reply"), ParamsJSON: proto.String(`{"id":"n1"}`)}}}}),
 		"message-ad-referral":       msg(&waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("Olá, vi o anúncio"), ContextInfo: &waE2E.ContextInfo{ExternalAdReply: &waE2E.ContextInfo_ExternalAdReplyInfo{SourceType: proto.String("ad"), SourceApp: proto.String("instagram"), SourceID: proto.String("120211234567890123"), SourceURL: proto.String("https://fb.me/xyz"), CtwaClid: proto.String("ARAkLclid"), Ref: proto.String("promo-primavera"), Title: proto.String("Promo"), Body: proto.String("Fale conosco"), MediaType: waE2E.ContextInfo_ExternalAdReplyInfo_IMAGE.Enum(), ThumbnailURL: proto.String("https://x.test/thumb.jpg"), MediaURL: proto.String("https://x.test/ad.jpg")}, EntryPointConversionSource: proto.String("ctwa_ad"), EntryPointConversionApp: proto.String("instagram"), EntryPointConversionExternalSource: proto.String("meta"), EntryPointConversionExternalMedium: proto.String("paid")}}}),
 		"message-link-entry-point":  msg(&waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("oi"), ContextInfo: &waE2E.ContextInfo{EntryPointConversionExternalSource: proto.String("newsletter"), EntryPointConversionExternalMedium: proto.String("email")}}}),
-		"message-ack-delivered":     ack(types.ReceiptTypeDelivered),
-		"message-ack-read":          ack(types.ReceiptTypeRead),
+		"message-poll-options":      msg(&waE2E.Message{PollCreationMessageV3: &waE2E.PollCreationMessage{Name: proto.String("Almoço?"), Options: []*waE2E.PollCreationMessage_Option{{OptionName: proto.String("Sim")}, {OptionName: proto.String("Não")}}, SelectableOptionsCount: proto.Uint32(1)}}),
+		"message-poll-vote":         msg(&waE2E.Message{PollUpdateMessage: &waE2E.PollUpdateMessage{PollCreationMessageKey: &waCommon.MessageKey{ID: proto.String("3EB0000000000000000000")}}}),
+		"message-poll-vote-resolved": func() (string, any) {
+			event, stable := Build(ctx, newMessageEvent(&waE2E.Message{PollUpdateMessage: &waE2E.PollUpdateMessage{PollCreationMessageKey: &waCommon.MessageKey{ID: proto.String("3EB0000000000000000000")}}}), nil, resolver)
+			return event, WithPollVote(stable.(Message), "3EB0000000000000000000", []string{"Sim"}, "resolved")
+		},
+		"message-call-missed":    msg(&waE2E.Message{CallLogMesssage: &waE2E.CallLogMessage{CallOutcome: waE2E.CallLogMessage_MISSED.Enum(), IsVideo: proto.Bool(false), CallType: waE2E.CallLogMessage_REGULAR.Enum()}}),
+		"message-call-connected": msg(&waE2E.Message{CallLogMesssage: &waE2E.CallLogMessage{CallOutcome: waE2E.CallLogMessage_CONNECTED.Enum(), IsVideo: proto.Bool(true), DurationSecs: proto.Int64(125), CallType: waE2E.CallLogMessage_REGULAR.Enum()}}),
+		"message-product":        msg(&waE2E.Message{ProductMessage: &waE2E.ProductMessage{Body: proto.String("Olha esse"), Product: &waE2E.ProductMessage_ProductSnapshot{ProductID: proto.String("P1"), Title: proto.String("Camiseta"), Description: proto.String("Algodão"), CurrencyCode: proto.String("BRL"), PriceAmount1000: proto.Int64(59900), SalePriceAmount1000: proto.Int64(49900), RetailerID: proto.String("SKU-9"), URL: proto.String("https://x.test/p1")}}}),
+		"message-order":          msg(&waE2E.Message{OrderMessage: &waE2E.OrderMessage{OrderID: proto.String("O1"), OrderTitle: proto.String("Pedido 12"), ItemCount: proto.Int32(3), Status: waE2E.OrderMessage_INQUIRY.Enum(), Message: proto.String("Pode entregar amanhã?"), TotalAmount1000: proto.Int64(149700), TotalCurrencyCode: proto.String("BRL")}}),
+		"message-ack-delivered":  ack(types.ReceiptTypeDelivered),
+		"message-ack-read":       ack(types.ReceiptTypeRead),
 	}
 }
 

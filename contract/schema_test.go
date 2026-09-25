@@ -75,6 +75,14 @@ func TestSchemaRejectsContractViolations(t *testing.T) {
 		"unknown event":       mutate(func(d, _ map[string]any) { d["event"] = "message.deleted" }),
 		"schema 2":            mutate(func(_, s map[string]any) { s["schema"] = json.Number("2") }),
 		"missing interactive": mutate(func(_, s map[string]any) { delete(s, "interactive") }),
+		"missing order":       mutate(func(_, s map[string]any) { delete(s, "order") }),
+		"bad vote resolution": mutate(func(_, s map[string]any) {
+			s["poll_vote"] = map[string]any{"poll_id": "P", "selected": []any{}, "resolution": "maybe"}
+		}),
+		"price as text": mutate(func(_, s map[string]any) {
+			s["product"] = map[string]any{"id": nil, "title": nil, "description": nil, "retailer_id": nil, "url": nil,
+				"currency": "BRL", "price_1000": "12,99", "sale_price_1000": nil}
+		}),
 		"bad interactive kind": mutate(func(_, s map[string]any) {
 			s["interactive"] = map[string]any{"kind": "carousel", "header": nil, "footer": nil, "buttons": []any{}, "sections": []any{}}
 		}),

@@ -15,8 +15,8 @@
       "lid": "100000000000001@lid",
       "push_name": "Contact One"
     },
-    "type": "unknown",
-    "text": null,
+    "type": "order",
+    "text": "Pode entregar amanhã?",
     "media": null,
     "location": null,
     "contact": null,
@@ -30,6 +30,13 @@
     "poll_vote": null,
     "call": null,
     "product": null,
-    "order": null
+    "order": {
+      "id": "O1",
+      "title": "Pedido 12",
+      "item_count": 3,
+      "status": "inquiry",
+      "currency": "BRL",
+      "total_1000": 149700
+    }
   }
 }

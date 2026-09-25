@@ -119,7 +119,7 @@ The contract is `contract/stable.schema.json`; examples are in `contract/fixture
 ```
 
 Per event: `message` adds `type`, `text`, `media`, `location`, `contact`, `quoted`, `forwarded`,
-`view_once`, `interactive`, `reply` and `referral`; `message.edited` adds `target_id`, `text`; `message.reaction` adds `target_id`,
+`view_once`, `interactive`, `reply`, `referral`, `poll`, `poll_vote`, `call`, `product` and `order`; `message.edited` adds `target_id`, `text`; `message.reaction` adds `target_id`,
 `emoji` (`null` = removed); `message.revoked` adds `target_id`; `message.ack` adds `status`
 (`delivered`, `read`, `played`) and `ids`.
 
@@ -133,6 +133,21 @@ Buttons and templates:
   are not included.
 - `type: "interactive_reply"`: the option someone chose. `text` is the chosen label; `reply` has
   `kind` and `id`; `quoted` points to the interactive message when WhatsApp says which one.
+
+Polls, calls and catalog:
+
+- `type: "poll"`: `text` is the question; `poll` has `options` and `selectable_count`.
+- `type: "poll_vote"`: `poll_vote` has `poll_id`, `selected` (option names) and `resolution`
+  (`resolved`, `partially_resolved`, `definition_missing`, `decrypt_failed`, or `encrypted` when
+  GOWA did not decrypt it). Votes are encrypted by WhatsApp; GOWA decrypts them when it stored the
+  poll.
+- `type: "call"`: the call log entry after a call; `call` has `outcome` (`connected`, `missed`,
+  `rejected`, …, WhatsApp's names in lowercase), `video`, `duration` (seconds) and `call_type`.
+- `type: "product"`: a catalog product; `text` is the message body; `product` has `id`, `title`,
+  `description`, `retailer_id`, `url`, `currency`, `price_1000` and `sale_price_1000`.
+- `type: "order"`: a catalog order; `text` is the buyer's note; `order` has `id`, `title`,
+  `item_count`, `status` (`inquiry`, `accepted`, `declined`), `currency` and `total_1000`.
+- Amounts are in thousandths of the currency unit, as WhatsApp sends them (R$ 12,99 = `12990`).
 
 Ads and entry points: `referral` is set when the message came from a Click-to-WhatsApp ad
 (Facebook/Instagram) or from a link carrying source/medium. It has `source_type`, `source_app`,

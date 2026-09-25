@@ -36,6 +36,8 @@ var stableAuditKeep = map[string]bool{
 	"schema": true, "type": true, "kind": true, "mime": true, "status": true,
 	// Ad attribution: where a conversation came from, not who is in it.
 	"source_type": true, "source_app": true, "media_type": true, "source": true, "app": true,
+	// Call, poll vote and commerce enums.
+	"outcome": true, "call_type": true, "resolution": true, "currency": true,
 }
 
 // auditStable saves an anonymized sample of stable in the background. For
@@ -135,7 +137,7 @@ func anonymizeStable(v any, key string) any {
 				return "<jid>" + x[i:]
 			}
 			return "<jid>"
-		case key == "id" || key == "target_id" || key == "ids":
+		case key == "id" || key == "target_id" || key == "ids" || key == "poll_id":
 			return "<id>"
 		case key == "url":
 			return "/message/<id>/media"

@@ -43,6 +43,11 @@
         "external_source": "newsletter",
         "external_medium": "email"
       }
-    }
+    },
+    "poll": null,
+    "poll_vote": null,
+    "call": null,
+    "product": null,
+    "order": null
   }
 }

@@ -15,7 +15,7 @@
       "lid": "100000000000001@lid",
       "push_name": "Contact One"
     },
-    "type": "unknown",
+    "type": "call",
     "text": null,
     "media": null,
     "location": null,
@@ -28,7 +28,12 @@
     "referral": null,
     "poll": null,
     "poll_vote": null,
-    "call": null,
+    "call": {
+      "outcome": "missed",
+      "video": false,
+      "duration": null,
+      "call_type": "regular"
+    },
     "product": null,
     "order": null
   }

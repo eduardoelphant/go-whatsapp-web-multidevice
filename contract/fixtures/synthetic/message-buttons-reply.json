@@ -36,6 +36,11 @@
       "kind": "buttons",
       "id": "b1"
     },
-    "referral": null
+    "referral": null,
+    "poll": null,
+    "poll_vote": null,
+    "call": null,
+    "product": null,
+    "order": null
   }
 }

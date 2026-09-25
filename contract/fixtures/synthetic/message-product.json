@@ -15,8 +15,8 @@
       "lid": "100000000000001@lid",
       "push_name": "Contact One"
     },
-    "type": "unknown",
-    "text": null,
+    "type": "product",
+    "text": "Olha esse",
     "media": null,
     "location": null,
     "contact": null,
@@ -29,7 +29,16 @@
     "poll": null,
     "poll_vote": null,
     "call": null,
-    "product": null,
+    "product": {
+      "id": "P1",
+      "title": "Camiseta",
+      "description": "Algodão",
+      "retailer_id": "SKU-9",
+      "url": "https://x.test/p1",
+      "currency": "BRL",
+      "price_1000": 59900,
+      "sale_price_1000": 49900
+    },
     "order": null
   }
 }

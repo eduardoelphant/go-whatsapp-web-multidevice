@@ -38,6 +38,11 @@ const (
 	// native flow; TypeInteractiveReply is the choice someone made on one.
 	TypeInteractive      = "interactive"
 	TypeInteractiveReply = "interactive_reply"
+
+	TypePollVote = "poll_vote"
+	TypeCall     = "call"
+	TypeProduct  = "product"
+	TypeOrder    = "order"
 )
 
 // Resolver maps between phone-number JIDs and LID JIDs. A failed or empty
@@ -119,6 +124,56 @@ type Message struct {
 	Interactive *Interactive `json:"interactive"`
 	Reply       *Reply       `json:"reply"`
 	Referral    *Referral    `json:"referral"`
+	Poll        *Poll        `json:"poll"`
+	PollVote    *PollVote    `json:"poll_vote"`
+	Call        *Call        `json:"call"`
+	Product     *Product     `json:"product"`
+	Order       *Order       `json:"order"`
+}
+
+// Poll lists the options of a poll creation (type "poll").
+type Poll struct {
+	Options         []string `json:"options"`
+	SelectableCount *int     `json:"selectable_count"`
+}
+
+// PollVote is a vote on a poll. Votes are encrypted; GOWA decrypts them when
+// it knows the poll, and resolution says how far that went.
+type PollVote struct {
+	PollID     string   `json:"poll_id"`
+	Selected   []string `json:"selected"`
+	Resolution string   `json:"resolution"`
+}
+
+// Call is the call log entry WhatsApp adds to the chat after a call.
+type Call struct {
+	Outcome  *string `json:"outcome"`
+	Video    bool    `json:"video"`
+	Duration *int    `json:"duration"`
+	CallType *string `json:"call_type"`
+}
+
+// Product is a catalog product shared in the chat. Amounts are in
+// thousandths of the currency unit, as WhatsApp sends them (R$ 12,99 = 12990).
+type Product struct {
+	ID            *string `json:"id"`
+	Title         *string `json:"title"`
+	Description   *string `json:"description"`
+	RetailerID    *string `json:"retailer_id"`
+	URL           *string `json:"url"`
+	Currency      *string `json:"currency"`
+	Price1000     *int64  `json:"price_1000"`
+	SalePrice1000 *int64  `json:"sale_price_1000"`
+}
+
+// Order is a catalog order; amounts in thousandths of the currency unit.
+type Order struct {
+	ID        *string `json:"id"`
+	Title     *string `json:"title"`
+	ItemCount *int    `json:"item_count"`
+	Status    *string `json:"status"`
+	Currency  *string `json:"currency"`
+	Total1000 *int64  `json:"total_1000"`
 }
 
 // Interactive describes a message with buttons, a template, a list or a

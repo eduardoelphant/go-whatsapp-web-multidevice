@@ -43,6 +43,11 @@
         "external_source": "meta",
         "external_medium": "paid"
       }
-    }
+    },
+    "poll": null,
+    "poll_vote": null,
+    "call": null,
+    "product": null,
+    "order": null
   }
 }

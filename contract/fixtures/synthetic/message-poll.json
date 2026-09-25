@@ -25,6 +25,14 @@
     "view_once": false,
     "interactive": null,
     "reply": null,
-    "referral": null
+    "referral": null,
+    "poll": {
+      "options": [],
+      "selectable_count": null
+    },
+    "poll_vote": null,
+    "call": null,
+    "product": null,
+    "order": null
   }
 }

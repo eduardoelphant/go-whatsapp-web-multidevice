@@ -44,6 +44,16 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 		m.Interactive, _ = interactiveOf(content)
 	case TypeInteractiveReply:
 		m.Reply, _ = replyOf(content)
+	case TypePoll:
+		m.Poll = pollOf(pollCreation(content))
+	case TypePollVote:
+		m = WithPollVote(m, content.GetPollUpdateMessage().GetPollCreationMessageKey().GetID(), nil, pollVoteEncrypted)
+	case TypeCall:
+		m.Call = callOf(content.GetCallLogMesssage())
+	case TypeProduct:
+		m.Product = productOf(content.GetProductMessage())
+	case TypeOrder:
+		m.Order = orderOf(content.GetOrderMessage())
 	}
 	if ci := contextInfo(content); ci != nil {
 		m.Forwarded = ci.GetIsForwarded()
@@ -162,6 +172,16 @@ func classify(msg *waE2E.Message, messageID string) (string, *string, *Media, *L
 	if in, text := interactiveOf(msg); in != nil {
 		return TypeInteractive, text, nil, nil, nil
 	}
+	switch {
+	case msg.GetPollUpdateMessage() != nil:
+		return TypePollVote, nil, nil, nil, nil
+	case msg.GetCallLogMesssage() != nil:
+		return TypeCall, nil, nil, nil, nil
+	case msg.GetProductMessage() != nil:
+		return TypeProduct, strPtr(msg.GetProductMessage().GetBody()), nil, nil, nil
+	case msg.GetOrderMessage() != nil:
+		return TypeOrder, strPtr(msg.GetOrderMessage().GetMessage()), nil, nil, nil
+	}
 	if reply, text := replyOf(msg); reply != nil {
 		return TypeInteractiveReply, text, nil, nil, nil
 	}
@@ -215,6 +235,8 @@ func contextInfo(msg *waE2E.Message) *waE2E.ContextInfo {
 		msg.GetTemplateButtonReplyMessage().GetContextInfo(),
 		msg.GetListResponseMessage().GetContextInfo(),
 		msg.GetInteractiveResponseMessage().GetContextInfo(),
+		msg.GetProductMessage().GetContextInfo(),
+		msg.GetOrderMessage().GetContextInfo(),
 	} {
 		if ci != nil {
 			return ci
