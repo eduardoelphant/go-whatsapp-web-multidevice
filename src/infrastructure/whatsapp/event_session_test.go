@@ -1,11 +1,14 @@
 package whatsapp
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
@@ -107,5 +110,163 @@ func TestBuildSessionStatusBody(t *testing.T) {
 	unpaired := buildSessionStatusBody(NewDeviceInstance("fresh-slot", nil, nil), SessionStatus{Status: SessionStatusQRTimeout})
 	if unpaired["device_id"] != "" || unpaired["session_id"] != "fresh-slot" {
 		t.Errorf("unpaired body device_id=%v session_id=%v, want empty and fresh-slot", unpaired["device_id"], unpaired["session_id"])
+	}
+}
+
+// captureSessionWebhooks points the global webhook at a stub and returns the
+// bodies it receives.
+func captureSessionWebhooks(t *testing.T) <-chan map[string]any {
+	t.Helper()
+	originalWebhooks := config.WhatsappWebhook
+	originalEvents := config.WhatsappWebhookEvents
+	originalSubmit := submitWebhookFn
+	originalStorage := webhookStorageForTest
+	config.WhatsappWebhook = []string{"https://session-status.test"}
+	config.WhatsappWebhookEvents = nil
+	webhookStorageForTest = func(string) (*chatstorage.DeviceRecord, error) { return nil, nil }
+
+	got := make(chan map[string]any, 32)
+	submitWebhookFn = func(_ context.Context, payload map[string]any, _ string, _ *chatstorage.DeviceWebhookConfig) error {
+		got <- payload
+		return nil
+	}
+	t.Cleanup(func() {
+		config.WhatsappWebhook = originalWebhooks
+		config.WhatsappWebhookEvents = originalEvents
+		submitWebhookFn = originalSubmit
+		webhookStorageForTest = originalStorage
+	})
+	return got
+}
+
+// waitSessionWebhook returns the first captured body for sessionID, skipping
+// bodies left over from other tests' goroutines.
+func waitSessionWebhook(t *testing.T, got <-chan map[string]any, sessionID string) map[string]any {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case body := <-got:
+			if body["event"] == SessionStatusEvent && body["session_id"] == sessionID {
+				return body
+			}
+		case <-deadline:
+			t.Fatalf("no %s webhook for session %s", SessionStatusEvent, sessionID)
+			return nil
+		}
+	}
+}
+
+func TestHandlerEmitsSessionStatusWebhook(t *testing.T) {
+	got := captureSessionWebhooks(t)
+	instance := NewDeviceInstance("session-e2e", nil, nil)
+
+	handler(context.Background(), instance, &events.KeepAliveRestored{})
+
+	body := waitSessionWebhook(t, got, "session-e2e")
+	if body["device_id"] != "" {
+		t.Errorf("device_id = %v, want empty for an unpaired slot", body["device_id"])
+	}
+	payload, _ := body["payload"].(map[string]any)
+	if payload["status"] != SessionStatusKeepAliveRestored {
+		t.Errorf("status = %v, want %s", payload["status"], SessionStatusKeepAliveRestored)
+	}
+}
+
+func TestHandlerLoggedOutWebhookKeepsJID(t *testing.T) {
+	got := captureSessionWebhooks(t)
+	instance := &DeviceInstance{id: "session-logout", jid: "5511999999999@s.whatsapp.net", createdAt: time.Now()}
+	// Mirrors the manager's keep-slot callback, which clears the JID.
+	instance.SetOnLoggedOut(func(string) { instance.ResetClient() })
+
+	go handler(context.Background(), instance, &events.LoggedOut{Reason: events.ConnectFailureLoggedOut})
+	if msg := recvBroadcast(t); msg.Code != "DEVICE_LOGGED_OUT" {
+		t.Fatalf("broadcast code = %s, want DEVICE_LOGGED_OUT", msg.Code)
+	}
+
+	body := waitSessionWebhook(t, got, "session-logout")
+	if body["device_id"] != "5511999999999@s.whatsapp.net" {
+		t.Errorf("device_id = %v, want the JID from before the logout", body["device_id"])
+	}
+	payload, _ := body["payload"].(map[string]any)
+	if payload["status"] != SessionStatusLoggedOut || payload["code"] != 401 {
+		t.Errorf("payload = %#v, want logged_out with code 401", payload)
+	}
+	if instance.JID() != "" {
+		t.Error("handleLoggedOut should still clear the JID")
+	}
+}
+
+func TestHandlerDoesNotBlockOnSlowSessionWebhook(t *testing.T) {
+	originalWebhooks := config.WhatsappWebhook
+	originalSubmit := submitWebhookFn
+	originalStorage := webhookStorageForTest
+	config.WhatsappWebhook = []string{"https://slow.test"}
+	webhookStorageForTest = func(string) (*chatstorage.DeviceRecord, error) { return nil, nil }
+	release := make(chan struct{})
+	submitWebhookFn = func(context.Context, map[string]any, string, *chatstorage.DeviceWebhookConfig) error {
+		<-release
+		return nil
+	}
+	t.Cleanup(func() {
+		close(release)
+		config.WhatsappWebhook = originalWebhooks
+		submitWebhookFn = originalSubmit
+		webhookStorageForTest = originalStorage
+	})
+
+	done := make(chan struct{})
+	go func() {
+		handler(context.Background(), NewDeviceInstance("session-slow", nil, nil), &events.KeepAliveRestored{})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("handler blocked on a slow session.status webhook")
+	}
+}
+
+func TestSessionStatusRespectsEventWhitelist(t *testing.T) {
+	originalWebhooks := config.WhatsappWebhook
+	originalEvents := config.WhatsappWebhookEvents
+	originalSubmit := submitWebhookFn
+	config.WhatsappWebhook = []string{"https://session-status.test"}
+	calls := 0
+	submitWebhookFn = func(_ context.Context, payload map[string]any, _ string, _ *chatstorage.DeviceWebhookConfig) error {
+		// Count only this test's body: session.status goroutines started by
+		// earlier handler tests may still be delivering.
+		if payload["session_id"] == "session-filter" {
+			calls++
+		}
+		return nil
+	}
+	t.Cleanup(func() {
+		config.WhatsappWebhook = originalWebhooks
+		config.WhatsappWebhookEvents = originalEvents
+		submitWebhookFn = originalSubmit
+	})
+	instance := NewDeviceInstance("session-filter", nil, nil)
+
+	config.WhatsappWebhookEvents = []string{"message"}
+	if err := forwardPayloadToConfiguredWebhooks(context.Background(), buildSessionStatusBody(instance, SessionStatus{Status: SessionStatusConnected}), SessionStatusEvent); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 {
+		t.Fatalf("session.status delivered %d times with a whitelist that omits it", calls)
+	}
+
+	config.WhatsappWebhookEvents = []string{"message", SessionStatusEvent}
+	if err := forwardPayloadToConfiguredWebhooks(context.Background(), buildSessionStatusBody(instance, SessionStatus{Status: SessionStatusConnected}), SessionStatusEvent); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("session.status delivered %d times with a whitelist that includes it, want 1", calls)
+	}
+}
+
+func TestSessionStatusNotForwardedToChatwoot(t *testing.T) {
+	if shouldForwardEventToChatwoot(SessionStatusEvent) {
+		t.Fatal("session.status must not be forwarded to Chatwoot")
 	}
 }

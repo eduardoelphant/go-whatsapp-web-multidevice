@@ -30,6 +30,10 @@ func handler(ctx context.Context, instance *DeviceInstance, rawEvt any) {
 	chatStorageRepo := instance.GetChatStorage()
 	client := instance.GetClient()
 
+	// Fork (elphant): session.status webhook. Runs before the switch so the body
+	// captures the device JID before handlers such as handleLoggedOut clear it.
+	handleSessionEvent(ctx, instance, rawEvt)
+
 	switch evt := rawEvt.(type) {
 	case *events.DeleteForMe:
 		handleDeleteForMe(ctx, evt, chatStorageRepo, instance.JID(), client)

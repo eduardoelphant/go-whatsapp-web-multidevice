@@ -1,8 +1,10 @@
 package whatsapp
 
 import (
+	"context"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
@@ -133,5 +135,29 @@ func buildSessionStatusBody(instance *DeviceInstance, status SessionStatus) map[
 		"session_id": instance.ID(),
 		"timestamp":  time.Now().Format(time.RFC3339),
 		"payload":    status.Payload(),
+	}
+}
+
+// EmitSessionStatus sends a session.status webhook for the device without
+// blocking the caller. The body is built before the goroutine starts, so it
+// captures the device JID even if a handler clears it right after.
+func EmitSessionStatus(ctx context.Context, instance *DeviceInstance, status SessionStatus) {
+	if instance == nil {
+		return
+	}
+	body := buildSessionStatusBody(instance, status)
+	go func() {
+		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		if err := forwardPayloadToConfiguredWebhooks(webhookCtx, body, SessionStatusEvent); err != nil {
+			logrus.Errorf("Failed to forward %s %q for device %s: %v", SessionStatusEvent, status.Status, instance.ID(), err)
+		}
+	}()
+}
+
+// handleSessionEvent emits session.status for lifecycle events and ignores the rest.
+func handleSessionEvent(ctx context.Context, instance *DeviceInstance, rawEvt any) {
+	if status, ok := sessionStatusFromEvent(rawEvt, time.Now()); ok {
+		EmitSessionStatus(ctx, instance, status)
 	}
 }
