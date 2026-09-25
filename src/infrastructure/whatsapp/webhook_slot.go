@@ -6,9 +6,11 @@ import (
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 )
 
-// Fork (elphant): events emitted before pairing (QR, passkey) have no JID, so the
-// JID-based device webhook lookup finds nothing. They carry the slot id in
-// session_id instead, and this resolves the device webhook config from it.
+// Fork (elphant): session.status bodies carry the slot id in session_id before
+// routing (other events only get it afterwards). Routing by it covers events with
+// no JID yet (QR, passkey) and a logged_out whose record lost its JID to the
+// keep-slot cleanup while the event was being delivered. When the slot has no
+// webhook, the JID lookup result stands.
 
 // getWebhookConfigForSlot returns the device webhook config for the payload's
 // session_id, or nil when there is no slot id or the slot has no webhook URL.

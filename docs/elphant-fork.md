@@ -56,8 +56,12 @@ not forwarded to Chatwoot.
 
 - `device_id` is the device JID, or an empty string before pairing.
 - `session_id` is the device slot id (the one registered through `POST /devices`), always present.
-  Before pairing, the per-device webhook configuration is resolved from it.
+  The per-device webhook configuration is resolved from it, so pre-pairing events and a
+  `logged_out` reach the slot's webhook even without a JID.
 - The five `payload` keys are always present. A key that does not apply is `null`.
+- Arrival order is not guaranteed: each event is delivered on its own, and whatsmeow itself
+  dispatches connection events concurrently. After a burst such as `disconnected` then
+  `connected`, confirm the current state with `GET /devices/:device_id/status`.
 
 | Field | Type | Meaning |
 |---|---|---|

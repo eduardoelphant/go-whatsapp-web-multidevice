@@ -32,11 +32,13 @@ func (s *slotWebhookStubStorage) GetDeviceWebhookConfig(deviceID string) (*chats
 func TestForwardPayloadResolvesSlotWebhookBeforePairing(t *testing.T) {
 	const globalURL = "https://global-webhook.test"
 	deviceURL := "https://slot-webhook.test"
+	jidURL := "https://jid-webhook.test"
 
 	cases := []struct {
 		name         string
 		payload      map[string]any
 		slotConfig   *chatstorage.DeviceWebhookConfig
+		jidRecord    *chatstorage.DeviceRecord
 		wantURLs     []string
 		wantLookedUp []string
 	}{
@@ -69,10 +71,28 @@ func TestForwardPayloadResolvesSlotWebhookBeforePairing(t *testing.T) {
 			wantLookedUp: nil,
 		},
 		{
-			name:         "paired device keeps JID lookup",
+			// Remote logout: the keep-slot cleanup clears the record's JID while the
+			// logged_out body (which still carries it) is being routed.
+			name:         "paired device routes by slot when the JID lookup misses",
 			payload:      map[string]any{"event": SessionStatusEvent, "device_id": "5511999999999@s.whatsapp.net", "session_id": "slot-a"},
 			slotConfig:   &chatstorage.DeviceWebhookConfig{WebhookURL: &deviceURL},
-			wantURLs:     []string{globalURL},
+			wantURLs:     []string{deviceURL},
+			wantLookedUp: []string{"slot-a"},
+		},
+		{
+			name:         "slot without webhook keeps the JID config",
+			payload:      map[string]any{"event": SessionStatusEvent, "device_id": "5511999999999@s.whatsapp.net", "session_id": "slot-a"},
+			slotConfig:   &chatstorage.DeviceWebhookConfig{},
+			jidRecord:    &chatstorage.DeviceRecord{DeviceID: "slot-a", WebhookURL: &jidURL},
+			wantURLs:     []string{jidURL},
+			wantLookedUp: []string{"slot-a"},
+		},
+		{
+			name:         "event without session id keeps the JID config",
+			payload:      map[string]any{"event": "message", "device_id": "5511999999999@s.whatsapp.net"},
+			slotConfig:   &chatstorage.DeviceWebhookConfig{WebhookURL: &deviceURL},
+			jidRecord:    &chatstorage.DeviceRecord{DeviceID: "slot-a", WebhookURL: &jidURL},
+			wantURLs:     []string{jidURL},
 			wantLookedUp: nil,
 		},
 	}
@@ -92,7 +112,7 @@ func TestForwardPayloadResolvesSlotWebhookBeforePairing(t *testing.T) {
 
 			config.WhatsappWebhook = []string{globalURL}
 			config.WhatsappWebhookEvents = nil
-			webhookStorageForTest = func(string) (*chatstorage.DeviceRecord, error) { return nil, nil }
+			webhookStorageForTest = func(string) (*chatstorage.DeviceRecord, error) { return tc.jidRecord, nil }
 			storage := &slotWebhookStubStorage{configs: map[string]*chatstorage.DeviceWebhookConfig{"slot-a": tc.slotConfig}}
 			withDeviceManager(t, NewDeviceManager(nil, nil, storage))
 			var calledURLs []string

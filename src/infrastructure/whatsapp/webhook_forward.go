@@ -101,9 +101,9 @@ func getContactMutex(phone string) *sync.Mutex {
 func forwardPayloadToConfiguredWebhooks(ctx context.Context, payload map[string]any, eventName string) error {
 	deviceJID, _ := payload["device_id"].(string)
 	webhookConfig, err := getWebhookConfigForDevice(deviceJID)
-	if deviceJID == "" {
-		// Fork (elphant): pre-pairing events carry only the slot id. See webhook_slot.go.
-		webhookConfig, err = getWebhookConfigForSlot(payload)
+	if slotConfig, slotErr := getWebhookConfigForSlot(payload); slotConfig != nil || slotErr != nil {
+		// Fork (elphant): session.status carries its slot id; route by it first. See webhook_slot.go.
+		webhookConfig, err = slotConfig, slotErr
 	}
 	if err != nil {
 		// A config lookup failure is not a delivery failure: fall back to the global
