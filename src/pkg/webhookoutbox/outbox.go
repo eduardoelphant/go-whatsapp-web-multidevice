@@ -291,6 +291,9 @@ func (o *Outbox) send(ctx context.Context, row *Row, attempt int) (int, time.Dur
 	if err != nil {
 		return 0, 0, permanentError{err}
 	}
+	if (req.URL.Scheme != "http" && req.URL.Scheme != "https") || req.URL.Host == "" {
+		return 0, 0, permanentError{errors.New("webhook URL must be an absolute http or https URL")}
+	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(row.Body)
 	req.Header.Set("Content-Type", "application/json")

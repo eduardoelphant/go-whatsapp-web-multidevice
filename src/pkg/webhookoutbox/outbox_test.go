@@ -408,3 +408,17 @@ func TestParseRetryAfter(t *testing.T) {
 		}
 	}
 }
+
+func TestUnsendableURLGoesDeadAtOnce(t *testing.T) {
+	for _, url := range []string{"crm.example.com/hook", "ftp://x/y", "http:///nohost"} {
+		store := openStore(t)
+		outbox := New(store, staticSecret("s"), fastPolicy)
+		row := enqueueN(t, outbox, url, 1)[0]
+		startOutbox(t, outbox)
+
+		waitFor(t, "dead "+url, func() bool { return statusOf(store, row.EventID) == StatusDead })
+		if got, _ := store.Get(context.Background(), row.EventID); got.Attempts != 1 {
+			t.Fatalf("%s retried: %+v", url, got)
+		}
+	}
+}
