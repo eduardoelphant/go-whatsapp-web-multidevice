@@ -1,0 +1,21 @@
+{
+  "event": "message.reaction",
+  "stable": {
+    "chat": {
+      "is_group": false,
+      "lid": "\u003cjid\u003e@lid",
+      "pn": "\u003cjid\u003e@s.whatsapp.net"
+    },
+    "emoji": null,
+    "id": "\u003cid\u003e",
+    "is_from_me": false,
+    "schema": 1,
+    "sender": {
+      "lid": "\u003cjid\u003e@lid",
+      "pn": "\u003cjid\u003e@s.whatsapp.net",
+      "push_name": "\u003ctext:25\u003e"
+    },
+    "target_id": "\u003cid\u003e",
+    "timestamp": "2000-01-01T00:00:00Z"
+  }
+}

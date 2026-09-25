@@ -1,0 +1,23 @@
+{
+  "event": "message.ack",
+  "stable": {
+    "chat": {
+      "is_group": true,
+      "lid": null,
+      "pn": "\u003cjid\u003e@g.us"
+    },
+    "id": "\u003cid\u003e",
+    "ids": [
+      "\u003cid\u003e"
+    ],
+    "is_from_me": false,
+    "schema": 1,
+    "sender": {
+      "lid": "\u003cjid\u003e@lid",
+      "pn": "\u003cjid\u003e@s.whatsapp.net",
+      "push_name": null
+    },
+    "status": "delivered",
+    "timestamp": "2000-01-01T00:00:00Z"
+  }
+}

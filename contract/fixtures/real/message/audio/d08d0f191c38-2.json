@@ -1,0 +1,38 @@
+{
+  "event": "message",
+  "stable": {
+    "chat": {
+      "is_group": false,
+      "lid": "\u003cjid\u003e@lid",
+      "pn": "\u003cjid\u003e@s.whatsapp.net"
+    },
+    "contact": null,
+    "forwarded": false,
+    "id": "\u003cid\u003e",
+    "is_from_me": false,
+    "location": null,
+    "media": {
+      "duration": 0,
+      "filename": null,
+      "height": null,
+      "kind": "audio",
+      "mime": "audio/ogg; codecs=opus",
+      "ptt": true,
+      "sha256": "\u003csha256\u003e",
+      "size": 0,
+      "url": "/message/\u003cid\u003e/media",
+      "width": null
+    },
+    "quoted": null,
+    "schema": 1,
+    "sender": {
+      "lid": "\u003cjid\u003e@lid",
+      "pn": "\u003cjid\u003e@s.whatsapp.net",
+      "push_name": "\u003ctext:11\u003e"
+    },
+    "text": null,
+    "timestamp": "2000-01-01T00:00:00Z",
+    "type": "audio",
+    "view_once": false
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "event": "message",
+  "stable": {
+    "chat": {
+      "is_group": true,
+      "lid": null,
+      "pn": "\u003cjid\u003e@g.us"
+    },
+    "contact": null,
+    "forwarded": false,
+    "id": "\u003cid\u003e",
+    "is_from_me": false,
+    "location": null,
+    "media": null,
+    "quoted": null,
+    "schema": 1,
+    "sender": {
+      "lid": "\u003cjid\u003e@lid",
+      "pn": "\u003cjid\u003e@s.whatsapp.net",
+      "push_name": "\u003ctext:6\u003e"
+    },
+    "text": "\u003ctext:22\u003e",
+    "timestamp": "2000-01-01T00:00:00Z",
+    "type": "text",
+    "view_once": false
+  }
+}
