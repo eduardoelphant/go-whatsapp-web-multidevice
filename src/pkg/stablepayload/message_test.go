@@ -173,3 +173,65 @@ func TestBuildMessageQuotedAndForwarded(t *testing.T) {
 		t.Fatalf("plain message quoted=%v forwarded=%v, want nil/false", plain.Quoted, plain.Forwarded)
 	}
 }
+
+func TestBuildMessageMoreWrappers(t *testing.T) {
+	cases := map[string]struct {
+		raw      *waE2E.Message
+		wantType string
+	}{
+		"album child":     {&waE2E.Message{AssociatedChildMessage: &waE2E.FutureProofMessage{Message: &waE2E.Message{ImageMessage: &waE2E.ImageMessage{Caption: proto.String("1/3")}}}}, TypeImage},
+		"group mentioned": {&waE2E.Message{GroupMentionedMessage: &waE2E.FutureProofMessage{Message: &waE2E.Message{Conversation: proto.String("@all")}}}, TypeText},
+		"status mention":  {&waE2E.Message{StatusMentionMessage: &waE2E.FutureProofMessage{Message: &waE2E.Message{Conversation: proto.String("seen you")}}}, TypeText},
+		"nested lottie":   {&waE2E.Message{EphemeralMessage: &waE2E.FutureProofMessage{Message: &waE2E.Message{LottieStickerMessage: &waE2E.FutureProofMessage{Message: &waE2E.Message{StickerMessage: &waE2E.StickerMessage{}}}}}}, TypeSticker},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if m := buildMessage(t, newMessageEvent(tc.raw)); m.Type != tc.wantType {
+				t.Fatalf("type = %s, want %s", m.Type, tc.wantType)
+			}
+		})
+	}
+}
+
+func TestBuildEventFollowsTheMessageGOWAInspects(t *testing.T) {
+	// GOWA names the event from msg as given; a reaction hidden under a nested
+	// device-sent envelope is a "message" there, so stable must say the same.
+	msg := &waE2E.Message{DeviceSentMessage: &waE2E.DeviceSentMessage{Message: &waE2E.Message{
+		ReactionMessage: &waE2E.ReactionMessage{Text: proto.String("👍")},
+	}}}
+	event, stable := Build(context.Background(), newMessageEvent(&waE2E.Message{}), msg, resolver)
+	if m, ok := stable.(Message); event != EventMessage || !ok || m.Type != TypeUnknown {
+		t.Fatalf("event=%s stable=%T %+v, want message/unknown", event, stable, stable)
+	}
+}
+
+func TestBuildViewOnceFromNestedWrapper(t *testing.T) {
+	// UnwrapRaw peels DocumentWithCaption last, so a view-once wrapper inside it
+	// survives until stable's own unwrap.
+	raw := &waE2E.Message{DocumentWithCaptionMessage: &waE2E.FutureProofMessage{Message: &waE2E.Message{
+		ViewOnceMessage: &waE2E.FutureProofMessage{Message: &waE2E.Message{ImageMessage: &waE2E.ImageMessage{}}},
+	}}}
+	evt := newMessageEvent(raw)
+	if evt.IsViewOnce {
+		t.Skip("whatsmeow now flags this case itself")
+	}
+	if m := buildMessage(t, evt); m.Type != TypeImage || !m.ViewOnce {
+		t.Fatalf("type=%s view_once=%v, want image/true", m.Type, m.ViewOnce)
+	}
+}
+
+func TestContextInfoOfMoreTypes(t *testing.T) {
+	ci := &waE2E.ContextInfo{IsForwarded: proto.Bool(true), StanzaID: proto.String("Q1"), QuotedMessage: &waE2E.Message{Conversation: proto.String("q")}}
+	for name, raw := range map[string]*waE2E.Message{
+		"poll":           {PollCreationMessageV3: &waE2E.PollCreationMessage{Name: proto.String("P"), ContextInfo: ci}},
+		"live location":  {LiveLocationMessage: &waE2E.LiveLocationMessage{ContextInfo: ci}},
+		"contacts array": {ContactsArrayMessage: &waE2E.ContactsArrayMessage{Contacts: []*waE2E.ContactMessage{{DisplayName: proto.String("A")}}, ContextInfo: ci}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := buildMessage(t, newMessageEvent(raw))
+			if !m.Forwarded || m.Quoted == nil || m.Quoted.ID != "Q1" {
+				t.Fatalf("forwarded=%v quoted=%+v", m.Forwarded, m.Quoted)
+			}
+		})
+	}
+}

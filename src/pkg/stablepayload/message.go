@@ -18,14 +18,17 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 	if msg == nil {
 		msg = evt.Message
 	}
-	msg = unwrap(msg)
 	b := base(ctx, evt.Info, r)
+
+	// The event is chosen from msg as given, exactly as GOWA's buildEventPayload
+	// does, so stable never disagrees with the webhook "event" name.
 	if pm := msg.GetProtocolMessage(); pm != nil {
 		switch pm.GetType() {
 		case waE2E.ProtocolMessage_REVOKE:
 			return EventRevoked, Revoked{Base: b, TargetID: pm.GetKey().GetID()}
 		case waE2E.ProtocolMessage_MESSAGE_EDIT:
-			_, text, _, _, _ := classify(unwrap(pm.GetEditedMessage()), evt.Info.ID)
+			edited, _ := unwrap(pm.GetEditedMessage())
+			_, text, _, _, _ := classify(edited, evt.Info.ID)
 			return EventEdited, Edited{Base: b, TargetID: pm.GetKey().GetID(), Text: text}
 		}
 	}
@@ -33,36 +36,47 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 		return EventReaction, Reaction{Base: b, TargetID: rm.GetKey().GetID(), Emoji: strPtr(rm.GetText())}
 	}
 
-	typ, text, media, loc, contact := classify(msg, evt.Info.ID)
-	m := Message{Base: b, Type: typ, Text: text, Media: media, Location: loc, Contact: contact, ViewOnce: evt.IsViewOnce}
-	if ci := contextInfo(msg); ci != nil {
+	content, nestedViewOnce := unwrap(msg)
+	typ, text, media, loc, contact := classify(content, evt.Info.ID)
+	m := Message{Base: b, Type: typ, Text: text, Media: media, Location: loc, Contact: contact, ViewOnce: evt.IsViewOnce || nestedViewOnce}
+	if ci := contextInfo(content); ci != nil {
 		m.Forwarded = ci.GetIsForwarded()
 		m.Quoted = quoted(ctx, ci, r)
 	}
 	return EventMessage, m
 }
 
-// unwrap removes the containers whatsmeow's UnwrapRaw may leave nested.
-func unwrap(msg *waE2E.Message) *waE2E.Message {
-	for i := 0; i < 5 && msg != nil; i++ {
+// unwrap removes the containers whatsmeow's UnwrapRaw may leave nested and
+// reports whether one of them was a view-once wrapper.
+func unwrap(msg *waE2E.Message) (*waE2E.Message, bool) {
+	viewOnce := false
+	for i := 0; i < 8 && msg != nil; i++ {
 		switch {
 		case msg.GetDeviceSentMessage().GetMessage() != nil:
 			msg = msg.GetDeviceSentMessage().GetMessage()
 		case msg.GetEphemeralMessage().GetMessage() != nil:
 			msg = msg.GetEphemeralMessage().GetMessage()
 		case msg.GetViewOnceMessage().GetMessage() != nil:
-			msg = msg.GetViewOnceMessage().GetMessage()
+			msg, viewOnce = msg.GetViewOnceMessage().GetMessage(), true
 		case msg.GetViewOnceMessageV2().GetMessage() != nil:
-			msg = msg.GetViewOnceMessageV2().GetMessage()
+			msg, viewOnce = msg.GetViewOnceMessageV2().GetMessage(), true
 		case msg.GetViewOnceMessageV2Extension().GetMessage() != nil:
-			msg = msg.GetViewOnceMessageV2Extension().GetMessage()
+			msg, viewOnce = msg.GetViewOnceMessageV2Extension().GetMessage(), true
 		case msg.GetDocumentWithCaptionMessage().GetMessage() != nil:
 			msg = msg.GetDocumentWithCaptionMessage().GetMessage()
+		case msg.GetAssociatedChildMessage().GetMessage() != nil:
+			msg = msg.GetAssociatedChildMessage().GetMessage()
+		case msg.GetGroupMentionedMessage().GetMessage() != nil:
+			msg = msg.GetGroupMentionedMessage().GetMessage()
+		case msg.GetStatusMentionMessage().GetMessage() != nil:
+			msg = msg.GetStatusMentionMessage().GetMessage()
+		case msg.GetLottieStickerMessage().GetMessage() != nil:
+			msg = msg.GetLottieStickerMessage().GetMessage()
 		default:
-			return msg
+			return msg, viewOnce
 		}
 	}
-	return msg
+	return msg, viewOnce
 }
 
 func classify(msg *waE2E.Message, messageID string) (string, *string, *Media, *Location, *Contact) {
@@ -129,7 +143,8 @@ func classify(msg *waE2E.Message, messageID string) (string, *string, *Media, *L
 		return TypePoll, strPtr(msg.GetPollCreationMessageV3().GetName()), nil, nil, nil
 	case msg.GetPollCreationMessageV4().GetMessage() != nil:
 		// V4 is a FutureProofMessage wrapping one of the other poll versions.
-		if typ, text, _, _, _ := classify(unwrap(msg.GetPollCreationMessageV4().GetMessage()), messageID); typ == TypePoll {
+		inner, _ := unwrap(msg.GetPollCreationMessageV4().GetMessage())
+		if typ, text, _, _, _ := classify(inner, messageID); typ == TypePoll {
 			return TypePoll, text, nil, nil, nil
 		}
 	case msg.GetPollCreationMessageV5() != nil:
@@ -172,6 +187,13 @@ func contextInfo(msg *waE2E.Message) *waE2E.ContextInfo {
 		msg.GetStickerMessage().GetContextInfo(),
 		msg.GetLocationMessage().GetContextInfo(),
 		msg.GetContactMessage().GetContextInfo(),
+		msg.GetContactsArrayMessage().GetContextInfo(),
+		msg.GetLiveLocationMessage().GetContextInfo(),
+		msg.GetPollCreationMessage().GetContextInfo(),
+		msg.GetPollCreationMessageV2().GetContextInfo(),
+		msg.GetPollCreationMessageV3().GetContextInfo(),
+		msg.GetPollCreationMessageV5().GetContextInfo(),
+		msg.GetPollCreationMessageV6().GetContextInfo(),
 	} {
 		if ci != nil {
 			return ci
@@ -184,7 +206,8 @@ func quoted(ctx context.Context, ci *waE2E.ContextInfo, r Resolver) *Quoted {
 	if ci.GetStanzaID() == "" {
 		return nil
 	}
-	typ, text, _, _, _ := classify(unwrap(ci.GetQuotedMessage()), ci.GetStanzaID())
+	quotedMsg, _ := unwrap(ci.GetQuotedMessage())
+	typ, text, _, _, _ := classify(quotedMsg, ci.GetStanzaID())
 	q := &Quoted{ID: ci.GetStanzaID(), Type: typ, Text: text}
 	if participant, err := types.ParseJID(ci.GetParticipant()); err == nil && ci.GetParticipant() != "" {
 		q.Sender.PN, q.Sender.LID = resolve(ctx, participant, types.JID{}, r)
