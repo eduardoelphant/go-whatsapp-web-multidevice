@@ -4,6 +4,7 @@ import (
 	domainDevice "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/device"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/websocket"
 	"github.com/sirupsen/logrus"
+	"go.mau.fi/whatsmeow"
 )
 
 // Fork (elphant): a StreamReplaced event means the same credentials connected from
@@ -22,4 +23,20 @@ func handleStreamReplaced(instance *DeviceInstance) {
 		Message: "Device session was opened elsewhere; reconnect to resume",
 		Result:  map[string]string{"device_id": instance.ID()},
 	}
+}
+
+// ShouldAutoReconnect reports whether a background reconnect loop may reconnect cli.
+// It is false only for a device whose session was taken over elsewhere, so the
+// loop does not fight the other holder of the credentials.
+func ShouldAutoReconnect(cli *whatsmeow.Client) bool {
+	dm := GetDeviceManager()
+	if dm == nil || cli == nil {
+		return true
+	}
+	for _, instance := range dm.ListDevices() {
+		if instance.GetClient() == cli {
+			return !instance.StreamReplaced()
+		}
+	}
+	return true
 }

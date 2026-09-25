@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	domainDevice "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/device"
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
@@ -45,5 +46,50 @@ func TestHandlerConnectedClearsStreamReplaced(t *testing.T) {
 	handler(context.Background(), instance, &events.Connected{})
 	if instance.StreamReplaced() {
 		t.Fatal("Connected should clear the stream replaced mark")
+	}
+}
+
+// withDeviceManager swaps the global device manager for the duration of a test.
+func withDeviceManager(t *testing.T, m *DeviceManager) {
+	t.Helper()
+	globalStateMu.Lock()
+	previous := deviceManager
+	deviceManager = m
+	globalStateMu.Unlock()
+	t.Cleanup(func() {
+		globalStateMu.Lock()
+		deviceManager = previous
+		globalStateMu.Unlock()
+	})
+}
+
+func TestShouldAutoReconnect(t *testing.T) {
+	marked := &whatsmeow.Client{}
+	unmarked := &whatsmeow.Client{}
+	unknown := &whatsmeow.Client{}
+
+	markedInstance := NewDeviceInstance("auto-marked", marked, nil)
+	markedInstance.MarkStreamReplaced()
+	manager := NewDeviceManager(nil, nil, nil)
+	manager.AddDevice(markedInstance)
+	manager.AddDevice(NewDeviceInstance("auto-unmarked", unmarked, nil))
+	withDeviceManager(t, manager)
+
+	if ShouldAutoReconnect(marked) {
+		t.Error("marked device must not auto-reconnect")
+	}
+	if !ShouldAutoReconnect(unmarked) {
+		t.Error("unmarked device should auto-reconnect")
+	}
+	if !ShouldAutoReconnect(unknown) {
+		t.Error("client without an instance should keep auto-reconnecting")
+	}
+	if !ShouldAutoReconnect(nil) {
+		t.Error("nil client should report true (no instance to block)")
+	}
+
+	withDeviceManager(t, nil)
+	if !ShouldAutoReconnect(marked) {
+		t.Error("without a device manager every client should auto-reconnect")
 	}
 }

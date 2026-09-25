@@ -6,6 +6,7 @@ import (
 	"time"
 
 	domainApp "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/app"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
 )
@@ -35,7 +36,8 @@ func SetAutoReconnectChecking(cli *whatsmeow.Client) {
 	go func() {
 		for {
 			time.Sleep(5 * time.Minute)
-			if !cli.IsConnected() {
+			// Fork (elphant): leave a device whose session was opened elsewhere alone.
+			if !cli.IsConnected() && whatsapp.ShouldAutoReconnect(cli) {
 				_ = cli.Connect()
 			}
 		}
