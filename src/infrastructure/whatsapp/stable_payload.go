@@ -50,6 +50,3 @@ func addStableAck(ctx context.Context, client *whatsmeow.Client, evt *events.Rec
 	inner["stable"] = stable
 	auditStable(stablepayload.EventAck, stable)
 }
-
-// auditStable is replaced by the real audit in stable_audit.go (Task 8).
-func auditStable(string, any) {}
