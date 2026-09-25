@@ -71,6 +71,9 @@ func TestBuildMessageTypes(t *testing.T) {
 		{"live location", &waE2E.Message{LiveLocationMessage: &waE2E.LiveLocationMessage{DegreesLatitude: proto.Float64(-20.3), DegreesLongitude: proto.Float64(-40.3)}}, TypeLocation, "<nil>", ""},
 		{"contact", &waE2E.Message{ContactMessage: &waE2E.ContactMessage{DisplayName: proto.String("Ana"), Vcard: proto.String("BEGIN:VCARD\nitem1.TEL;waid=5511900000002:+55 11 90000-0002\nEND:VCARD")}}, TypeContact, "<nil>", ""},
 		{"poll", &waE2E.Message{PollCreationMessageV3: &waE2E.PollCreationMessage{Name: proto.String("Lunch?")}}, TypePoll, "Lunch?", ""},
+		{"poll v4", &waE2E.Message{PollCreationMessageV4: &waE2E.FutureProofMessage{Message: &waE2E.Message{PollCreationMessage: &waE2E.PollCreationMessage{Name: proto.String("Dinner?")}}}}, TypePoll, "Dinner?", ""},
+		{"poll v5", &waE2E.Message{PollCreationMessageV5: &waE2E.PollCreationMessage{Name: proto.String("Coffee?")}}, TypePoll, "Coffee?", ""},
+		{"poll v6", &waE2E.Message{PollCreationMessageV6: &waE2E.PollCreationMessage{Name: proto.String("Tea?")}}, TypePoll, "Tea?", ""},
 		{"unknown", &waE2E.Message{ButtonsMessage: &waE2E.ButtonsMessage{ContentText: proto.String("pick")}}, TypeUnknown, "<nil>", ""},
 		{"empty", &waE2E.Message{}, TypeUnknown, "<nil>", ""},
 	}

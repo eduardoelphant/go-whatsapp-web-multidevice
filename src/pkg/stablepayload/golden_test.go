@@ -58,6 +58,8 @@ func goldenCases() map[string]func() (string, any) {
 		"message-live-location":  msg(&waE2E.Message{LiveLocationMessage: &waE2E.LiveLocationMessage{DegreesLatitude: proto.Float64(-20.3), DegreesLongitude: proto.Float64(-40.3)}}),
 		"message-contact":        msg(&waE2E.Message{ContactMessage: &waE2E.ContactMessage{DisplayName: proto.String("Ana"), Vcard: proto.String("BEGIN:VCARD\nitem1.TEL;waid=5511900000002:+55 11 90000-0002\nEND:VCARD")}}),
 		"message-contacts-array": msg(&waE2E.Message{ContactsArrayMessage: &waE2E.ContactsArrayMessage{Contacts: []*waE2E.ContactMessage{{DisplayName: proto.String("First")}, {DisplayName: proto.String("Second")}}}}),
+		"message-poll-v4":        msg(&waE2E.Message{PollCreationMessageV4: &waE2E.FutureProofMessage{Message: &waE2E.Message{PollCreationMessage: &waE2E.PollCreationMessage{Name: proto.String("Dinner?")}}}}),
+		"message-poll-v5":        msg(&waE2E.Message{PollCreationMessageV5: &waE2E.PollCreationMessage{Name: proto.String("Coffee?")}}),
 		"message-poll":           msg(&waE2E.Message{PollCreationMessageV3: &waE2E.PollCreationMessage{Name: proto.String("Lunch?")}}),
 		"message-unknown":        msg(&waE2E.Message{ButtonsMessage: &waE2E.ButtonsMessage{ContentText: proto.String("pick")}}),
 		"message-ephemeral":      msg(&waE2E.Message{EphemeralMessage: &waE2E.FutureProofMessage{Message: &waE2E.Message{Conversation: proto.String("disappearing")}}}),

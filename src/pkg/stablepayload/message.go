@@ -127,6 +127,15 @@ func classify(msg *waE2E.Message, messageID string) (string, *string, *Media, *L
 		return TypePoll, strPtr(msg.GetPollCreationMessageV2().GetName()), nil, nil, nil
 	case msg.GetPollCreationMessageV3() != nil:
 		return TypePoll, strPtr(msg.GetPollCreationMessageV3().GetName()), nil, nil, nil
+	case msg.GetPollCreationMessageV4().GetMessage() != nil:
+		// V4 is a FutureProofMessage wrapping one of the other poll versions.
+		if typ, text, _, _, _ := classify(unwrap(msg.GetPollCreationMessageV4().GetMessage()), messageID); typ == TypePoll {
+			return TypePoll, text, nil, nil, nil
+		}
+	case msg.GetPollCreationMessageV5() != nil:
+		return TypePoll, strPtr(msg.GetPollCreationMessageV5().GetName()), nil, nil, nil
+	case msg.GetPollCreationMessageV6() != nil:
+		return TypePoll, strPtr(msg.GetPollCreationMessageV6().GetName()), nil, nil, nil
 	}
 	return TypeUnknown, nil, nil, nil, nil
 }
