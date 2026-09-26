@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -286,7 +288,7 @@ func (s *serviceDevice) SetDeviceWebhookConfig(ctx context.Context, deviceID str
 		return fmt.Errorf("device manager not initialized")
 	}
 
-	_, ok := s.manager.GetDevice(deviceID)
+	inst, ok := s.manager.GetDevice(deviceID)
 	if !ok {
 		return pkgError.ErrDeviceNotFound
 	}
@@ -296,7 +298,20 @@ func (s *serviceDevice) SetDeviceWebhookConfig(ctx context.Context, deviceID str
 		return fmt.Errorf("storage not available")
 	}
 
-	if err := storage.SetDeviceWebhookConfig(deviceID, config); err != nil {
+	err := storage.SetDeviceWebhookConfig(deviceID, config)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Fork (elphant): the default device (EnsureDefault) has no registry row; create it and retry.
+		if err = storage.SaveDeviceRecord(&chatstorage.DeviceRecord{
+			DeviceID:    inst.ID(),
+			DisplayName: inst.DisplayName(),
+			JID:         inst.JID(),
+			ADJID:       inst.ADJID(),
+			CreatedAt:   inst.CreatedAt(),
+		}); err == nil {
+			err = storage.SetDeviceWebhookConfig(deviceID, config)
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("failed to set device webhook config: %w", err)
 	}
 
