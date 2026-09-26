@@ -21,7 +21,7 @@ func InitMcpSend(sendService domainSend.ISendUsecase, resolver deviceResolver) *
 
 func (s *SendHandler) AddSendTools(mcpServer *server.MCPServer) {
 	tool := mcpg.NewTool("whatsapp_send",
-		mcpg.WithDescription("Send a WhatsApp message. The `type` field selects what to send: text, image, video, audio, document, sticker, location, contact, poll, link, or forward an existing message."),
+		mcpg.WithDescription("Send a WhatsApp message to a contact or group. The `type` field selects what to send: text, image, video, audio, document, sticker, location, contact, poll, link, or forward (re-send a stored message by `message_id`). Media is fetched server-side from the given URL. When `scheduled_at` is set the message is scheduled instead of sent, and the result carries a `schedule_id` that whatsapp_schedule manages; otherwise the result carries the sent message ID."),
 		mcpg.WithTitleAnnotation("Send WhatsApp Message"),
 		mcpg.WithReadOnlyHintAnnotation(false),
 		mcpg.WithDestructiveHintAnnotation(false),

@@ -24,7 +24,7 @@ func InitMcpChat(chatService domainChat.IChatUsecase, userService domainUser.IUs
 
 func (h *ChatHandler) AddChatTools(mcpServer *server.MCPServer) {
 	tool := mcpg.NewTool("whatsapp_chat",
-		mcpg.WithDescription("Query WhatsApp chats and contacts: list_chats, list_contacts, get_messages (chat history with filters), or archive/unarchive a chat."),
+		mcpg.WithDescription("Query WhatsApp chats and contacts, or archive a chat. list_chats and get_messages read the gateway's own message store: they return only chats and messages this device received or synced while connected to the gateway, and do not fetch older history from WhatsApp. list_contacts returns the device's WhatsApp contact list. archive archives or unarchives one chat. Message IDs from get_messages are the `message_id` input for whatsapp_message and for whatsapp_send type=forward."),
 		mcpg.WithTitleAnnotation("Chat Queries"),
 		mcpg.WithReadOnlyHintAnnotation(false),
 		mcpg.WithDestructiveHintAnnotation(false),

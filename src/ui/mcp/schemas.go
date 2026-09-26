@@ -9,7 +9,7 @@ const sendSchema = `{
   "required": ["type", "phone"],
   "properties": {
     "type": {"type": "string", "enum": ["text","image","video","audio","document","sticker","location","contact","poll","link","forward"], "description": "Kind of message to send"},
-    "phone": {"type": "string", "description": "Destination phone number or group JID"},
+    "phone": {"type": "string", "description": "Destination: phone number in international format with country code (e.g. 5511987654321; a leading 0 is rejected) or a group JID (...@g.us)"},
     "device_id": {"type": "string", "description": "Act as this device instead of the connection default (X-Device-Id header)"},
     "is_forwarded": {"type": "boolean", "description": "Mark the message as forwarded (default false)"},
     "message": {"type": "string", "description": "type=text: the text body"},
@@ -64,10 +64,10 @@ const scheduleSchema = `{
   "type": "object",
   "required": ["action"],
   "properties": {
-    "action": {"type": "string", "enum": ["list", "get", "pause", "resume", "cancel"]},
-    "schedule_id": {"type": "string"},
+    "action": {"type": "string", "enum": ["list", "get", "pause", "resume", "cancel"], "description": "Operation on scheduled sends"},
+    "schedule_id": {"type": "string", "description": "get/pause/resume/cancel: ID returned by whatsapp_send when scheduled_at was set, or listed by action=list"},
     "status": {"type": "string", "enum": ["active","running","paused","completed","failed","cancelled"], "description": "action=list: only schedules in this status"},
-    "device_id": {"type": "string"},
+    "device_id": {"type": "string", "description": "Act as this device instead of the connection default (X-Device-Id header)"},
     "search": {"type": "string", "description": "action=list: match recipient or message text"},
     "message_type": {"type": "string", "enum": ["text","image","file","video","audio","sticker","contact","link","location","poll","forward"], "description": "action=list: only this kind of scheduled send (file = whatsapp_send type=document)"},
     "limit": {"type": "integer", "minimum": 1, "maximum": 100, "description": "action=list: max rows (default 25)"},
@@ -82,12 +82,12 @@ const messageSchema = `{
   "type": "object",
   "required": ["action", "phone", "message_id"],
   "properties": {
-    "action": {"type": "string", "enum": ["react","edit","revoke","delete","mark_read","mark_played","star","unstar","download_media"], "description": "Operation on an existing message. revoke = delete for everyone (destructive); delete = delete for me only; mark_played sends the played receipt for an incoming audio message; download_media returns the local file path"},
+    "action": {"type": "string", "enum": ["react","edit","revoke","delete","mark_read","mark_played","star","unstar","download_media"], "description": "Operation on an existing message. revoke = delete for everyone (destructive); delete = delete for me only; mark_played sends the played receipt for an incoming audio message; download_media saves the media on the gateway host and returns that server-side file path, not the file contents"},
     "phone": {"type": "string", "description": "Phone number or group JID of the chat containing the message"},
     "message_id": {"type": "string", "description": "The WhatsApp message ID"},
     "device_id": {"type": "string", "description": "Act as this device instead of the connection default"},
     "emoji": {"type": "string", "description": "action=react: emoji to react with; empty string removes the reaction"},
-    "message": {"type": "string", "description": "action=edit: replacement text (works ~15 minutes after send)"}
+    "message": {"type": "string", "description": "action=edit: replacement text; WhatsApp accepts edits only within about 15 minutes of the original send"}
   },
   "allOf": [
     {"if": {"properties": {"action": {"const": "edit"}}}, "then": {"required": ["message"]}}
