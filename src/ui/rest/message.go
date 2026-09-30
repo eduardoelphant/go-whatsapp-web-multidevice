@@ -236,7 +236,8 @@ func publicStaticFileURL(c fiber.Ctx, filePath string) string {
 		return ""
 	}
 	// Host() keeps the port, Hostname() drops it.
-	return fmt.Sprintf("%s://%s%s%s", c.Scheme(), c.Host(), config.AppBasePath, staticPath)
+	link := fmt.Sprintf("%s://%s%s%s", c.Scheme(), c.Host(), config.AppBasePath, staticPath)
+	return withStaticSignature(link, staticRel(staticPath))
 }
 
 func publicStaticPath(filePath string) string {

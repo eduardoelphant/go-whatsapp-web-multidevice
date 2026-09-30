@@ -409,8 +409,18 @@ What changes when it is on: a browser on the same origin (the embedded UI) keeps
 resends its credentials; a separate UI on another origin that loads `/statics` files in `<img>`
 tags, and anything that builds a URL from a webhook `path` and fetches it without credentials,
 get `401`. The CRM is unaffected: it downloads media through `GET /message/:id/media` and reads the
-QR from the `session.status` webhook. Signed, expiring URLs for browser consumers are a possible
-next step (D-13).
+QR from the `session.status` webhook.
+
+**Signed, expiring URLs.** For a browser that cannot send credentials (an `<img>` tag on another
+origin), set `APP_STATICS_SECRET` (a long random value) next to `APP_STATICS_AUTH=true` and
+`APP_BASIC_AUTH`. The links the API hands out (`qr_link` of the login responses and the
+`file_url` of `GET /message/:id/download`) then carry `?exp=<unix>&sig=<hex>`: an HMAC-SHA256 of
+`statics|<path below /statics, decoded>|<exp>`. A request with a valid, unexpired signature for
+that exact path opens that one file without credentials; anything else still needs Basic Auth.
+`APP_STATICS_URL_TTL_MINUTES` (default `15`) sets the validity. Without a secret, or with
+`APP_STATICS_AUTH` off, or without Basic Auth, links are not signed and nothing changes. The
+`path` fields of webhook payloads stay relative and unsigned. Changing the secret invalidates
+every link already handed out.
 
 ## Specs and plans
 

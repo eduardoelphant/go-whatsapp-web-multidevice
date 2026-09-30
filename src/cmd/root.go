@@ -208,6 +208,12 @@ func initEnvConfig() {
 	if viper.IsSet("app_statics_auth") {
 		config.AppStaticsAuth = viper.GetBool("app_statics_auth")
 	}
+	if viper.IsSet("app_statics_secret") {
+		config.AppStaticsSecret = viper.GetString("app_statics_secret")
+	}
+	if viper.IsSet("app_statics_url_ttl_minutes") {
+		config.AppStaticsURLTTLMinutes = viper.GetInt("app_statics_url_ttl_minutes")
+	}
 	if viper.IsSet("whatsapp_watchdog_interval_seconds") {
 		config.WhatsappWatchdogIntervalSeconds = viper.GetInt("whatsapp_watchdog_interval_seconds")
 	}
@@ -553,6 +559,18 @@ func initFlags() {
 		"chatwoot-import-messages", "",
 		config.ChatwootImportMessages,
 		`enable message history import to Chatwoot --chatwoot-import-messages <true/false> | example: --chatwoot-import-messages=true`,
+	)
+	rootCmd.PersistentFlags().StringVarP(
+		&config.AppStaticsSecret,
+		"statics-secret", "",
+		config.AppStaticsSecret,
+		`HMAC secret for signed, expiring /statics URLs; needs --statics-auth and Basic Auth --statics-secret <secret>`,
+	)
+	rootCmd.PersistentFlags().IntVarP(
+		&config.AppStaticsURLTTLMinutes,
+		"statics-url-ttl-minutes", "",
+		config.AppStaticsURLTTLMinutes,
+		`minutes a signed /statics URL stays valid --statics-url-ttl-minutes <int> | example: --statics-url-ttl-minutes=15`,
 	)
 	rootCmd.PersistentFlags().BoolVarP(
 		&config.AppStaticsAuth,

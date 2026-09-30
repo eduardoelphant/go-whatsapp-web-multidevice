@@ -23,13 +23,6 @@ history of the work.
   `devlikeapro/gows-plus`), and the ElphantCRM side (listen to `session.timelock`, show the state,
   decide when to turn `WHATSAPP_REACHOUT_GUARD` on).
 
-### D-13 Signed URLs for `/statics`
-
-- **What.** `APP_STATICS_AUTH` protects `/statics` with Basic Auth, which breaks a browser UI on
-  another origin that loads files in `<img>` tags. Signed, expiring URLs (`?exp=&sig=`, an HMAC
-  with `APP_STATICS_SECRET`) accepted in place of Basic Auth would serve that case. Do it only if
-  such a consumer appears.
-
 ### D-12 Production device gets `STREAM_REPLACED` shortly after connecting
 
 - **What.** Seen 2026-09-30: the only production device connected on start and, about five
@@ -83,6 +76,14 @@ happens as part of a server built from scratch (a new host, stack moved over wit
 the backup restored). Do not run `apt upgrade` or SetupOrion on the current host.
 
 ## Paid
+
+### D-13 Signed URLs for `/statics`
+
+Paid in the commit "feat(statics): signed, expiring URLs": `pkg/staticurl` (HMAC over the decoded
+path and the expiry), the `/statics` gate accepts a valid signature or Basic Auth, and the login
+`qr_link` and the download `file_url` are signed when `APP_STATICS_AUTH`, `APP_STATICS_SECRET`
+and Basic Auth are all set (`APP_STATICS_URL_TTL_MINUTES`, default 15). Webhook `path` fields are
+not signed.
 
 ### D-5 Lab data cleanup (part B, task 10)
 

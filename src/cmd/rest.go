@@ -18,6 +18,7 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/uiasset"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/staticurl"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	uimcp "github.com/aldinokemal/go-whatsapp-web-multidevice/ui/mcp"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest"
@@ -70,7 +71,7 @@ func restServer(_ *cobra.Command, _ []string) {
 	if config.AppStaticsAuth {
 		staticsAccounts = accounts
 	}
-	mountStatics(app, config.AppBasePath, "./statics", staticsAccounts)
+	mountStatics(app, config.AppBasePath, "./statics", staticsAccounts, []byte(config.AppStaticsSecret))
 
 	app.Use(middleware.Recovery())
 	app.Use(middleware.RequestTimeout(middleware.DefaultRequestTimeout))
@@ -355,13 +356,29 @@ func basicAuthAccounts() map[string]string {
 // mountStatics serves dir under <basePath>/statics. With accounts it requires Basic Auth for
 // that path only, before the request timeout and the other middleware, so a large download is
 // not cut by the 45 s timeout; with none it is public, as upstream serves it.
-func mountStatics(app *fiber.App, basePath, dir string, accounts map[string]string) {
+func mountStatics(app *fiber.App, basePath, dir string, accounts map[string]string, signingSecret []byte) {
 	path := basePath + "/statics"
-	if len(accounts) > 0 {
-		app.Use(path, newBasicAuthMiddleware(accounts), static.New(dir))
+	if len(accounts) == 0 {
+		app.Use(path, static.New(dir))
 		return
 	}
-	app.Use(path, static.New(dir))
+	basicAuth := newBasicAuthMiddleware(accounts)
+	// D-13: with a signing secret, an unexpired signed URL (`exp` and `sig`) opens the one file it
+	// was made for, for a browser that cannot send credentials; anything else needs Basic Auth.
+	gate := func(c fiber.Ctx) error {
+		if len(signingSecret) > 0 {
+			// The issuer signs the decoded path; the request may carry it percent-encoded.
+			rel := strings.TrimPrefix(c.Path(), path+"/")
+			if decoded, err := url.PathUnescape(rel); err == nil {
+				rel = decoded
+			}
+			if staticurl.Verify(signingSecret, rel, c.Query("exp"), c.Query("sig"), time.Now()) {
+				return c.Next()
+			}
+		}
+		return basicAuth(c)
+	}
+	app.Use(path, gate, static.New(dir))
 }
 
 func newBasicAuthMiddleware(accounts map[string]string) fiber.Handler {

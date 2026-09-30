@@ -7,17 +7,19 @@ import (
 )
 
 var (
-	AppVersion             = "v9.5.0"
-	AppPort                = "3000"
-	AppHost                = "0.0.0.0"
-	AppDebug               = false
-	AppOs                  = "GOWA"
-	AppPlatform            = waCompanionReg.DeviceProps_PlatformType(1)
-	AppBasicAuthCredential []string
-	AppStaticsAuth         bool // Fork (elphant): require Basic Auth on /statics (only when Basic Auth is configured)
-	AppBasePath            = ""
-	AppTrustedProxies      []string // Trusted proxy IP ranges (e.g., "0.0.0.0/0" for all, or specific CIDRs)
-	AppCORSAllowedOrigins  []string // CORS allowed origins; empty means "*" (any origin)
+	AppVersion              = "v9.5.0"
+	AppPort                 = "3000"
+	AppHost                 = "0.0.0.0"
+	AppDebug                = false
+	AppOs                   = "GOWA"
+	AppPlatform             = waCompanionReg.DeviceProps_PlatformType(1)
+	AppBasicAuthCredential  []string
+	AppStaticsSecret        string // Fork (elphant): HMAC secret for signed /statics URLs (empty: no signed URLs)
+	AppStaticsURLTTLMinutes = 15   // Fork (elphant): how long a signed /statics URL stays valid
+	AppStaticsAuth          bool   // Fork (elphant): require Basic Auth on /statics (only when Basic Auth is configured)
+	AppBasePath             = ""
+	AppTrustedProxies       []string // Trusted proxy IP ranges (e.g., "0.0.0.0/0" for all, or specific CIDRs)
+	AppCORSAllowedOrigins   []string // CORS allowed origins; empty means "*" (any origin)
 
 	// Web UI (gowa-ui) runtime download settings. The dashboard is a separate
 	// project released as a single HTML file; gowa fetches the latest release
