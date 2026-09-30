@@ -269,13 +269,15 @@ empty list, more than 100 entries or a malformed body answers `400`.
 | `verified_name` | business verified name, when WhatsApp sends one |
 | `error` | `invalid_number` (bad entry, never sent) or `upstream` (the call failed or timed out); `null` otherwise |
 
-An `upstream` error is retryable and is never reported as `not_exists`. The upstream helper
+When WhatsApp answers but no answer matches a requested number, the unanswered numbers are
+`upstream` errors too. An `upstream` error is retryable and is never reported as `not_exists`. The upstream helper
 that backs `GET /user/check` turns every error into "not registered"; the batch does not.
 
 Pacing: one batch at a time per device, with at least `WHATSAPP_USER_CHECK_MIN_INTERVAL_MS`
 (default `500`) between the end of one batch and the start of the next. Concurrent calls wait
-their turn and stop waiting when the client disconnects. Each call has a 20 s timeout. Logs
-carry counts only.
+their turn, inside the server's 45 s request timeout: a caller queued behind others can get
+`504` and should retry, and a caller that already waited has less of the 20 s call timeout
+left. A client that disconnects while queued still takes its turn. Logs carry counts only.
 
 ## Specs and plans
 

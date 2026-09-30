@@ -29,6 +29,22 @@ history of the work.
   The new `POST /user/check` scopes the device correctly.
 - **Pay.** Add `ContextWithDevice(c.Context(), getDeviceFromCtx(c))`, with a test on two devices.
 
+### D-8 Minor findings of the G7 review
+
+- **What.** Deferred from the final review of `POST /user/check`
+  (`docs/specs/2026-09-29-gateway-g7-batch-user-check-design.md`):
+  1. An `exists` answer with an LID and no phone JID gives `pn: null`; no `GetPNForLID` fallback.
+  2. The pacer can run a function for a request that is already cancelled if the slot and the
+     cancellation are ready together; add `ctx.Err()` after acquiring.
+  3. The pacer keeps one slot per device id forever (tiny, bounded by devices).
+  4. Numbers with a leading `0` (`0055...`) are accepted and come back `not_exists`, and an
+     upper-case `@S.WHATSAPP.NET` is rejected; reject a leading `0` as `invalid_number`.
+  5. The spec says `query` is always digits; invalid entries carry the trimmed text (the fork
+     page says so). Align the spec.
+  6. No test drives `IsOnWhatsAppBatch` itself (no client, validation errors, pacer wiring,
+     400 for an empty list or 101 entries end to end).
+- **Pay.** One small pass with a test per item.
+
 ### D-4 Gateway items G5, G8, G9
 
 - **What.** LID handling (G5), `/statics` served before Basic Auth (G8), stability work

@@ -138,3 +138,43 @@ func TestRunCheckBatchAllInvalidSkipsTheCall(t *testing.T) {
 	assert.Equal(t, "error", got[0].Status)
 	assert.Equal(t, "error", got[1].Status)
 }
+
+func TestRunCheckBatchUsesAnswersDespiteStoreError(t *testing.T) {
+	// whatsmeow returns the full answer together with "failed to store LID mappings".
+	f := &fakeChecker{
+		answers: []types.IsOnWhatsAppResponse{
+			{Query: "+5511988887777", JID: lidJID("111"), PhoneNumber: pnJID("5511988887777"), IsIn: true},
+			{Query: "+5511900000000", IsIn: false},
+		},
+		err: errors.New("failed to store LID mappings: database is locked"),
+	}
+	got := runCheckBatch(context.Background(), f, []string{"5511988887777", "5511900000000"})
+
+	assert.Equal(t, "exists", got[0].Status)
+	assert.Equal(t, str("111@lid"), got[0].LID)
+	assert.Equal(t, "not_exists", got[1].Status)
+}
+
+func TestRunCheckBatchMatchesByPhoneWhenQueryIsEmpty(t *testing.T) {
+	f := &fakeChecker{answers: []types.IsOnWhatsAppResponse{
+		{Query: "", JID: lidJID("111"), PhoneNumber: pnJID("5511988887777"), IsIn: true},
+	}}
+	got := runCheckBatch(context.Background(), f, []string{"5511988887777"})
+
+	assert.Equal(t, "exists", got[0].Status)
+	assert.Equal(t, str("5511988887777@s.whatsapp.net"), got[0].PN)
+}
+
+func TestRunCheckBatchUnmatchedAnswerNeverMeansNotExists(t *testing.T) {
+	// An "in" answer that matches no requested number: the numbers WhatsApp did not
+	// answer for cannot be called not_exists.
+	f := &fakeChecker{answers: []types.IsOnWhatsAppResponse{
+		{Query: "", JID: lidJID("111"), IsIn: true},
+		{Query: "+5511900000000", IsIn: false},
+	}}
+	got := runCheckBatch(context.Background(), f, []string{"5511988887777", "5511900000000"})
+
+	assert.Equal(t, "error", got[0].Status)
+	assert.Equal(t, str("upstream"), got[0].Error)
+	assert.Equal(t, "not_exists", got[1].Status) // WhatsApp answered for this one
+}

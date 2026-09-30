@@ -111,21 +111,44 @@ func runCheckBatch(ctx context.Context, checker phoneChecker, raw []string) doma
 
 	resolved := make(map[string]domainUser.CheckBatchItem, len(ask))
 	answers, err := checker.IsOnWhatsApp(ctx, ask)
-	if err != nil {
+	// whatsmeow can return the full answer together with a "failed to store LID mappings"
+	// error; every earlier failure returns no answers. Keep what WhatsApp answered.
+	if err != nil && len(answers) == 0 {
 		logrus.Warnf("Batch user check call failed: %v", err)
 		for digits := range asked {
 			resolved[digits] = errorItem(digits, checkErrUpstream)
 		}
 	} else {
+		if err != nil {
+			logrus.Warnf("Batch user check answered with an error: %v", err)
+		}
 		for digits := range asked {
 			resolved[digits] = domainUser.CheckBatchItem{Query: digits, Status: checkStatusNotExists}
 		}
+		answered := map[string]bool{}
+		unmatchedIn := 0
 		for _, answer := range answers {
-			digits := onlyDigits(answer.Query)
-			if _, wanted := asked[digits]; !wanted || !answer.IsIn {
+			digits := answerDigits(answer, asked)
+			if digits == "" {
+				if answer.IsIn {
+					unmatchedIn++
+				}
 				continue
 			}
-			resolved[digits] = existsItem(ctx, checker, digits, answer)
+			answered[digits] = true
+			if answer.IsIn {
+				resolved[digits] = existsItem(ctx, checker, digits, answer)
+			}
+		}
+		// An "in" answer that matches no requested number means the answer cannot be trusted
+		// to say which numbers are absent: never call those not_exists.
+		if unmatchedIn > 0 {
+			logrus.Warnf("Batch user check: %d answers matched no requested number", unmatchedIn)
+			for digits := range asked {
+				if !answered[digits] {
+					resolved[digits] = errorItem(digits, checkErrUpstream)
+				}
+			}
 		}
 	}
 
@@ -135,6 +158,21 @@ func runCheckBatch(ctx context.Context, checker phoneChecker, raw []string) doma
 		}
 	}
 	return items
+}
+
+// answerDigits finds which requested number an answer belongs to: by the query WhatsApp
+// echoes, else by the phone number or phone JID it returns. "" when none matches.
+func answerDigits(answer types.IsOnWhatsAppResponse, asked map[string]bool) string {
+	candidates := []string{onlyDigits(answer.Query), onlyDigits(answer.PhoneNumber.User)}
+	if answer.JID.Server == types.DefaultUserServer {
+		candidates = append(candidates, onlyDigits(answer.JID.User))
+	}
+	for _, digits := range candidates {
+		if digits != "" && asked[digits] {
+			return digits
+		}
+	}
+	return ""
 }
 
 func existsItem(ctx context.Context, checker phoneChecker, digits string, answer types.IsOnWhatsAppResponse) domainUser.CheckBatchItem {
