@@ -286,6 +286,33 @@ their turn, inside the server's 45 s request timeout: a caller queued behind oth
 `504` and should retry, and a caller that already waited has less of the 20 s call timeout
 left. A client that disconnects while queued still takes its turn. Logs carry counts only.
 
+## LID and phone mappings
+
+WhatsApp identifies a person by a LID (`123456789@lid`) and by a phone JID. whatsmeow keeps the
+pairs it learns; these routes expose them. All are read only, with Basic Auth, and answer
+`{"code": "SUCCESS", "results": ...}`.
+
+| Route | Answer (`results`) |
+|---|---|
+| `GET /lids/pn/:phone` | `{"pn": "5511999999999@s.whatsapp.net", "lid": "123456789@lid"}`; `lid` is `null` when unknown |
+| `GET /lids/:lid` | `{"lid": "123456789@lid", "pn": "5511999999999@s.whatsapp.net"}`; `pn` is `null` when unknown |
+| `POST /lids/lookup` | body `{"pns": [...], "lids": [...]}`, 1 to 500 entries in total; `{"pns": [{pn, lid}...], "lids": [{lid, pn}...]}` in the order sent |
+| `GET /lids?limit=&after=` | `{"items": [{lid, pn}...], "next": "<cursor>" \| null}`; ordered by LID; `limit` defaults to 100 and is capped at 1000; send `next` back as `after` for the next page |
+
+- `:phone` accepts digits, `+` and formatting, or a user JID; `:lid` accepts digits with or
+  without `@lid`. A bad value, an empty batch, more than 500 entries or a malformed body answers
+  `400`.
+- An unknown pair is an ordinary answer (`null`), not an error: WhatsApp may not have told the
+  device yet. The routes never ask WhatsApp. To make the gateway learn a pair, use
+  `POST /user/check`, which stores the mappings it receives.
+- The lookups use the device of the request (`X-Device-Id`). **The list is global to the
+  gateway**: whatsmeow's `whatsmeow_lid_map` table has no device column, so every device shares
+  the pairs, and the list ignores the device header.
+- The list reads the table through a second read-only connection opened on first use with the
+  store's own driver and DSN. A test on a real temporary store fails if a whatsmeow upgrade
+  renames the table or its columns.
+- Logs carry counts only, never phones or LIDs.
+
 ## Specs and plans
 
 Knowledge pages that the fork owns live in `docs/reference/` (this page and `import-baileys.md`); files

@@ -16,10 +16,10 @@ history of the work.
 - **Includes.** The `pairing_requested` flag: a pairing confirmed by `sync` can leave
   `meta.status` false, so the channel stays off.
 
-### D-3 Validator G7 and timelock G6
+### D-3 Timelock G6
 
-- **What.** Batch number check (G7) and timelock handling (G6). Each needs a spec first.
-  G6 is clean-room: do not read `devlikeapro/gows-plus` (no license).
+- **What.** Reachout timelock handling (G6). Needs a spec first. Clean-room: do not read
+  `devlikeapro/gows-plus` (no license).
 
 ### D-8 Minor findings of the G7 review
 
@@ -45,10 +45,10 @@ history of the work.
   Found in the review of the ElphantCRM validator (B-168).
 - **Pay.** With `err != nil`, report unanswered numbers as `error` / `upstream`, with a test.
 
-### D-4 Gateway items G5, G8, G9
+### D-4 Gateway items G8, G9
 
-- **What.** LID handling (G5), `/statics` served before Basic Auth (G8), stability work
-  such as goroutines without `recover` (G9). Each needs a spec first.
+- **What.** `/statics` served before Basic Auth (G8), stability work such as goroutines without
+  `recover` (G9). Each needs a spec first.
 
 ### D-5 Lab data cleanup (part B, task 10)
 
