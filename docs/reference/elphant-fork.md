@@ -245,6 +245,38 @@ Operations API (Basic Auth; `404` in direct mode):
 
 A redelivered or replayed row keeps its id, so it is sent before newer rows of the same URL.
 
+## Batch number check
+
+`POST /user/check` checks up to 100 numbers in one call. The device comes from `X-Device-Id`
+like any device-scoped endpoint. `GET /user/check` is unchanged.
+
+```json
+{"phones": ["5511999999999", "+55 11 98888-7777", "5511977776666@s.whatsapp.net"]}
+```
+
+Entries accept digits with `+`, spaces, dashes, dots and parentheses, or a plain
+`@s.whatsapp.net` JID (7 to 15 digits). `@lid`, group and device JIDs are not converted. An
+empty list, more than 100 entries or a malformed body answers `400`.
+
+`results` has one item per entry, in the same order (duplicates repeat):
+
+| Field | Meaning |
+|---|---|
+| `query` | the entry as digits (the trimmed text for an invalid entry) |
+| `status` | `exists`, `not_exists` or `error` |
+| `pn` | phone JID WhatsApp returned, `null` unless `exists`. It can differ from `query` (Brazilian ninth digit): store this one |
+| `lid` | LID from the WhatsApp answer, else from the local mapping, else `null` |
+| `verified_name` | business verified name, when WhatsApp sends one |
+| `error` | `invalid_number` (bad entry, never sent) or `upstream` (the call failed or timed out); `null` otherwise |
+
+An `upstream` error is retryable and is never reported as `not_exists`. The upstream helper
+that backs `GET /user/check` turns every error into "not registered"; the batch does not.
+
+Pacing: one batch at a time per device, with at least `WHATSAPP_USER_CHECK_MIN_INTERVAL_MS`
+(default `500`) between the end of one batch and the start of the next. Concurrent calls wait
+their turn and stop waiting when the client disconnects. Each call has a 20 s timeout. Logs
+carry counts only.
+
 ## Specs and plans
 
 Knowledge pages that the fork owns live in `docs/reference/` (this page and `import-baileys.md`); files
