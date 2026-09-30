@@ -88,6 +88,27 @@ history of the work.
      with the real dispatch, which starts an unstubbed webhook goroutine.
 - **Pay.** One small pass with a test per item.
 
+### D-12 Minor findings of the G9 review
+
+- **What.** Deferred from the final review of the resilience work
+  (`docs/specs/2026-09-30-gateway-g9-resilience-design.md`):
+  1. The watchdog can connect between the `Reconnect` usecase's disconnect and connect (the API
+     then answers `ErrAlreadyConnected`), and `Tick` connects devices one at a time, so N down
+     devices can take about 50 s each. Connect in parallel, or skip a device with a recent manual
+     action.
+  2. A logout whose `cli.Logout` fails leaves `Store.ID` set; between `Disconnect` and
+     `ResetClient` a tick can redial. Re-check `Store.ID` and deletion just before `Connect`.
+  3. An outbox row whose attempt panics restarts the worker every 30 s forever and blocks its
+     URL. Mark the row dead after N panics.
+  4. `usecase/schedule.go` (multipart pipe) and `webhook_forward.go` (global error) goroutines: a
+     panic before the pipe is closed leaves `ReadForm` blocked, and a panic leaves `globalErr`
+     nil, so the event is reported as delivered. Close the pipe in a defer and set the error in
+     the recover.
+  5. Tests: the D4 rule on a real `DeviceInstance` (nil client, `Store.ID` nil, deleted), `Start`
+     and the disabled case, auth on `/health/devices`, and the per-pass containment in the
+     scheduler, Chatwoot retry worker and sweeper.
+- **Pay.** One small pass with a test per item.
+
 ### D-4 Gateway item G8
 
 - **What.** `/statics` served before Basic Auth (G8). Needs a spec first.

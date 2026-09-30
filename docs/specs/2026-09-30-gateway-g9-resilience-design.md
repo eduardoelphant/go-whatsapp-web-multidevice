@@ -32,7 +32,7 @@ Per device, on each tick at time `now`:
 | Device | Action |
 |---|---|
 | connected | reset attempts and wait; record the last connected time |
-| not paired, or no client, or `StreamReplaced` | skip (no attempt, no state change) |
+| not paired, no client, `StreamReplaced`, banned (`TemporaryBan`, until it ends) or an outdated client (until `Connected`) | skip (no attempt, no state change) |
 | disconnected, paired, and `now` before the next attempt time | skip |
 | disconnected, paired, due | `Connect()`; count the attempt; on success count a success; set the next attempt time to `now + min(15m, interval * 2^(attempts-1))` |
 

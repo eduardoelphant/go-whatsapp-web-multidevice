@@ -361,7 +361,9 @@ what it was told or saw.
 every device. Every goroutine GOWA starts is protected by `pkg/safego`: `safego.Go(name, fn)` for
 one-shot work, `defer safego.Recover(name)` as the first statement of a goroutine closure, and
 `safego.Loop(name, fn)` for service loops meant to run for the life of the process (websocket hub,
-presence scheduler, webhook outbox worker and cleanup, UI auto update). A contained panic is
+presence scheduler, webhook outbox worker and cleanup, UI auto update, the reconnect watchdog). The
+scheduled-send worker, the Chatwoot retry worker and the Chatwoot sent-id sweeper contain a panic
+per pass and keep running. A contained panic is
 logged with its stack and counted; a loop is started again after a wait (1 s, doubling, capped at
 30 s), because a dead loop would leave the feature silently down while the process stays up. A test
 (`TestEveryBackgroundGoroutineIsProtected`) fails on any unprotected `go` statement.
@@ -370,19 +372,24 @@ logged with its stack and counted; a loop is started again after a wait (1 s, do
 paired device that is disconnected and not in `StreamReplaced` is reconnected, with a wait that
 doubles per failed attempt (the interval, then 2x, 4x, up to 15 minutes) and resets when the device
 connects. A device that is not paired (no stored identity) or has no client is never connected,
-because connecting would start a pairing. This replaces the old loop, which watched only the
-default client.
+because connecting would start a pairing; nor is one whose session was opened elsewhere
+(`StreamReplaced`), one banned by WhatsApp (until the ban ends) or one running an outdated
+client (until it connects again). This replaces the old loop, which watched only the default
+client.
 
-**`GET /health/devices`** (Basic Auth; the public `/health` is unchanged):
+**`GET /health/devices`** (Basic Auth when `APP_BASIC_AUTH` is set, like the other routes; the public
+`/health` is unchanged). `state` comes from the live client. `last_connected_at` is the last watchdog
+check that saw the device connected, so it is `null` for the first interval after boot and always
+`null` when the watchdog is off:
 
 ```json
 {"code":"SUCCESS","message":"Device health","results":{"devices":[
   {"id":"...","state":"logged_in","connected":true,"logged_in":true,"stream_replaced":false,
-   "last_connected_at":"2026-09-30T12:00:00Z","reconnect_attempts":0,"next_attempt_at":null}],
+   "reconnect_blocked":false,"last_connected_at":"2026-09-30T12:00:00Z","reconnect_attempts":0,"next_attempt_at":null}],
   "panics_recovered":0}}
 ```
 
-**`GET /metrics`** (Basic Auth, Prometheus text format, no extra dependency; device ids never
+**`GET /metrics`** (same auth, Prometheus text format, no extra dependency; device ids never
 appear): `gowa_goroutine_panics_total`, `gowa_reconnect_attempts_total`,
 `gowa_reconnect_successes_total` and `gowa_devices{state="..."}`.
 

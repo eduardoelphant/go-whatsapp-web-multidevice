@@ -4,6 +4,10 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	domainDevice "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/device"
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types/events"
 )
 
 type fakeWatched struct {
@@ -16,16 +20,24 @@ type fakeWatched struct {
 	state      string
 	connectErr error
 	panicOn    bool
+	panicState bool // panics inside Connected(), i.e. while the watchdog reads the device
+	blocked    bool
 	connects   int
 }
 
-func (f *fakeWatched) ID() string        { return f.id }
-func (f *fakeWatched) Paired() bool      { return f.paired }
-func (f *fakeWatched) HasClient() bool   { return f.hasClient }
-func (f *fakeWatched) Connected() bool   { return f.connected }
-func (f *fakeWatched) Replaced() bool    { return f.replaced }
-func (f *fakeWatched) LoggedIn() bool    { return f.loggedIn }
-func (f *fakeWatched) StateName() string { return f.state }
+func (f *fakeWatched) ID() string      { return f.id }
+func (f *fakeWatched) Paired() bool    { return f.paired }
+func (f *fakeWatched) HasClient() bool { return f.hasClient }
+func (f *fakeWatched) Connected() bool {
+	if f.panicState {
+		panic("connected boom")
+	}
+	return f.connected
+}
+func (f *fakeWatched) ReconnectBlocked() bool { return f.blocked }
+func (f *fakeWatched) Replaced() bool         { return f.replaced }
+func (f *fakeWatched) LoggedIn() bool         { return f.loggedIn }
+func (f *fakeWatched) StateName() string      { return f.state }
 func (f *fakeWatched) Connect() error {
 	f.connects++
 	if f.panicOn {
@@ -185,5 +197,92 @@ func TestWatchdogSnapshotReportsStateAndFlags(t *testing.T) {
 	h := w.Snapshot()[0]
 	if h.ID != "a" || h.State != "logged_in" || !h.Connected || !h.LoggedIn || !h.StreamReplaced {
 		t.Fatalf("health = %+v", h)
+	}
+}
+
+// A panic while the watchdog reads a device must not leave its mutex locked: the snapshot and
+// the next tick would hang forever.
+func TestWatchdogAPanicWhileReadingADeviceDoesNotLeaveTheLockHeld(t *testing.T) {
+	bad := down("bad")
+	bad.panicState = true
+	good := down("good")
+	w := newWD(bad, good)
+
+	w.Tick(wdNow)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() { recover() }() // Snapshot reads the same panicking device
+		w.Snapshot()
+		w.Tick(wdNow.Add(time.Hour))
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the watchdog lock is still held after a panic")
+	}
+	if good.connects < 1 {
+		t.Fatalf("good device connects = %d, want at least 1", good.connects)
+	}
+}
+
+func TestWatchdogNeverConnectsADeviceWhoseReconnectIsBlocked(t *testing.T) {
+	banned := down("banned")
+	banned.blocked = true
+	w := newWD(banned)
+
+	w.Tick(wdNow)
+
+	if banned.connects != 0 {
+		t.Fatalf("connects = %d, want 0 for a banned or outdated client", banned.connects)
+	}
+	if h := w.Snapshot()[0]; !h.ReconnectBlocked {
+		t.Fatalf("health = %+v, want reconnect_blocked", h)
+	}
+}
+
+func TestInstanceDeviceStateComesFromTheLiveClientNotTheCachedState(t *testing.T) {
+	inst := NewDeviceInstance("live-state", nil, nil)
+	inst.SetState(domainDevice.DeviceStateLoggedIn) // stale cache
+
+	if got := (instanceDevice{inst: inst}).StateName(); got != "disconnected" {
+		t.Fatalf("state = %q, want disconnected (no client)", got)
+	}
+}
+
+func TestInstanceDeviceConnectWithoutAClientIsAnError(t *testing.T) {
+	d := instanceDevice{inst: NewDeviceInstance("no-client", nil, nil)}
+	if d.HasClient() || d.Paired() {
+		t.Fatal("a device with no client is neither present nor paired")
+	}
+	if err := d.Connect(); err == nil {
+		t.Fatal("Connect without a client must be an error, not a success")
+	}
+}
+
+func TestBanAndOutdatedEventsBlockReconnectAndConnectedClears(t *testing.T) {
+	client := &whatsmeow.Client{}
+	inst := NewDeviceInstance("blocked", nil, nil)
+	inst.SetClient(client)
+	t.Cleanup(func() { unblockReconnect(client) })
+	now := time.Now()
+
+	handleSessionEvent(nil, inst, &events.TemporaryBan{Code: events.TempBanSentToTooManyPeople, Expire: time.Hour})
+	if !reconnectBlocked(client, now) {
+		t.Fatal("a temporary ban must block reconnects")
+	}
+	if reconnectBlocked(client, now.Add(2*time.Hour)) {
+		t.Fatal("the block must end when the ban expires")
+	}
+
+	handleSessionEvent(nil, inst, &events.ClientOutdated{})
+	if !reconnectBlocked(client, now.Add(48*time.Hour)) {
+		t.Fatal("an outdated client stays blocked until it connects")
+	}
+
+	handleSessionEvent(nil, inst, &events.Connected{})
+	if reconnectBlocked(client, now) {
+		t.Fatal("Connected must clear the block")
 	}
 }

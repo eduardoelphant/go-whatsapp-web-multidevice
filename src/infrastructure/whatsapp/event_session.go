@@ -189,6 +189,16 @@ func handleSessionEvent(ctx context.Context, instance *DeviceInstance, rawEvt an
 		HandleReachoutTimelockEvent(ctx, instance, evt, time.Now())
 		return
 	}
+	// Fork (elphant): a banned account or an outdated client must not be redialed by the
+	// reconnect watchdog; a successful connection lifts the block.
+	switch evt := rawEvt.(type) {
+	case *events.TemporaryBan:
+		blockReconnect(instance.GetClient(), time.Now().Add(evt.Expire))
+	case *events.ClientOutdated:
+		blockReconnect(instance.GetClient(), time.Time{})
+	case *events.Connected:
+		unblockReconnect(instance.GetClient())
+	}
 	if _, ok := rawEvt.(*events.PairSuccess); ok {
 		// A new pairing is a new session: a timelock from the old one does not carry over.
 		resetReachout(ctx, instance)

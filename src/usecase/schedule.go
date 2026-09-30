@@ -376,7 +376,7 @@ func (s *ScheduleService) Start(ctx context.Context) {
 			ticker := time.NewTicker(5 * time.Second)
 			defer ticker.Stop()
 			for {
-				s.processDue(ctx)
+				s.processDueContained(ctx)
 				select {
 				case <-ctx.Done():
 					return
@@ -385,6 +385,13 @@ func (s *ScheduleService) Start(ctx context.Context) {
 			}
 		}()
 	})
+}
+
+// processDueContained runs one scheduler pass; a panic in it is contained so the next pass runs
+// (a dead worker would stop every scheduled send while the process stays up).
+func (s *ScheduleService) processDueContained(ctx context.Context) {
+	defer safego.Recover("schedule-process-due")
+	s.processDue(ctx)
 }
 
 // Done is closed once the worker started by Start has exited.

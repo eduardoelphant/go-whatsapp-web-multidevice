@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -229,7 +230,11 @@ func restServer(_ *cobra.Command, _ []string) {
 	listenErr := make(chan error, 1)
 	go func() {
 		defer safego.Recover("rest#1")
-		listenErr <- app.Listen(config.AppHost+":"+config.AppPort, fiber.ListenConfig{ListenerNetwork: "tcp"})
+		// A panic in the listener must end the process, as before: without the send below the
+		// main goroutine would wait forever on a server that is no longer listening.
+		err := errors.New("http server panicked")
+		defer func() { listenErr <- err }()
+		err = app.Listen(config.AppHost+":"+config.AppPort, fiber.ListenConfig{ListenerNetwork: "tcp"})
 	}()
 
 	sigCh := make(chan os.Signal, 1)

@@ -1455,7 +1455,11 @@ func StartChatwootForwardRetryWorker(repo domainChatStorage.IChatStorageReposito
 			ticker := time.NewTicker(30 * time.Second)
 			defer ticker.Stop()
 			for {
-				processDueChatwootForwardRetries(repo)
+				func() {
+					// A panic in one pass must not stop the retry worker for good.
+					defer safego.Recover("chatwoot-forward-retry-pass")
+					processDueChatwootForwardRetries(repo)
+				}()
 				<-ticker.C
 			}
 		}()

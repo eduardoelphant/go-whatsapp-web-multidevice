@@ -136,12 +136,16 @@ func init() {
 		ticker := time.NewTicker(sentMessageIDsTTL)
 		defer ticker.Stop()
 		for range ticker.C {
-			sentMessageIDs.Range(func(key, value any) bool {
-				if time.Since(value.(time.Time)) > sentMessageIDsTTL {
-					sentMessageIDs.Delete(key)
-				}
-				return true
-			})
+			func() {
+				// A panic in one sweep must not stop the sweeper: the map would grow without limit.
+				defer safego.Recover("chatwoot-sent-ids-sweep")
+				sentMessageIDs.Range(func(key, value any) bool {
+					if time.Since(value.(time.Time)) > sentMessageIDsTTL {
+						sentMessageIDs.Delete(key)
+					}
+					return true
+				})
+			}()
 		}
 	}()
 }
