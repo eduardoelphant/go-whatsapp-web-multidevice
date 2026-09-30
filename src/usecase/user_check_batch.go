@@ -32,12 +32,20 @@ var userCheckPacer = newCheckPacer()
 type phoneChecker interface {
 	IsOnWhatsApp(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error)
 	LIDForPN(ctx context.Context, pn types.JID) (types.JID, error)
+	PNForLID(ctx context.Context, lid types.JID) (types.JID, error)
 }
 
 type whatsmeowChecker struct{ client *whatsmeow.Client }
 
 func (c whatsmeowChecker) IsOnWhatsApp(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error) {
 	return c.client.IsOnWhatsApp(ctx, phones)
+}
+
+func (c whatsmeowChecker) PNForLID(ctx context.Context, lid types.JID) (types.JID, error) {
+	if c.client.Store == nil || c.client.Store.LIDs == nil {
+		return types.EmptyJID, nil
+	}
+	return c.client.Store.LIDs.GetPNForLID(ctx, lid)
 }
 
 func (c whatsmeowChecker) LIDForPN(ctx context.Context, pn types.JID) (types.JID, error) {
@@ -158,9 +166,10 @@ func runCheckBatch(ctx context.Context, checker phoneChecker, raw []string) doma
 				resolved[digits] = existsItem(ctx, checker, digits, primary)
 			case hasAlt && alt.IsIn:
 				resolved[digits] = existsItem(ctx, checker, digits, alt)
-			case unmatchedIn > 0 && !hasPrimary && !hasAlt:
-				// An "in" answer that matches no requested number means the answer cannot be
-				// trusted to say which numbers are absent: never call those not_exists.
+			case (unmatchedIn > 0 || err != nil) && !hasPrimary && !hasAlt:
+				// An "in" answer that matches no requested number, or an error that came with a
+				// partial answer, means WhatsApp did not say which numbers are absent: never call
+				// the unanswered ones not_exists.
 				resolved[digits] = errorItem(digits, checkErrUpstream)
 			default:
 				resolved[digits] = domainUser.CheckBatchItem{Query: digits, Status: checkStatusNotExists}
@@ -221,6 +230,12 @@ func existsItem(ctx context.Context, checker phoneChecker, digits string, answer
 	pn := answer.PhoneNumber
 	if pn.IsEmpty() && answer.JID.Server == types.DefaultUserServer {
 		pn = answer.JID
+	}
+	if pn.IsEmpty() && answer.JID.Server == types.HiddenUserServer {
+		// Only the LID came back: the local map may still know the phone.
+		if mapped, err := checker.PNForLID(ctx, answer.JID); err == nil {
+			pn = mapped
+		}
 	}
 	if !pn.IsEmpty() {
 		s := pn.ToNonAD().String()

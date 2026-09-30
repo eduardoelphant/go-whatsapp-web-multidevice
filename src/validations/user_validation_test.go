@@ -144,6 +144,8 @@ func TestNormalizeBatchPhone(t *testing.T) {
 		{"120363000000000000@g.us", "", false},
 		{"5511999999999:12@s.whatsapp.net", "", false},
 		{"55119999abc99", "", false},
+		{"05511988887777", "", false},                           // leading 0: E.164 never starts with 0
+		{"5511977776666@S.WHATSAPP.NET", "5511977776666", true}, // the server part is case-insensitive
 		{"", "", false},
 	}
 	for _, tt := range tests {

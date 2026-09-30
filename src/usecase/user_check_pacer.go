@@ -45,6 +45,11 @@ func (p *checkPacer) run(ctx context.Context, key string, interval time.Duration
 	}
 	defer func() { <-s.sem }()
 
+	// select picks at random when the slot and the cancellation are both ready.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if wait := interval - time.Since(s.last); !s.last.IsZero() && wait > 0 {
 		timer := time.NewTimer(wait)
 		select {

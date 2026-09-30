@@ -115,3 +115,20 @@ func TestCheckPacerReturnsFunctionError(t *testing.T) {
 	boom := errors.New("boom")
 	assert.ErrorIs(t, p.run(context.Background(), "dev", 0, func() error { return boom }), boom)
 }
+
+// D-8 2: when the slot and the cancellation are both ready, a cancelled request must not run.
+func TestCheckPacerAlreadyCancelledNeverRunsEvenOnAFreeSlot(t *testing.T) {
+	p := newCheckPacer()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var called int32
+
+	for i := 0; i < 50; i++ {
+		_ = p.run(ctx, "dev", 0, func() error {
+			atomic.AddInt32(&called, 1)
+			return nil
+		})
+	}
+
+	assert.Equal(t, int32(0), atomic.LoadInt32(&called))
+}

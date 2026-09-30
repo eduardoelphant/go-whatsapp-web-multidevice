@@ -75,13 +75,14 @@ func ValidateCheckBatch(ctx context.Context, request domainUser.CheckBatchReques
 func NormalizeBatchPhone(raw string) (string, bool) {
 	value := strings.TrimSpace(raw)
 	if at := strings.Index(value, "@"); at >= 0 {
-		if value[at:] != config.WhatsappTypeUser {
+		if !strings.EqualFold(value[at:], config.WhatsappTypeUser) {
 			return "", false
 		}
 		value = value[:at]
 	}
 	digits := batchPhoneCleaner.Replace(value)
-	if len(digits) < checkBatchMinDigits || len(digits) > checkBatchMaxDigits {
+	// E.164 numbers never start with 0 (a national trunk prefix or a 00 dialing prefix is not a number).
+	if len(digits) < checkBatchMinDigits || len(digits) > checkBatchMaxDigits || digits[0] == '0' {
 		return "", false
 	}
 	for _, r := range digits {

@@ -23,30 +23,6 @@ history of the work.
   `devlikeapro/gows-plus`), and the ElphantCRM side (listen to `session.timelock`, show the state,
   decide when to turn `WHATSAPP_REACHOUT_GUARD` on).
 
-### D-8 Minor findings of the G7 review
-
-- **What.** Deferred from the final review of `POST /user/check`
-  (`docs/specs/2026-09-29-gateway-g7-batch-user-check-design.md`):
-  1. An `exists` answer with an LID and no phone JID gives `pn: null`; no `GetPNForLID` fallback.
-  2. The pacer can run a function for a request that is already cancelled if the slot and the
-     cancellation are ready together; add `ctx.Err()` after acquiring.
-  3. The pacer keeps one slot per device id forever (tiny, bounded by devices).
-  4. Numbers with a leading `0` (`0055...`) are accepted and come back `not_exists`, and an
-     upper-case `@S.WHATSAPP.NET` is rejected; reject a leading `0` as `invalid_number`.
-  5. The spec says `query` is always digits; invalid entries carry the trimmed text (the fork
-     page says so). Align the spec.
-  6. No test drives `IsOnWhatsAppBatch` itself (no client, validation errors, pacer wiring,
-     400 for an empty list or 101 entries end to end).
-- **Pay.** One small pass with a test per item.
-
-### D-9 Partial batch answer with an error can report a number as not registered
-
-- **What.** In `runCheckBatch`, when `client.IsOnWhatsApp` returns `err != nil` together with
-  partial answers (the "failed to store LID mappings" case), a number that got no answer at all
-  (neither itself nor its ninth-digit variant) and no unmatched "in" answer becomes `not_exists`.
-  Found in the review of the ElphantCRM validator (B-168).
-- **Pay.** With `err != nil`, report unanswered numbers as `error` / `upstream`, with a test.
-
 ### D-10 Minor findings of the G5 review
 
 - **What.** Deferred from the final review of the LID endpoints
@@ -171,6 +147,15 @@ history of the work.
   and the mass-reconnect CPU limit. Read-only on the host, no restarts.
 
 ## Paid
+
+### D-8 and D-9 Minor findings of the G7 review
+
+Paid in the commit "fix(user): batch check minors": `pn` from the local map when only the LID came
+back; a number with no answer when WhatsApp answered with an error is `error/upstream`, never
+`not_exists`; the pacer refuses an already cancelled request; a leading `0` is `invalid_number`
+and the server part of a JID is case-insensitive; tests for the usecase entry point; the spec says
+what `query` holds for an invalid entry. Left as accepted: the pacer keeps one small slot per
+device id, bounded by the number of devices.
 
 ### D-4 Gateway item G8 (`/statics` before Basic Auth)
 

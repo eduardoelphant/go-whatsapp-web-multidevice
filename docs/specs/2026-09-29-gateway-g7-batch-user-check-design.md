@@ -51,7 +51,7 @@ repeated:
 
 | Field | Rule |
 |---|---|
-| `query` | the entry as cleaned (digits only) |
+| `query` | the entry as cleaned (digits only); for an `invalid_number` entry, the trimmed text as sent |
 | `status` | `exists` when WhatsApp answers `type="in"`; `not_exists` when it answers otherwise or omits the number and the call succeeded; `error` otherwise |
 | `pn` | JID from the WhatsApp answer (its `pn_jid`, or `jid` when that is a phone JID). It can differ from `query` (Brazilian ninth digit). `null` unless `exists` |
 | `lid` | the LID in the WhatsApp answer; else `Store.LIDs.GetLIDForPN(pn)`; else `null`. `null` unless `exists` |
