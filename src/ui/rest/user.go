@@ -165,7 +165,9 @@ func (controller *User) UserCheck(c fiber.Ctx) error {
 	err := c.Bind().Query(&request)
 	utils.PanicIfNeeded(err)
 
-	response, err := controller.Service.IsOnWhatsApp(c.Context(), request)
+	ctx := whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c))
+
+	response, err := controller.Service.IsOnWhatsApp(ctx, request)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{

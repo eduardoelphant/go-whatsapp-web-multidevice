@@ -21,14 +21,6 @@ history of the work.
 - **What.** Batch number check (G7) and timelock handling (G6). Each needs a spec first.
   G6 is clean-room: do not read `devlikeapro/gows-plus` (no license).
 
-### D-7 `GET /user/check` ignores the device header
-
-- **What.** `UserCheck` passes `c.Context()` without `ContextWithDevice`, so
-  `ClientFromContext` falls back to the global default client and `X-Device-Id` has no effect.
-  Found while writing the G7 spec (`docs/specs/2026-09-29-gateway-g7-batch-user-check-design.md`).
-  The new `POST /user/check` scopes the device correctly.
-- **Pay.** Add `ContextWithDevice(c.Context(), getDeviceFromCtx(c))`, with a test on two devices.
-
 ### D-8 Minor findings of the G7 review
 
 - **What.** Deferred from the final review of `POST /user/check`
@@ -75,3 +67,10 @@ history of the work.
 Paid in ElphantCRM `b9c9a1339` (branch `feature/whatsapp-gateway`, not yet in `develop`): a received
 message is placed at the WhatsApp time, capped at now. Details in `34-known-debt.md`, section
 "Pagas".
+
+### D-7 `GET /user/check` ignores the device header
+
+Paid in the commit that follows `8122419` (see `git log -- src/ui/rest/user_check_device_test.go`):
+`UserCheck` now passes `ContextWithDevice(c.Context(), getDeviceFromCtx(c))`, so `X-Device-Id`
+selects the client instead of the default one. Test:
+`TestUserCheckScopesTheRequestDevice`.
