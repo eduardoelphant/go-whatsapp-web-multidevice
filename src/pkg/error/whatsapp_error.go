@@ -1,6 +1,9 @@
 package error
 
-import "net/http"
+import (
+	"net/http"
+	"time"
+)
 
 type InvalidJID string
 
@@ -85,6 +88,35 @@ func (e WaReachoutTimelockError) ErrCode() string {
 // StatusCode will return the HTTP status code based on the error data type
 func (e WaReachoutTimelockError) StatusCode() int {
 	return http.StatusTooManyRequests
+}
+
+// WaReachoutGuardError is returned by the fork's reach-out guard (spec 2026-09-30-gateway-g6):
+// the account is timelocked and the recipient has no tctoken, so the send is refused before it
+// reaches WhatsApp.
+type WaReachoutGuardError string
+
+// Error for complying the error interface
+func (e WaReachoutGuardError) Error() string {
+	return string(e)
+}
+
+// ErrCode will return the error code based on the error data type
+func (e WaReachoutGuardError) ErrCode() string {
+	return "WA_REACHOUT_GUARD"
+}
+
+// StatusCode will return the HTTP status code based on the error data type
+func (e WaReachoutGuardError) StatusCode() int {
+	return http.StatusConflict
+}
+
+// NewWaReachoutGuard builds the guard error; endsAt is nil when WhatsApp gave no end.
+func NewWaReachoutGuard(endsAt *time.Time) WaReachoutGuardError {
+	message := "The account is restricted from starting new chats (reach-out timelock) and this recipient has no prior conversation, so the send was refused before reaching WhatsApp"
+	if endsAt != nil {
+		message += ". The restriction ends at " + endsAt.UTC().Format(time.RFC3339)
+	}
+	return WaReachoutGuardError(message + ". Reply inside an existing conversation, ask the recipient to message first, or wait for the restriction to clear.")
 }
 
 const (
