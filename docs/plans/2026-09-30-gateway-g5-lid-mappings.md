@@ -397,7 +397,6 @@ package usecase
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	domainLID "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/lid"
@@ -537,7 +536,7 @@ func TestLookupRejectsEmptyAndOversizedAndBadEntries(t *testing.T) {
 }
 
 func TestListPagesAndNext(t *testing.T) {
-	pairs := []lidmap.Pair{{"101", "5511900000001"}, {"102", "5511900000002"}, {"103", "5511900000003"}}
+	pairs := []lidmap.Pair{{LID: "101", PN: "5511900000001"}, {LID: "102", PN: "5511900000002"}, {LID: "103", PN: "5511900000003"}}
 	svc := newLIDTestService(fakeLIDStore{}, fakeLister{pairs: pairs})
 
 	page1, err := svc.List(context.Background(), domainLID.ListRequest{Limit: 2})
@@ -623,8 +622,8 @@ func requestLIDStore(ctx context.Context) (lidStore, error) {
 	return client.Store.LIDs, nil
 }
 
-func pnJID(digits string) types.JID  { return types.NewJID(digits, types.DefaultUserServer) }
-func lidJID(digits string) types.JID { return types.NewJID(digits, types.HiddenUserServer) }
+func userJID(digits string) types.JID  { return types.NewJID(digits, types.DefaultUserServer) }
+func hiddenJID(digits string) types.JID { return types.NewJID(digits, types.HiddenUserServer) }
 
 func (s serviceLID) PNToLID(ctx context.Context, phone string) (domainLID.PNItem, error) {
 	digits, ok := validations.NormalizeBatchPhone(phone)
@@ -635,7 +634,7 @@ func (s serviceLID) PNToLID(ctx context.Context, phone string) (domainLID.PNItem
 	if err != nil {
 		return domainLID.PNItem{}, err
 	}
-	lid, err := store.GetLIDForPN(ctx, pnJID(digits))
+	lid, err := store.GetLIDForPN(ctx, userJID(digits))
 	if err != nil {
 		return domainLID.PNItem{}, fmt.Errorf("lookup lid for phone: %w", err)
 	}
@@ -651,7 +650,7 @@ func (s serviceLID) LIDToPN(ctx context.Context, lid string) (domainLID.LIDItem,
 	if err != nil {
 		return domainLID.LIDItem{}, err
 	}
-	pn, err := store.GetPNForLID(ctx, lidJID(digits))
+	pn, err := store.GetPNForLID(ctx, hiddenJID(digits))
 	if err != nil {
 		return domainLID.LIDItem{}, fmt.Errorf("lookup phone for lid: %w", err)
 	}
@@ -689,18 +688,18 @@ func (s serviceLID) Lookup(ctx context.Context, request domainLID.LookupRequest)
 	if len(pns) > 0 {
 		jids := make([]types.JID, 0, len(pns))
 		for _, digits := range pns {
-			jids = append(jids, pnJID(digits))
+			jids = append(jids, userJID(digits))
 		}
 		found, err := store.GetManyLIDsForPNs(ctx, jids)
 		if err != nil {
 			return domainLID.LookupResponse{}, fmt.Errorf("lookup lids for phones: %w", err)
 		}
 		for i, digits := range pns {
-			response.PNs[i] = pnItem(digits, found[pnJID(digits)])
+			response.PNs[i] = pnItem(digits, found[userJID(digits)])
 		}
 	}
 	for i, digits := range lids {
-		pn, err := store.GetPNForLID(ctx, lidJID(digits))
+		pn, err := store.GetPNForLID(ctx, hiddenJID(digits))
 		if err != nil {
 			return domainLID.LookupResponse{}, fmt.Errorf("lookup phone for lid: %w", err)
 		}
@@ -722,8 +721,8 @@ func (s serviceLID) List(ctx context.Context, request domainLID.ListRequest) (do
 	response := domainLID.ListResponse{Items: make([]domainLID.ListItem, 0, len(pairs))}
 	for _, p := range pairs {
 		response.Items = append(response.Items, domainLID.ListItem{
-			LID: lidJID(p.LID).String(),
-			PN:  pnJID(p.PN).String(),
+			LID: hiddenJID(p.LID).String(),
+			PN:  userJID(p.PN).String(),
 		})
 	}
 	if len(pairs) == limit {
@@ -735,7 +734,7 @@ func (s serviceLID) List(ctx context.Context, request domainLID.ListRequest) (do
 }
 
 func pnItem(digits string, lid types.JID) domainLID.PNItem {
-	item := domainLID.PNItem{PN: pnJID(digits).String()}
+	item := domainLID.PNItem{PN: userJID(digits).String()}
 	if !lid.IsEmpty() {
 		s := lid.ToNonAD().String()
 		item.LID = &s
@@ -744,7 +743,7 @@ func pnItem(digits string, lid types.JID) domainLID.PNItem {
 }
 
 func lidItem(digits string, pn types.JID) domainLID.LIDItem {
-	item := domainLID.LIDItem{LID: lidJID(digits).String()}
+	item := domainLID.LIDItem{LID: hiddenJID(digits).String()}
 	if !pn.IsEmpty() {
 		s := pn.ToNonAD().String()
 		item.PN = &s
@@ -780,10 +779,7 @@ func (l *lazyLister) List(ctx context.Context, after string, limit int) ([]lidma
 	return reader.List(ctx, after, limit)
 }
 
-var _ = errors.New
 ```
-
-(Drop the trailing `var _ = errors.New` and the `errors` import if unused after writing.)
 
 - [ ] **Step 4:** `go test ./usecase/ -race` passes. **Step 5:** commit `feat(lid): usecase for the LID and phone lookups and the list`.
 
