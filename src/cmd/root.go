@@ -205,6 +205,9 @@ func initEnvConfig() {
 	if viper.IsSet("whatsapp_reachout_suspect_minutes") {
 		config.WhatsappReachoutSuspectMinutes = viper.GetInt("whatsapp_reachout_suspect_minutes")
 	}
+	if viper.IsSet("whatsapp_watchdog_interval_seconds") {
+		config.WhatsappWatchdogIntervalSeconds = viper.GetInt("whatsapp_watchdog_interval_seconds")
+	}
 	if viper.IsSet("whatsapp_auto_reject_call") {
 		config.WhatsappAutoRejectCall = viper.GetBool("whatsapp_auto_reject_call")
 	}
@@ -553,6 +556,12 @@ func initFlags() {
 		"whatsapp-reachout-guard", "",
 		config.WhatsappReachoutGuard,
 		`refuse sends to recipients without a tctoken while the account is reach-out timelocked --whatsapp-reachout-guard <true/false> | example: --whatsapp-reachout-guard=true`,
+	)
+	rootCmd.PersistentFlags().IntVarP(
+		&config.WhatsappWatchdogIntervalSeconds,
+		"whatsapp-watchdog-interval-seconds", "",
+		config.WhatsappWatchdogIntervalSeconds,
+		`seconds between reconnect watchdog checks of every paired device, 0 disables it --whatsapp-watchdog-interval-seconds <int> | example: --whatsapp-watchdog-interval-seconds=120`,
 	)
 	rootCmd.PersistentFlags().IntVarP(
 		&config.WhatsappReachoutSuspectMinutes,
