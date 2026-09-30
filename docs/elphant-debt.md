@@ -49,11 +49,6 @@ history of the work.
 - **What.** Delete `run/`, `exports/` and the logs of the migration lab on the owner's Mac.
   They hold personal data. Only with the owner's OK.
 
-### D-6 Debian 11 on the gateway host
-
-- **What.** The host is out of support. Upgrade in an agreed window, after a backup.
-  Do not run SetupOrion on it.
-
 ### D-12 Production device gets `STREAM_REPLACED` shortly after connecting
 
 - **What.** Seen 2026-09-30: the only production device connected on start and, about five
@@ -97,6 +92,14 @@ history of the work.
 - **Pay.** After D-12: repeat with the GOWA device connected, then run the same sampling with
   more sessions and fit CPU and memory per session; estimate capacity from the smaller of the RAM
   and the mass-reconnect CPU limit. Read-only on the host, no restarts.
+
+## Won't do
+
+### D-6 Debian 11 on the gateway host
+
+Decision of the owner (30/09/2026): the host is **not** upgraded in place. A Debian upgrade only
+happens as part of a server built from scratch (a new host, stack moved over with its volumes and
+the backup restored). Do not run `apt upgrade` or SetupOrion on the current host.
 
 ## Paid
 
