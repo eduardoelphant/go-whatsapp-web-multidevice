@@ -264,7 +264,7 @@ empty list, more than 100 entries or a malformed body answers `400`.
 |---|---|
 | `query` | the entry as digits (the trimmed text for an invalid entry) |
 | `status` | `exists`, `not_exists` or `error` |
-| `pn` | phone JID WhatsApp returned, `null` unless `exists`. It can differ from `query` (Brazilian ninth digit): store this one |
+| `pn` | phone JID WhatsApp returned, `null` unless `exists`. Store this one, not `query`. Checked on a real device: a Brazilian mobile number asked without the ninth digit came back `not_exists`, so WhatsApp does not fix a missing digit; send the number as it is registered |
 | `lid` | LID from the WhatsApp answer, else from the local mapping, else `null` |
 | `verified_name` | business verified name, when WhatsApp sends one |
 | `error` | `invalid_number` (bad entry, never sent) or `upstream` (the call failed or timed out); `null` otherwise |
