@@ -23,25 +23,6 @@ history of the work.
   `devlikeapro/gows-plus`), and the ElphantCRM side (listen to `session.timelock`, show the state,
   decide when to turn `WHATSAPP_REACHOUT_GUARD` on).
 
-### D-11 Minor findings of the G6 review
-
-- **What.** Deferred from the final review of the reach-out timelock
-  (`docs/specs/2026-09-30-gateway-g6-reachout-timelock-design.md`):
-  1. Outside durable mode two `session.timelock` webhooks can arrive out of order (`go deliver()`),
-     and `timestamp` is to the second. Add a sequence number or `RFC3339Nano`.
-  2. Reactions, revokes, edits (`usecase/message.go`) and the auto reply do not go through
-     `wrapSendMessage`: no guard and no 463 marking. Low risk (existing chats); route them through
-     a shared helper if it ever matters.
-  3. The guard runs after the media upload, so a refused media forward already downloaded and
-     uploaded the file. Check before the upload.
-  4. The guard also blocks sends to the account's own JID and to bot or PSA JIDs, which have no
-     tctoken (whatsmeow exempts PSA and bots). Exempt them.
-  5. Tests: no test drives `wrapSendMessage` through a real 463 (marking plus the `429`); no
-     config-default test (off, 30); no test that an event on a non-canonical instance and a guard
-     check on the slot instance share state; `send_reachout_test.go` calls `NoteReachoutTimelock`
-     with the real dispatch, which starts an unstubbed webhook goroutine.
-- **Pay.** One small pass with a test per item.
-
 ### D-12 Minor findings of the G9 review
 
 - **What.** Deferred from the final review of the resilience work
@@ -125,6 +106,16 @@ history of the work.
   and the mass-reconnect CPU limit. Read-only on the host, no restarts.
 
 ## Paid
+
+### D-11 Minor findings of the G6 review
+
+Paid in the commit "fix(reachout): minors of the review": the `session.timelock` timestamp has
+sub-second precision so a consumer can order two webhooks; the guard also runs before a media
+upload (`uploadMedia`), not only before the send; bots, PSA and the account's own phone and LID
+are never refused; a test pins the defaults of the fork's settings (guard off, 30 minutes, watchdog
+120 s, statics auth off, user check 500 ms). Left as accepted: reactions, revokes, edits and the auto
+reply bypass `wrapSendMessage` (they target existing chats), and the integration tests that would
+drive a real 463 through `wrapSendMessage` need a fake whatsmeow client that does not exist.
 
 ### D-10 Minor findings of the G5 review
 

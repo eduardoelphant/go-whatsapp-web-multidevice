@@ -74,3 +74,20 @@ func TestWrapSendMessageRefusesWithTheGuardBeforeSending(t *testing.T) {
 	assert.ErrorAs(t, err, &guard)
 	assert.Equal(t, "WA_REACHOUT_GUARD", guard.ErrCode())
 }
+
+// D-11 3: the guard refuses before the media upload, not after it.
+func TestUploadMediaRefusesWithTheGuardBeforeUploading(t *testing.T) {
+	previous := config.WhatsappReachoutGuard
+	config.WhatsappReachoutGuard = true
+	t.Cleanup(func() { config.WhatsappReachoutGuard = previous })
+
+	inst := whatsapp.NewDeviceInstance("upload-guard", nil, nil)
+	ctx := whatsapp.ContextWithDevice(context.Background(), inst)
+	whatsapp.NoteReachoutTimelock(ctx, inst)
+	client := &whatsmeow.Client{Store: &store.Device{PrivacyTokens: noTokens{}, LIDs: noLIDs{}}}
+
+	_, err := serviceSend{}.uploadMedia(ctx, client, whatsmeow.MediaImage, []byte("bytes"), types.NewJID("5511988887777", types.DefaultUserServer))
+
+	var guard pkgError.WaReachoutGuardError
+	assert.ErrorAs(t, err, &guard)
+}

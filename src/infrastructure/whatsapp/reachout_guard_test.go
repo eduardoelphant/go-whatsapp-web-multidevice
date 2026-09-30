@@ -128,3 +128,25 @@ func TestCheckReachoutGuardIsANoOpWithoutInstanceOrClient(t *testing.T) {
 		t.Fatalf("nil client: %v", err)
 	}
 }
+
+// D-11 4: bots, PSA and the account's own JIDs have no tctoken and are never refused.
+func TestGuardExemptsBotsPSAAndTheAccountItself(t *testing.T) {
+	none := lookups(time.Time{}, nil, types.EmptyJID, nil)
+	ownPN := types.NewJID("5511900000099", types.DefaultUserServer)
+	ownLID := types.NewJID("200000000000009", types.HiddenUserServer)
+	none.Self = []types.JID{ownPN, ownLID}
+
+	for name, jid := range map[string]types.JID{
+		"bot":     types.NewJID("867051314767696", types.BotServer),
+		"psa":     types.PSAJID,
+		"own pn":  ownPN,
+		"own lid": ownLID,
+	} {
+		if err := reachoutBlocks(context.Background(), true, guardLocks, jid, none, guardNow); err != nil {
+			t.Errorf("%s: err = %v, want nil", name, err)
+		}
+	}
+	if err := reachoutBlocks(context.Background(), true, guardLocks, guardPN, none, guardNow); err == nil {
+		t.Error("an ordinary recipient must still be refused")
+	}
+}

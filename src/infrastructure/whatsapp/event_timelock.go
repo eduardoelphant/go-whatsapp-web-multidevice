@@ -61,8 +61,10 @@ func EmitSessionTimelock(ctx context.Context, instance *DeviceInstance, snap Rea
 		"event":      SessionTimelockEvent,
 		"device_id":  owner.JID(),
 		"session_id": owner.ID(),
-		"timestamp":  time.Now().Format(time.RFC3339),
-		"payload":    timelockPayload(snap),
+		// Sub-second precision: outside durable mode two webhooks can be delivered out of order,
+		// and the consumer orders them by this stamp.
+		"timestamp": time.Now().Format(time.RFC3339Nano),
+		"payload":   timelockPayload(snap),
 	}
 	sessionStatusDispatch(func() {
 		webhookCtx, cancel := context.WithTimeout(withoutHandlerFailureFlag(context.WithoutCancel(ctx)), 30*time.Second)

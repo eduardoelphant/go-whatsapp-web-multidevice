@@ -32,6 +32,7 @@ func tcTokenValid(token *store.PrivacyToken, now time.Time) bool {
 type reachoutLookups struct {
 	Token func(ctx context.Context, jid types.JID) (*store.PrivacyToken, error)
 	LID   func(ctx context.Context, pn types.JID) (types.JID, error)
+	Self  []types.JID // the account's own phone and LID: never refused (note to self)
 }
 
 // reachoutBlocks decides whether a send must be refused. It blocks only when the guard is on,
@@ -44,6 +45,15 @@ func reachoutBlocks(ctx context.Context, enabled bool, snap ReachoutSnapshot, re
 	recipient = recipient.ToNonAD()
 	if recipient.Server != types.DefaultUserServer && recipient.Server != types.HiddenUserServer {
 		return nil
+	}
+	// Bots and PSA have no tctoken (whatsmeow exempts them too), and neither does the account itself.
+	if recipient.IsBot() || recipient.User == types.PSAJID.User {
+		return nil
+	}
+	for _, self := range lookups.Self {
+		if !self.IsEmpty() && recipient.ToNonAD() == self.ToNonAD() {
+			return nil
+		}
 	}
 
 	key := recipient
@@ -78,6 +88,12 @@ func CheckReachoutGuard(ctx context.Context, instance *DeviceInstance, client *w
 	}
 
 	lookups := reachoutLookups{Token: client.Store.PrivacyTokens.GetPrivacyToken}
+	if client.Store.ID != nil {
+		lookups.Self = append(lookups.Self, *client.Store.ID)
+	}
+	if !client.Store.LID.IsEmpty() {
+		lookups.Self = append(lookups.Self, client.Store.LID)
+	}
 	if client.Store.LIDs != nil {
 		lookups.LID = client.Store.LIDs.GetLIDForPN
 	}

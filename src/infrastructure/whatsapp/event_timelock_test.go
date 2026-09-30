@@ -166,3 +166,29 @@ func TestResetClientOnAClearedDeviceEmitsNothing(t *testing.T) {
 		t.Fatal("a cleared state must not report a clear")
 	}
 }
+
+// D-11 1: two webhooks a second apart must be orderable by the consumer.
+func TestSessionTimelockTimestampHasSubSecondPrecision(t *testing.T) {
+	got := captureSessionWebhooks(t)
+	instance := NewDeviceInstance("timelock-nano", nil, nil)
+
+	NoteReachoutTimelock(context.Background(), instance)
+
+	body, ok := waitTimelockWebhook(t, got, "timelock-nano", 2*time.Second)
+	if !ok {
+		t.Fatal("no webhook")
+	}
+	stamp, _ := body["timestamp"].(string)
+	if _, err := time.Parse(time.RFC3339Nano, stamp); err != nil || !containsFraction(stamp) {
+		t.Fatalf("timestamp = %q, want RFC3339 with fractional seconds", stamp)
+	}
+}
+
+func containsFraction(stamp string) bool {
+	for i := 0; i < len(stamp); i++ {
+		if stamp[i] == '.' {
+			return true
+		}
+	}
+	return false
+}

@@ -71,7 +71,7 @@ whose end is already past counts as cleared.
 `enforcement_type` and `ends_at` are `null` when unknown. The device's `webhook_events` filter
 must include `session.timelock` when the device has its own event filter; with no device filter the global list applies, and with no list at all every event is sent.
 
-**Guard** (only when `WHATSAPP_REACHOUT_GUARD=true`): in `wrapSendMessage`, before the send, when
+**Guard** (only when `WHATSAPP_REACHOUT_GUARD=true`): in `wrapSendMessage` before the send and in `uploadMedia` before a media upload, when
 the device state is active and the recipient is a user JID (phone or LID; not a group, newsletter
 or status) and there is no valid `tctoken` for it, return `409` with code `WA_REACHOUT_GUARD` and a
 message that says the account is restricted from starting new chats and when it ends, if known. A

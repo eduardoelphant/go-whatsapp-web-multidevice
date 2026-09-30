@@ -2026,6 +2026,11 @@ func (service serviceSend) SendSticker(ctx context.Context, request domainSend.S
 }
 
 func (service serviceSend) uploadMedia(ctx context.Context, client *whatsmeow.Client, mediaType whatsmeow.MediaType, media []byte, recipient types.JID) (uploaded whatsmeow.UploadResponse, err error) {
+	// Fork (elphant): refuse before the upload, not after it (spec 2026-09-30-gateway-g6).
+	instance, _ := whatsapp.DeviceFromContext(ctx)
+	if err := whatsapp.CheckReachoutGuard(ctx, instance, client, recipient); err != nil {
+		return uploaded, err
+	}
 	if recipient.Server == types.NewsletterServer {
 		uploaded, err = client.UploadNewsletter(ctx, media, mediaType)
 	} else {
