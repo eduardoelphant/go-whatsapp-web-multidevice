@@ -85,3 +85,44 @@ func TestOpenFailsOnAnUnknownDriver(t *testing.T) {
 	_, err := Open("nope", "x")
 	assert.Error(t, err)
 }
+
+func TestPNsForLIDsBatchesAndOmitsUnknown(t *testing.T) {
+	c, driver, dsn := newStore(t)
+	put(t, c, "111", "5511900000001")
+	put(t, c, "222", "5511900000002")
+	r, err := Open(driver, dsn)
+	require.NoError(t, err)
+	defer r.Close()
+
+	got, err := r.PNsForLIDs(context.Background(), []string{"222", "999", "111", "111"})
+
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"111": "5511900000001", "222": "5511900000002"}, got)
+}
+
+func TestPNsForLIDsEmptyInputIsEmpty(t *testing.T) {
+	_, driver, dsn := newStore(t)
+	r, err := Open(driver, dsn)
+	require.NoError(t, err)
+	defer r.Close()
+
+	got, err := r.PNsForLIDs(context.Background(), nil)
+
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func TestTheHandleRefusesWrites(t *testing.T) {
+	c, driver, dsn := newStore(t)
+	put(t, c, "111", "5511900000001")
+	r, err := Open(driver, dsn)
+	require.NoError(t, err)
+	defer r.Close()
+
+	_, err = r.db.Exec("DELETE FROM whatsmeow_lid_map")
+
+	assert.Error(t, err, "the list handle must be read only")
+	got, listErr := r.List(context.Background(), "", 10)
+	require.NoError(t, listErr)
+	assert.Len(t, got, 1)
+}

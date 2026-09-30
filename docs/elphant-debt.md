@@ -23,28 +23,6 @@ history of the work.
   `devlikeapro/gows-plus`), and the ElphantCRM side (listen to `session.timelock`, show the state,
   decide when to turn `WHATSAPP_REACHOUT_GUARD` on).
 
-### D-10 Minor findings of the G5 review
-
-- **What.** Deferred from the final review of the LID endpoints
-  (`docs/specs/2026-09-30-gateway-g5-lid-mappings-design.md`):
-  1. A device created but never paired has no client, so the lookups answer `INVALID_WA_CLI`;
-     the spec says they only need the device to exist. The map is global, so the usecase could
-     use the store container's `LIDMap` directly.
-  2. The batch `lids` path calls `GetPNForLID` once per entry: each miss is one SQL query under
-     whatsmeow's exclusive cache lock and is cached as empty forever (the `pns` path is batched
-     and caches no misses). Batch the LIDs with `WHERE lid IN (...)` in `pkg/lidmap`.
-  3. The list handle is not really read only, is never closed and has no pool limit. Use
-     `SetMaxOpenConns(2)`, `query_only` on SQLite or `default_transaction_read_only` on
-     Postgres, and close it at shutdown.
-  4. A table whose size is an exact multiple of `limit` gives a last full page with a `next` and
-     one empty page after it. Fetch `limit+1` or reword the docs.
-  5. Store errors on the lookups are wrapped as plain errors, so the `500` message carries raw
-     driver text, unlike the list. A `file::memory:` DBURI makes the list always fail.
-  6. Tests: the usecase tests assert only that an error happens, not that it is a validation
-     error; REST has no `400` test for a bad `:phone`, a bad `:lid` or more than 500 entries; no
-     lookup test runs on the real `sqlstore`; the route-order test cannot fail.
-- **Pay.** One small pass with a test per item.
-
 ### D-11 Minor findings of the G6 review
 
 - **What.** Deferred from the final review of the reach-out timelock
@@ -147,6 +125,18 @@ history of the work.
   and the mass-reconnect CPU limit. Read-only on the host, no restarts.
 
 ## Paid
+
+### D-10 Minor findings of the G5 review
+
+Paid in the commit "fix(lid): minors of the review": lookups fall back to the shared LID map when
+the device has no client (created, never paired); the batch `lids` path is one query
+(`lidmap.PNsForLIDs`), straight from the table, with no per-entry query under whatsmeow's cache
+lock and no cached misses; the list handle is one connection with `query_only` (SQLite) or a
+read-only session (Postgres); a page that ends exactly on the limit has no `next`; lookup
+failures answer a generic 500 with the cause only in the log; tests for validation errors, REST
+`400`s through the real usecase and lookups and the list on a real store. Left as accepted: the
+handle is not closed at shutdown (process exit closes it; `Close` exists) and a `file::memory:`
+`DB_URI` makes the list fail, which no deployment uses.
 
 ### D-8 and D-9 Minor findings of the G7 review
 

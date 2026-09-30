@@ -3,12 +3,18 @@ package usecase
 import (
 	"context"
 	"errors"
+	"net/http"
+	"path/filepath"
 	"testing"
 
 	domainLID "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/lid"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
+	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/lidmap"
 	"github.com/stretchr/testify/assert"
+	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
+	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
 type fakeLIDStore struct {
@@ -65,6 +71,21 @@ func (f fakeLister) List(_ context.Context, after string, limit int) ([]lidmap.P
 	return out, nil
 }
 
+func (f fakeLister) PNsForLIDs(_ context.Context, lids []string) (map[string]string, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := map[string]string{}
+	for _, p := range f.pairs {
+		for _, l := range lids {
+			if p.LID == l {
+				out[l] = p.PN
+			}
+		}
+	}
+	return out, nil
+}
+
 func newLIDTestService(store lidStore, lister pairLister) serviceLID {
 	return serviceLID{storeFor: func(context.Context) (lidStore, error) { return store, nil }, lister: lister}
 }
@@ -107,8 +128,7 @@ func TestBadPhoneOrLIDIsAValidationError(t *testing.T) {
 func TestLookupKeepsOrderAndAnswersNullForUnknown(t *testing.T) {
 	svc := newLIDTestService(fakeLIDStore{
 		pnToLID: map[string]string{"5511988887777": "111"},
-		lidToPN: map[string]string{"222": "5511977776666"},
-	}, nil)
+	}, fakeLister{pairs: []lidmap.Pair{{LID: "222", PN: "5511977776666"}}})
 
 	got, err := svc.Lookup(context.Background(), domainLID.LookupRequest{
 		PNs:  []string{"5511900000000", "5511988887777", "5511988887777"},
@@ -173,4 +193,118 @@ func TestStoreErrorPropagatesOnLookups(t *testing.T) {
 
 	_, err := svc.PNToLID(context.Background(), "5511988887777")
 	assert.Error(t, err)
+}
+
+// D-10 4: a table whose size is an exact multiple of the limit has no next page.
+func TestListHasNoNextWhenTheTableEndsExactlyOnAPage(t *testing.T) {
+	pairs := []lidmap.Pair{{LID: "101", PN: "5511900000001"}, {LID: "102", PN: "5511900000002"}}
+	svc := newLIDTestService(fakeLIDStore{}, fakeLister{pairs: pairs})
+
+	page, err := svc.List(context.Background(), domainLID.ListRequest{Limit: 2})
+
+	assert.NoError(t, err)
+	assert.Len(t, page.Items, 2)
+	assert.Nil(t, page.Next)
+}
+
+func TestListNextIsTheLastItemOfAFullPageWithMoreBehindIt(t *testing.T) {
+	pairs := []lidmap.Pair{{LID: "101", PN: "5511900000001"}, {LID: "102", PN: "5511900000002"}, {LID: "103", PN: "5511900000003"}}
+	svc := newLIDTestService(fakeLIDStore{}, fakeLister{pairs: pairs})
+
+	page, err := svc.List(context.Background(), domainLID.ListRequest{Limit: 2})
+
+	assert.NoError(t, err)
+	assert.Len(t, page.Items, 2)
+	assert.Equal(t, sp("102"), page.Next)
+}
+
+// D-10 5: lookup failures do not leak driver text.
+func TestLookupFailuresDoNotLeakDriverText(t *testing.T) {
+	svc := newLIDTestService(fakeLIDStore{err: errors.New("pq: connection refused at 10.0.0.1")}, nil)
+
+	_, err := svc.PNToLID(context.Background(), "5511988887777")
+
+	assert.Error(t, err)
+	assert.NotContains(t, err.Error(), "10.0.0.1")
+	var generic pkgError.GenericError
+	assert.ErrorAs(t, err, &generic)
+	assert.Equal(t, http.StatusInternalServerError, generic.StatusCode())
+}
+
+// D-10 6: validation problems are validation errors (400), not plain errors (500).
+func TestBadInputIsAValidationError(t *testing.T) {
+	svc := newLIDTestService(fakeLIDStore{}, nil)
+
+	_, err := svc.PNToLID(context.Background(), "abc")
+	assertValidation(t, err)
+	_, err = svc.LIDToPN(context.Background(), "5511999999999@s.whatsapp.net")
+	assertValidation(t, err)
+	_, err = svc.Lookup(context.Background(), domainLID.LookupRequest{})
+	assertValidation(t, err)
+	_, err = svc.Lookup(context.Background(), domainLID.LookupRequest{PNs: []string{"abc"}})
+	assertValidation(t, err)
+}
+
+func assertValidation(t *testing.T, err error) {
+	t.Helper()
+	var generic pkgError.GenericError
+	if assert.ErrorAs(t, err, &generic) {
+		assert.Equal(t, http.StatusBadRequest, generic.StatusCode())
+	}
+}
+
+// D-10 1: a device that was created but never paired has no client; the shared LID map still answers.
+func TestRequestLIDStoreFallsBackToTheSharedMapWhenTheDeviceHasNoClient(t *testing.T) {
+	shared := fakeLIDStore{pnToLID: map[string]string{"5511988887777": "111"}}
+	previous := sharedLIDStore
+	sharedLIDStore = func() lidStore { return shared }
+	t.Cleanup(func() { sharedLIDStore = previous })
+
+	got, err := requestLIDStore(context.Background())
+
+	assert.NoError(t, err)
+	lid, _ := got.GetLIDForPN(context.Background(), userJID("5511988887777"))
+	assert.Equal(t, "111", lid.User)
+}
+
+func TestRequestLIDStoreWithNothingAvailableIsErrWaCLI(t *testing.T) {
+	previous := sharedLIDStore
+	sharedLIDStore = func() lidStore { return nil }
+	t.Cleanup(func() { sharedLIDStore = previous })
+
+	_, err := requestLIDStore(context.Background())
+
+	assert.ErrorIs(t, err, pkgError.ErrWaCLI)
+}
+
+// D-10 6: a lookup and a list on a real whatsmeow store, not only on fakes.
+func TestLIDServiceOnARealStore(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "whatsapp.db")
+	uri := "file:" + dbPath
+	driver, dsn, err := whatsapp.ResolveDBDriver(uri)
+	assert.NoError(t, err)
+	container, err := sqlstore.New(context.Background(), driver, dsn, waLog.Noop)
+	assert.NoError(t, err)
+	t.Cleanup(func() { _ = container.Close() })
+	assert.NoError(t, container.LIDMap.PutLIDMapping(context.Background(), hiddenJID("111"), userJID("5511988887777")))
+	assert.NoError(t, container.LIDMap.PutLIDMapping(context.Background(), hiddenJID("222"), userJID("5511977776666")))
+
+	lister := &lazyLister{dbURI: uri}
+	t.Cleanup(func() { _ = lister.Close() })
+	svc := serviceLID{storeFor: func(context.Context) (lidStore, error) { return container.LIDMap, nil }, lister: lister}
+
+	got, err := svc.Lookup(context.Background(), domainLID.LookupRequest{
+		PNs:  []string{"5511988887777", "5511900000000"},
+		LIDs: []string{"222@lid", "999"},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, sp("111@lid"), got.PNs[0].LID)
+	assert.Nil(t, got.PNs[1].LID)
+	assert.Equal(t, sp("5511977776666@s.whatsapp.net"), got.LIDs[0].PN)
+	assert.Nil(t, got.LIDs[1].PN)
+
+	page, err := svc.List(context.Background(), domainLID.ListRequest{Limit: 1})
+	assert.NoError(t, err)
+	assert.Len(t, page.Items, 1)
+	assert.Equal(t, sp("111"), page.Next)
 }

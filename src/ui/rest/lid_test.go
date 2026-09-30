@@ -11,6 +11,7 @@ import (
 	domainLID "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/lid"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest/middleware"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/usecase"
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 )
@@ -75,7 +76,7 @@ func TestLIDRoutesReachTheRightMethod(t *testing.T) {
 	assert.Equal(t, http.StatusOK, do(t, app, http.MethodPost, "/lids/lookup", `{"pns":["5511988887777"]}`).StatusCode)
 	assert.Equal(t, http.StatusOK, do(t, app, http.MethodGet, "/lids?limit=2&after=101", "").StatusCode)
 
-	// /lids/pn/x is a phone lookup and /lids/lookup a batch, never read as a LID.
+	// Each route reaches its own method.
 	assert.Equal(t, []string{"pn:5511988887777", "lid:100000000000001@lid", "lookup", "list"}, stub.calls)
 	assert.Equal(t, "101", stub.after)
 	assert.Equal(t, 2, stub.limit)
@@ -139,4 +140,22 @@ func TestLIDListDoesNotNeedADevice(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, do(t, app, http.MethodGet, "/lids?limit=2", "").StatusCode)
 	assert.Equal(t, http.StatusBadRequest, do(t, app, http.MethodGet, "/lids/pn/5511988887777", "").StatusCode)
+}
+
+// D-10 6: bad input answers 400 through the real usecase.
+func TestLIDBadInputIs400ThroughTheRealUsecase(t *testing.T) {
+	app := fiber.New()
+	app.Use(middleware.Recovery())
+	InitRestLID(app, usecase.NewLIDService("file::memory:"))
+
+	assert.Equal(t, http.StatusBadRequest, do(t, app, http.MethodGet, "/lids/pn/abc", "").StatusCode)
+	assert.Equal(t, http.StatusBadRequest, do(t, app, http.MethodGet, "/lids/abc", "").StatusCode)
+	assert.Equal(t, http.StatusBadRequest, do(t, app, http.MethodPost, "/lids/lookup", `{}`).StatusCode)
+
+	many := make([]string, 501)
+	for i := range many {
+		many[i] = "5511988887777"
+	}
+	body, _ := json.Marshal(map[string][]string{"pns": many})
+	assert.Equal(t, http.StatusBadRequest, do(t, app, http.MethodPost, "/lids/lookup", string(body)).StatusCode)
 }

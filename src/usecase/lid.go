@@ -24,6 +24,7 @@ type lidStore interface {
 // pairLister lists every pair the gateway knows; global to the store database.
 type pairLister interface {
 	List(ctx context.Context, after string, limit int) ([]lidmap.Pair, error)
+	PNsForLIDs(ctx context.Context, lids []string) (map[string]string, error)
 }
 
 type serviceLID struct {
@@ -37,12 +38,30 @@ func NewLIDService(dbURI string) domainLID.ILIDUsecase {
 	return serviceLID{storeFor: requestLIDStore, lister: &lazyLister{dbURI: dbURI}}
 }
 
-func requestLIDStore(ctx context.Context) (lidStore, error) {
-	client := whatsapp.ClientFromContext(ctx)
-	if client == nil || client.Store == nil || client.Store.LIDs == nil {
-		return nil, pkgError.ErrWaCLI
+// sharedLIDStore is the map every device shares; a variable so tests can replace it.
+var sharedLIDStore = func() lidStore {
+	if shared := whatsapp.SharedLIDStore(); shared != nil {
+		return shared
 	}
-	return client.Store.LIDs, nil
+	return nil
+}
+
+// requestLIDStore uses the request device's map, and the shared one when the device has no
+// client yet (created, never paired): the pairs are the same table either way.
+func requestLIDStore(ctx context.Context) (lidStore, error) {
+	if client := whatsapp.ClientFromContext(ctx); client != nil && client.Store != nil && client.Store.LIDs != nil {
+		return client.Store.LIDs, nil
+	}
+	if shared := sharedLIDStore(); shared != nil {
+		return shared, nil
+	}
+	return nil, pkgError.ErrWaCLI
+}
+
+// lookupFailed logs the cause and answers a generic 500: driver text never reaches the client.
+func lookupFailed(what string, err error) error {
+	logrus.Errorf("LID lookup failed (%s): %v", what, err)
+	return pkgError.InternalServerError("failed to look up lid mappings")
 }
 
 func userJID(digits string) types.JID   { return types.NewJID(digits, types.DefaultUserServer) }
@@ -59,7 +78,7 @@ func (s serviceLID) PNToLID(ctx context.Context, phone string) (domainLID.PNItem
 	}
 	lid, err := store.GetLIDForPN(ctx, userJID(digits))
 	if err != nil {
-		return domainLID.PNItem{}, fmt.Errorf("lookup lid for phone: %w", err)
+		return domainLID.PNItem{}, lookupFailed("phone to lid", err)
 	}
 	return pnItem(digits, lid), nil
 }
@@ -75,7 +94,7 @@ func (s serviceLID) LIDToPN(ctx context.Context, lid string) (domainLID.LIDItem,
 	}
 	pn, err := store.GetPNForLID(ctx, hiddenJID(digits))
 	if err != nil {
-		return domainLID.LIDItem{}, fmt.Errorf("lookup phone for lid: %w", err)
+		return domainLID.LIDItem{}, lookupFailed("lid to phone", err)
 	}
 	return lidItem(digits, pn), nil
 }
@@ -115,18 +134,26 @@ func (s serviceLID) Lookup(ctx context.Context, request domainLID.LookupRequest)
 		}
 		found, err := store.GetManyLIDsForPNs(ctx, jids)
 		if err != nil {
-			return domainLID.LookupResponse{}, fmt.Errorf("lookup lids for phones: %w", err)
+			return domainLID.LookupResponse{}, lookupFailed("phones to lids", err)
 		}
 		for i, digits := range pns {
 			response.PNs[i] = pnItem(digits, found[userJID(digits)])
 		}
 	}
-	for i, digits := range lids {
-		pn, err := store.GetPNForLID(ctx, hiddenJID(digits))
+	if len(lids) > 0 {
+		// One query for every LID, straight from the table: a miss is never cached and no
+		// per-entry query runs under whatsmeow's cache lock.
+		found, err := s.lister.PNsForLIDs(ctx, lids)
 		if err != nil {
-			return domainLID.LookupResponse{}, fmt.Errorf("lookup phone for lid: %w", err)
+			return domainLID.LookupResponse{}, lookupFailed("lids to phones", err)
 		}
-		response.LIDs[i] = lidItem(digits, pn)
+		for i, digits := range lids {
+			var pn types.JID
+			if user, ok := found[digits]; ok {
+				pn = userJID(user)
+			}
+			response.LIDs[i] = lidItem(digits, pn)
+		}
 	}
 
 	logrus.Infof("LID lookup: pns=%d lids=%d", len(pns), len(lids))
@@ -135,10 +162,15 @@ func (s serviceLID) Lookup(ctx context.Context, request domainLID.LookupRequest)
 
 func (s serviceLID) List(ctx context.Context, request domainLID.ListRequest) (domainLID.ListResponse, error) {
 	limit := validations.ClampListLimit(request.Limit)
-	pairs, err := s.lister.List(ctx, request.After, limit)
+	// One extra row tells whether another page exists, so an exact multiple has no empty last page.
+	pairs, err := s.lister.List(ctx, request.After, limit+1)
 	if err != nil {
 		logrus.Errorf("LID list failed: %v", err)
 		return domainLID.ListResponse{}, pkgError.InternalServerError("failed to list lid mappings")
+	}
+	more := len(pairs) > limit
+	if more {
+		pairs = pairs[:limit]
 	}
 
 	response := domainLID.ListResponse{Items: make([]domainLID.ListItem, 0, len(pairs))}
@@ -148,7 +180,7 @@ func (s serviceLID) List(ctx context.Context, request domainLID.ListRequest) (do
 			PN:  userJID(p.PN).String(),
 		})
 	}
-	if len(pairs) == limit {
+	if more {
 		next := pairs[len(pairs)-1].LID
 		response.Next = &next
 	}
@@ -177,27 +209,52 @@ func lidItem(digits string, pn types.JID) domainLID.LIDItem {
 // lazyLister opens the read-only handle on first use. A failure is not cached: the next call
 // tries again, so a store that was not ready at startup does not break the endpoint for good.
 type lazyLister struct {
-	dbURI  string
-	mu     sync.Mutex
-	reader *lidmap.Reader
+	dbURI string
+	mu    sync.Mutex
+	r     *lidmap.Reader
+}
+
+func (l *lazyLister) reader() (*lidmap.Reader, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.r == nil {
+		driver, dsn, err := whatsapp.ResolveDBDriver(l.dbURI)
+		if err != nil {
+			return nil, err
+		}
+		r, err := lidmap.Open(driver, dsn)
+		if err != nil {
+			return nil, err
+		}
+		l.r = r
+	}
+	return l.r, nil
 }
 
 func (l *lazyLister) List(ctx context.Context, after string, limit int) ([]lidmap.Pair, error) {
-	l.mu.Lock()
-	if l.reader == nil {
-		driver, dsn, err := whatsapp.ResolveDBDriver(l.dbURI)
-		if err != nil {
-			l.mu.Unlock()
-			return nil, err
-		}
-		reader, err := lidmap.Open(driver, dsn)
-		if err != nil {
-			l.mu.Unlock()
-			return nil, err
-		}
-		l.reader = reader
+	r, err := l.reader()
+	if err != nil {
+		return nil, err
 	}
-	reader := l.reader
-	l.mu.Unlock()
-	return reader.List(ctx, after, limit)
+	return r.List(ctx, after, limit)
+}
+
+func (l *lazyLister) PNsForLIDs(ctx context.Context, lids []string) (map[string]string, error) {
+	r, err := l.reader()
+	if err != nil {
+		return nil, err
+	}
+	return r.PNsForLIDs(ctx, lids)
+}
+
+// Close closes the handle if it was opened.
+func (l *lazyLister) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.r == nil {
+		return nil
+	}
+	err := l.r.Close()
+	l.r = nil
+	return err
 }
