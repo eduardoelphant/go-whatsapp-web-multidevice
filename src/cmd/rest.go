@@ -145,6 +145,7 @@ func restServer(_ *cobra.Command, _ []string) {
 		rest.InitRestSend(r, sendUsecase)
 		rest.InitRestSchedule(r, scheduleUsecase)
 		rest.InitRestUser(r, userUsecase)
+		rest.InitRestLID(r, lidUsecase)
 		rest.InitRestMessage(r, messageUsecase, sendUsecase)
 		rest.InitRestGroup(r, groupUsecase)
 		rest.InitRestNewsletter(r, newsletterUsecase)
