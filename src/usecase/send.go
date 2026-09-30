@@ -202,8 +202,16 @@ func NewSendService(appService app.IAppUsecase, chatStorageRepo domainChatStorag
 // "reach-out timelock" rejection is a WhatsApp server-side restriction that the
 // client cannot retry around, so it is surfaced as-is via normalizeSendError.
 func (service serviceSend) wrapSendMessage(ctx context.Context, client *whatsmeow.Client, recipient types.JID, msg *waE2E.Message, content string) (whatsmeow.SendResponse, error) {
+	// Fork (elphant): refuse before sending while the account is reach-out timelocked and the
+	// recipient has no tctoken (opt-in, spec 2026-09-30-gateway-g6).
+	instance, _ := whatsapp.DeviceFromContext(ctx)
+	if err := whatsapp.CheckReachoutGuard(ctx, instance, client, recipient); err != nil {
+		return whatsmeow.SendResponse{}, err
+	}
+
 	ts, err := client.SendMessage(ctx, recipient, msg)
 	if err != nil {
+		noteReachoutFailure(ctx, err)
 		return whatsmeow.SendResponse{}, normalizeSendError(err)
 	}
 
@@ -283,6 +291,17 @@ func (service serviceSend) mergeReplyContext(ctx context.Context, contextInfo *w
 		Conversation: proto.String(message.Content),
 	}
 	return contextInfo
+}
+
+// noteReachoutFailure records a 463 on the sending device's reach-out timelock state, which
+// reports session.timelock and feeds the guard. Other errors and a missing device are ignored.
+func noteReachoutFailure(ctx context.Context, err error) {
+	if !whatsapp.IsReachoutTimelockError(err) {
+		return
+	}
+	if instance, ok := whatsapp.DeviceFromContext(ctx); ok {
+		whatsapp.NoteReachoutTimelock(ctx, instance)
+	}
 }
 
 func normalizeSendError(err error) error {
