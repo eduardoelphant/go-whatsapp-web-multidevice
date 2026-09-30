@@ -102,6 +102,50 @@ history of the work.
 - **What.** The host is out of support. Upgrade in an agreed window, after a backup.
   Do not run SetupOrion on it.
 
+### D-12 Production device gets `STREAM_REPLACED` shortly after connecting
+
+- **What.** Seen 2026-09-30: the only production device connected on start and, about five
+  minutes later, got `[STREAM_REPLACED] ... was opened elsewhere`, then stayed `disconnected`
+  (the same happened earlier the same day). Something else opens the same credential. Prime
+  suspect: the migration lab gateway still running on the owner's machine (see D-5). Not
+  confirmed.
+- **Also.** After `STREAM_REPLACED` the device stays down until someone reconnects it, by design
+  (`it stays disconnected until reconnected`). The health signal for the CRM is `GET /devices`
+  showing `disconnected`; nothing alerts on it.
+- **Pay.** Confirm the lab process is off and the device holds `connected`. Then decide whether
+  the gateway should alert (webhook or health check) when a device stays `disconnected`.
+
+### D-13 A disconnected client shows up as `Panic recovered in middleware`
+
+- **What.** While the device was down the logs carried `level=error msg="Panic recovered in
+  middleware: you are not connect to services server, please reconnect"` and `... download media
+  <id>: failed to refresh media connections`, repeated for the same media id. These are expected
+  states, not panics. Check what status code the client gets; a disconnected device should be a
+  clean 4xx/5xx with a stable error code, not a recovered panic.
+- **Pay.** Find where the panic comes from (media download and send paths), return a typed error,
+  add a test with a disconnected fake client.
+
+### D-14 Benchmark GOWA vs Evolution per session (pending)
+
+- **What.** The owner wants CPU and memory per session, one Evolution instance against one GOWA
+  device, and an estimate of how many sessions the host holds. First read-only pass on 2026-09-30
+  was inconclusive for the GOWA side because its device was disconnected (D-12).
+- **Readings so far.** Evolution: one Node process for ~30 open instances, ~420 MiB and ~10% of
+  one core (about 14 MiB and 0.35% per instance if split evenly; the fixed part of the process
+  cannot be separated); its Redis holds ~2.9 MiB per instance on average and Postgres is shared
+  with other databases. GOWA: one Go process with one device, ~29 MiB and ~0.5% of one core, but
+  disconnected, so an upper bound at best. Load was low (about 0.1 message per second across all
+  Evolution instances). Host: 4 vCPU, 16 GB, no swap, ~12 GB available.
+- **Why it is hard.** Neither gateway reports CPU or memory per session (each runs all sessions
+  in one process). A fair comparison needs the same account profile on both, and one account
+  cannot be on both at once (same credential collides). The capacity number needs a
+  mass-reconnect test, which is the real peak.
+- **Missing.** Host monitoring (none today). Owner is thinking about a reproducible setup, for
+  example a dedicated test number and a sampler run for 24 h.
+- **Pay.** After D-12: repeat with the GOWA device connected, then run the same sampling with
+  more sessions and fit CPU and memory per session; estimate capacity from the smaller of the RAM
+  and the mass-reconnect CPU limit. Read-only on the host, no restarts.
+
 ## Paid
 
 ### D-2 Message order after a redelivery (ElphantCRM, B-166)
