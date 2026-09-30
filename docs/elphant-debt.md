@@ -109,9 +109,12 @@ history of the work.
      scheduler, Chatwoot retry worker and sweeper.
 - **Pay.** One small pass with a test per item.
 
-### D-4 Gateway item G8
+### D-13 Signed URLs for `/statics`
 
-- **What.** `/statics` served before Basic Auth (G8). Needs a spec first.
+- **What.** `APP_STATICS_AUTH` protects `/statics` with Basic Auth, which breaks a browser UI on
+  another origin that loads files in `<img>` tags. Signed, expiring URLs (`?exp=&sig=`, an HMAC
+  with `APP_STATICS_SECRET`) accepted in place of Basic Auth would serve that case. Do it only if
+  such a consumer appears.
 
 ### D-5 Lab data cleanup (part B, task 10)
 
@@ -168,6 +171,11 @@ history of the work.
   and the mass-reconnect CPU limit. Read-only on the host, no restarts.
 
 ## Paid
+
+### D-4 Gateway item G8 (`/statics` before Basic Auth)
+
+Paid by the `APP_STATICS_AUTH` flag (`mountStatics` in `cmd/rest.go`, tests in
+`cmd/rest_statics_test.go`); the flag is off by default, the owner decides when to turn it on.
 
 ### D-2 Message order after a redelivery (ElphantCRM, B-166)
 

@@ -393,6 +393,25 @@ check that saw the device connected, so it is `null` for the first interval afte
 appear): `gowa_goroutine_panics_total`, `gowa_reconnect_attempts_total`,
 `gowa_reconnect_successes_total` and `gowa_devices{state="..."}`.
 
+## Authenticated `/statics`
+
+Upstream serves `/statics` (QR images, downloaded media) before the Basic Auth middleware, so
+anyone who knows a path downloads the file without credentials. Media names carry a UUID, but the
+pairing QR is `statics/qrcode/scan-qr-<device>.png`: predictable, and pairing the number on a
+stranger's phone is the worst thing it allows during an active login.
+
+`APP_STATICS_AUTH=true` (flag `--statics-auth`, default `false`) puts `/statics` behind the same
+Basic Auth as the API. It takes effect only when `APP_BASIC_AUTH` is set: with no credentials there
+is nothing to check against and the route stays public. The auth sits on that path only, ahead of
+the request timeout, so a large download is not cut by the 45 s timeout.
+
+What changes when it is on: a browser on the same origin (the embedded UI) keeps working, because it
+resends its credentials; a separate UI on another origin that loads `/statics` files in `<img>`
+tags, and anything that builds a URL from a webhook `path` and fetches it without credentials,
+get `401`. The CRM is unaffected: it downloads media through `GET /message/:id/media` and reads the
+QR from the `session.status` webhook. Signed, expiring URLs for browser consumers are a possible
+next step (D-13).
+
 ## Specs and plans
 
 Knowledge pages that the fork owns live in `docs/reference/` (this page and `import-baileys.md`); files

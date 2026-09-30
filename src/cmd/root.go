@@ -205,6 +205,9 @@ func initEnvConfig() {
 	if viper.IsSet("whatsapp_reachout_suspect_minutes") {
 		config.WhatsappReachoutSuspectMinutes = viper.GetInt("whatsapp_reachout_suspect_minutes")
 	}
+	if viper.IsSet("app_statics_auth") {
+		config.AppStaticsAuth = viper.GetBool("app_statics_auth")
+	}
 	if viper.IsSet("whatsapp_watchdog_interval_seconds") {
 		config.WhatsappWatchdogIntervalSeconds = viper.GetInt("whatsapp_watchdog_interval_seconds")
 	}
@@ -550,6 +553,12 @@ func initFlags() {
 		"chatwoot-import-messages", "",
 		config.ChatwootImportMessages,
 		`enable message history import to Chatwoot --chatwoot-import-messages <true/false> | example: --chatwoot-import-messages=true`,
+	)
+	rootCmd.PersistentFlags().BoolVarP(
+		&config.AppStaticsAuth,
+		"statics-auth", "",
+		config.AppStaticsAuth,
+		`require Basic Auth on /statics (only when Basic Auth is configured) --statics-auth <true/false> | example: --statics-auth=true`,
 	)
 	rootCmd.PersistentFlags().BoolVarP(
 		&config.WhatsappReachoutGuard,

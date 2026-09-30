@@ -64,7 +64,13 @@ func restServer(_ *cobra.Command, _ []string) {
 	// fetch media under /statics and authenticate with the headers below.
 	app.Use(newCORSMiddleware())
 
-	app.Use(config.AppBasePath+"/statics", static.New("./statics"))
+	// Fork (elphant): /statics is public unless APP_STATICS_AUTH is on and Basic Auth is configured.
+	accounts := basicAuthAccounts()
+	var staticsAccounts map[string]string
+	if config.AppStaticsAuth {
+		staticsAccounts = accounts
+	}
+	mountStatics(app, config.AppBasePath, "./statics", staticsAccounts)
 
 	app.Use(middleware.Recovery())
 	app.Use(middleware.RequestTimeout(middleware.DefaultRequestTimeout))
@@ -120,18 +126,9 @@ func restServer(_ *cobra.Command, _ []string) {
 		}()
 	}
 
-	if len(config.AppBasicAuthCredential) > 0 {
-		account := make(map[string]string)
-		for _, basicAuth := range config.AppBasicAuthCredential {
-			ba := strings.Split(basicAuth, ":")
-			if len(ba) != 2 {
-				logrus.Fatalln("Basic auth is not valid, please this following format <user>:<secret>")
-			}
-			account[ba[0]] = ba[1]
-		}
-
+	if len(accounts) > 0 {
 		app.Use(middleware.WebsocketQueryAuth())
-		app.Use(newBasicAuthMiddleware(account))
+		app.Use(newBasicAuthMiddleware(accounts))
 	}
 
 	// Create base path group or use app directly
@@ -337,6 +334,34 @@ func newCORSMiddleware() fiber.Handler {
 			return oauthAuthorizePath != "" && c.Path() == oauthAuthorizePath
 		},
 	})
+}
+
+// basicAuthAccounts parses the configured <user>:<secret> credentials; nil when none are set.
+func basicAuthAccounts() map[string]string {
+	if len(config.AppBasicAuthCredential) == 0 {
+		return nil
+	}
+	accounts := make(map[string]string)
+	for _, basicAuth := range config.AppBasicAuthCredential {
+		ba := strings.Split(basicAuth, ":")
+		if len(ba) != 2 {
+			logrus.Fatalln("Basic auth is not valid, please this following format <user>:<secret>")
+		}
+		accounts[ba[0]] = ba[1]
+	}
+	return accounts
+}
+
+// mountStatics serves dir under <basePath>/statics. With accounts it requires Basic Auth for
+// that path only, before the request timeout and the other middleware, so a large download is
+// not cut by the 45 s timeout; with none it is public, as upstream serves it.
+func mountStatics(app *fiber.App, basePath, dir string, accounts map[string]string) {
+	path := basePath + "/statics"
+	if len(accounts) > 0 {
+		app.Use(path, newBasicAuthMiddleware(accounts), static.New(dir))
+		return
+	}
+	app.Use(path, static.New(dir))
 }
 
 func newBasicAuthMiddleware(accounts map[string]string) fiber.Handler {

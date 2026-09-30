@@ -14,6 +14,7 @@ var (
 	AppOs                  = "GOWA"
 	AppPlatform            = waCompanionReg.DeviceProps_PlatformType(1)
 	AppBasicAuthCredential []string
+	AppStaticsAuth         bool // Fork (elphant): require Basic Auth on /statics (only when Basic Auth is configured)
 	AppBasePath            = ""
 	AppTrustedProxies      []string // Trusted proxy IP ranges (e.g., "0.0.0.0/0" for all, or specific CIDRs)
 	AppCORSAllowedOrigins  []string // CORS allowed origins; empty means "*" (any origin)
