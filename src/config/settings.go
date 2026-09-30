@@ -63,6 +63,7 @@ var (
 	WhatsappTypeLid                            = "@lid"
 	WhatsappTypeNewsletter                     = "@newsletter"
 	WhatsappAccountValidation                  = true
+	WhatsappUserCheckMinIntervalMs             = 500           // Fork (elphant): minimum wait between POST /user/check batches on one device
 	WhatsappPresenceOnConnect                  = "unavailable" // Presence to send on connect: "available", "unavailable", or "none"
 	WhatsappPresencePulseEnabled               = true          // Periodically pulse presence available, then unavailable
 	WhatsappPresencePulseInterval              = 24 * time.Hour

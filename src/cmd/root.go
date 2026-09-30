@@ -194,6 +194,9 @@ func initEnvConfig() {
 	if viper.IsSet("whatsapp_account_validation") {
 		config.WhatsappAccountValidation = viper.GetBool("whatsapp_account_validation")
 	}
+	if viper.IsSet("whatsapp_user_check_min_interval_ms") {
+		config.WhatsappUserCheckMinIntervalMs = viper.GetInt("whatsapp_user_check_min_interval_ms")
+	}
 	if viper.IsSet("whatsapp_auto_reject_call") {
 		config.WhatsappAutoRejectCall = viper.GetBool("whatsapp_auto_reject_call")
 	}
@@ -536,6 +539,12 @@ func initFlags() {
 		"chatwoot-import-messages", "",
 		config.ChatwootImportMessages,
 		`enable message history import to Chatwoot --chatwoot-import-messages <true/false> | example: --chatwoot-import-messages=true`,
+	)
+	rootCmd.PersistentFlags().IntVarP(
+		&config.WhatsappUserCheckMinIntervalMs,
+		"whatsapp-user-check-min-interval-ms", "",
+		config.WhatsappUserCheckMinIntervalMs,
+		`minimum wait in milliseconds between batch number checks on one device --whatsapp-user-check-min-interval-ms <int> | example: --whatsapp-user-check-min-interval-ms=500`,
 	)
 	rootCmd.PersistentFlags().IntVarP(
 		&config.ChatwootDaysLimitImportMessages,
