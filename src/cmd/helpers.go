@@ -8,10 +8,7 @@ import (
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/chatwoot"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest/helpers"
 	"github.com/sirupsen/logrus"
-	"go.mau.fi/whatsmeow"
 )
 
 // initChatwootForwarding wires the WhatsApp->Chatwoot forward path shared by the
@@ -54,25 +51,6 @@ func initChatwootForwarding(repo domainChatStorage.IChatStorageRepository) {
 }
 
 var presencePulseSchedulerOnce sync.Once
-
-// getValidWhatsAppClient returns an initialized WhatsApp client if available.
-func getValidWhatsAppClient() *whatsmeow.Client {
-	client := whatsappCli
-	if client == nil {
-		client = whatsapp.GetClient()
-	}
-	return client
-}
-
-// startAutoReconnectCheckerIfClientAvailable guards the reconnect checker behind a valid client reference.
-func startAutoReconnectCheckerIfClientAvailable() {
-	client := getValidWhatsAppClient()
-	if client == nil {
-		logrus.Warn("whatsapp client is nil; auto-reconnect checker not started")
-		return
-	}
-	safego.Go("auto-reconnect-checker", func() { helpers.SetAutoReconnectChecking(client) })
-}
 
 // startPresencePulseSchedulerIfEnabled starts the process-wide presence pulse scheduler once.
 func startPresencePulseSchedulerIfEnabled() {

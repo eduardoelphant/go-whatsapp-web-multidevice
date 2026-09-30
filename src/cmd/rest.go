@@ -162,6 +162,11 @@ func restServer(_ *cobra.Command, _ []string) {
 	// Fork (elphant): durable webhook outbox operations; 404 unless WHATSAPP_WEBHOOK_DELIVERY=durable.
 	rest.InitRestWebhookOutbox(apiGroup, whatsapp.DurableWebhookOutbox)
 
+	// Fork (elphant): reconnect watchdog for every paired device, plus its health routes. Both
+	// routes sit behind the Basic Auth middleware above and before the device group.
+	reconnectWatchdog := whatsapp.NewReconnectWatchdog(dm.ListDevices, time.Duration(config.WhatsappWatchdogIntervalSeconds)*time.Second)
+	rest.InitRestHealth(apiGroup, reconnectWatchdog)
+
 	// Fork (elphant): the LID list is global to the gateway, so it stays out of the device group.
 	rest.InitRestLIDList(apiGroup, lidUsecase)
 
@@ -211,8 +216,8 @@ func restServer(_ *cobra.Command, _ []string) {
 	// Set auto reconnect to whatsapp server after booting
 	safego.Go("auto-connect-after-boot", func() { helpers.SetAutoConnectAfterBooting(appUsecase) })
 
-	// Set auto reconnect checking with a guaranteed client instance
-	startAutoReconnectCheckerIfClientAvailable()
+	// Fork (elphant): per-device reconnect watchdog (replaces the default-client loop)
+	reconnectWatchdog.Start(context.Background())
 
 	// Set daily presence pulse scheduler when enabled
 	startPresencePulseSchedulerIfEnabled()
