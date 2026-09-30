@@ -88,6 +88,12 @@ type reachoutState struct {
 	endsKnown bool      // until came from WhatsApp, not from the suspect window
 }
 
+// clearLocked resets the fields; the mutex itself must never be overwritten while held.
+func (s *reachoutState) clearLocked() {
+	s.active, s.source, s.typ = false, "", ""
+	s.until, s.endsKnown = time.Time{}, false
+}
+
 func (s *reachoutState) snapshotLocked() ReachoutSnapshot {
 	snap := ReachoutSnapshot{Active: s.active, Source: s.source, EnforcementType: s.typ}
 	if s.active && s.endsKnown {
@@ -100,7 +106,7 @@ func (s *reachoutState) snapshotLocked() ReachoutSnapshot {
 // expireLocked clears an expired state and reports whether it did.
 func (s *reachoutState) expireLocked(now time.Time) bool {
 	if s.active && !now.Before(s.until) {
-		*s = reachoutState{}
+		s.clearLocked()
 		return true
 	}
 	return false
@@ -121,7 +127,7 @@ func (s *reachoutState) applyEvent(now time.Time, suspect time.Duration, active 
 	s.expireLocked(now)
 	before := s.snapshotLocked()
 	if !active {
-		*s = reachoutState{}
+		s.clearLocked()
 	} else {
 		s.active, s.source, s.typ = true, ReachoutSourceEvent, typ
 		if ends.IsZero() {

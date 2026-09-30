@@ -180,8 +180,13 @@ func dispatchSessionStatus(deliver func()) {
 	go deliver()
 }
 
-// handleSessionEvent emits session.status for lifecycle events and ignores the rest.
+// handleSessionEvent emits session.status for lifecycle events and session.timelock for the
+// reach-out timelock notification; it ignores the rest.
 func handleSessionEvent(ctx context.Context, instance *DeviceInstance, rawEvt any) {
+	if evt, ok := rawEvt.(*events.NotifyAccountReachoutTimelock); ok {
+		HandleReachoutTimelockEvent(ctx, instance, evt, time.Now())
+		return
+	}
 	if status, ok := sessionStatusFromEvent(rawEvt, time.Now()); ok {
 		EmitSessionStatus(ctx, instance, status)
 	}

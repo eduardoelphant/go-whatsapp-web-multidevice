@@ -64,6 +64,8 @@ var (
 	WhatsappTypeNewsletter                     = "@newsletter"
 	WhatsappAccountValidation                  = true
 	WhatsappUserCheckMinIntervalMs             = 500           // Fork (elphant): minimum wait between POST /user/check batches on one device
+	WhatsappReachoutGuard                      = false         // Fork (elphant): refuse sends to recipients without a tctoken while the account is timelocked
+	WhatsappReachoutSuspectMinutes             = 30            // Fork (elphant): how long a timelock with no known end (a 463, or an event without one) is assumed to last
 	WhatsappPresenceOnConnect                  = "unavailable" // Presence to send on connect: "available", "unavailable", or "none"
 	WhatsappPresencePulseEnabled               = true          // Periodically pulse presence available, then unavailable
 	WhatsappPresencePulseInterval              = 24 * time.Hour

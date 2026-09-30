@@ -28,6 +28,9 @@ type DeviceInstance struct {
 	passkeyChallenge     *types.WebAuthnPublicKey
 	passkeyCode          string
 	passkeySkipHandoffUX bool
+
+	// Fork (elphant): reach-out timelock state, see reachout_state.go.
+	reachout reachoutState
 }
 
 func NewDeviceInstance(deviceID string, client *whatsmeow.Client, chatStorageRepo domainChatStorage.IChatStorageRepository) *DeviceInstance {

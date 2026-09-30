@@ -199,6 +199,12 @@ func initEnvConfig() {
 	if viper.IsSet("whatsapp_user_check_min_interval_ms") {
 		config.WhatsappUserCheckMinIntervalMs = viper.GetInt("whatsapp_user_check_min_interval_ms")
 	}
+	if viper.IsSet("whatsapp_reachout_guard") {
+		config.WhatsappReachoutGuard = viper.GetBool("whatsapp_reachout_guard")
+	}
+	if viper.IsSet("whatsapp_reachout_suspect_minutes") {
+		config.WhatsappReachoutSuspectMinutes = viper.GetInt("whatsapp_reachout_suspect_minutes")
+	}
 	if viper.IsSet("whatsapp_auto_reject_call") {
 		config.WhatsappAutoRejectCall = viper.GetBool("whatsapp_auto_reject_call")
 	}
@@ -541,6 +547,18 @@ func initFlags() {
 		"chatwoot-import-messages", "",
 		config.ChatwootImportMessages,
 		`enable message history import to Chatwoot --chatwoot-import-messages <true/false> | example: --chatwoot-import-messages=true`,
+	)
+	rootCmd.PersistentFlags().BoolVarP(
+		&config.WhatsappReachoutGuard,
+		"whatsapp-reachout-guard", "",
+		config.WhatsappReachoutGuard,
+		`refuse sends to recipients without a tctoken while the account is reach-out timelocked --whatsapp-reachout-guard <true/false> | example: --whatsapp-reachout-guard=true`,
+	)
+	rootCmd.PersistentFlags().IntVarP(
+		&config.WhatsappReachoutSuspectMinutes,
+		"whatsapp-reachout-suspect-minutes", "",
+		config.WhatsappReachoutSuspectMinutes,
+		`minutes a timelock with no known end is assumed to last --whatsapp-reachout-suspect-minutes <int> | example: --whatsapp-reachout-suspect-minutes=30`,
 	)
 	rootCmd.PersistentFlags().IntVarP(
 		&config.WhatsappUserCheckMinIntervalMs,
