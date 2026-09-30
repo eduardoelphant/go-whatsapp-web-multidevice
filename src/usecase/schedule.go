@@ -19,6 +19,7 @@ import (
 	domainSend "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/send"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/validations"
 	fiberUtils "github.com/gofiber/utils/v2"
@@ -370,6 +371,7 @@ func (s *ScheduleService) Start(ctx context.Context) {
 	s.once.Do(func() {
 		s.garbageCollectAssets()
 		go func() {
+			defer safego.Recover("schedule#1")
 			defer close(s.done)
 			ticker := time.NewTicker(5 * time.Second)
 			defer ticker.Stop()
@@ -719,6 +721,7 @@ func hydrateAsset(asset scheduledAsset, field string) (*hydratedAsset, error) {
 	writer := multipart.NewWriter(pw)
 	boundary := writer.Boundary()
 	go func() {
+		defer safego.Recover("schedule#2")
 		part, err := writer.CreatePart(partHeader)
 		if err == nil {
 			_, err = io.Copy(part, src)

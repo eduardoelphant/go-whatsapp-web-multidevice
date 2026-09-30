@@ -18,7 +18,7 @@
 
 | # | Decision | Alternative rejected |
 |---|---|---|
-| D1 | `pkg/safego`: `Go(name, fn)` for named functions and `defer safego.Recover(name)` as the first statement of a goroutine closure; a panic is logged with its stack, counted, and the goroutine ends | Restart goroutines after a panic (hides a bug that will repeat) |
+| D1 | `pkg/safego`: `Go(name, fn)` for one-shot work and `defer safego.Recover(name)` as the first statement of a goroutine closure; a panic is logged with its stack, counted, and the goroutine ends. `Loop(name, fn)` for service loops meant to run for the life of the process (websocket hub, presence scheduler, webhook outbox worker and cleanup, UI auto update): it restarts after a panic with a wait of 1s doubling to 30s, because a dead loop would leave the feature silently down while the process stays up; a normal return ends it | Restart every goroutine (hides a bug that will repeat); contain without restarting the loops (durable webhooks would stop silently) |
 | D2 | A test walks the source and fails on a `go` statement that is not protected | Trust reviews |
 | D3 | One watchdog in the fork replaces the default-client loop: every `WHATSAPP_WATCHDOG_INTERVAL_SECONDS` (default `120`, `0` disables) it reconnects each paired, disconnected device that is not in `StreamReplaced`, with a wait that grows per device (interval, 2x, 4x ... capped at 15 minutes) and resets when the device connects | Keep the loop, add a loop per device |
 | D4 | Never connect a device that is not paired (`Store.ID == nil`): a connect would start a pairing | Connect anything disconnected |

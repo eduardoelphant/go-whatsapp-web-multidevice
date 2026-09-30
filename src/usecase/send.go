@@ -24,6 +24,7 @@ import (
 	domainSend "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/send"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest/helpers"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/validations"
@@ -224,6 +225,7 @@ func (service serviceSend) wrapSendMessage(ctx context.Context, client *whatsmeo
 	// hold the SQLite writer for a while; busy_timeout is 30s) — with a short
 	// deadline the sent message is silently missing from the chat viewer.
 	go func() {
+		defer safego.Recover("send#1")
 		storeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 		defer cancel()
 
@@ -534,6 +536,7 @@ func (service serviceSend) SendImage(ctx context.Context, request domainSend.Ima
 	}
 	ts, err := service.wrapSendMessage(ctx, client, dataWaRecipient, msg, caption)
 	go func() {
+		defer safego.Recover("send#2")
 		errDelete := utils.RemoveFile(0, deletedItems...)
 		if errDelete != nil {
 			fmt.Println("error when deleting picture: ", errDelete)
@@ -943,7 +946,8 @@ func (service serviceSend) SendVideo(ctx context.Context, request domainSend.Vid
 	defer func() {
 		if len(deletedItems) > 0 {
 			// Run cleanup in background with slight delay to avoid race with open handles
-			go utils.RemoveFile(1, deletedItems...)
+			items := deletedItems
+			safego.Go("remove-temp-files", func() { utils.RemoveFile(1, items...) })
 		}
 	}()
 

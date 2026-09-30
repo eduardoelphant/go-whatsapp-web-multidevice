@@ -7,6 +7,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow/types"
+
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 )
 
 const presencePulseCheckInterval = time.Minute
@@ -105,7 +107,7 @@ func StartPresencePulseScheduler(ctx context.Context, manager *DeviceManager, in
 		duration,
 		presencePulseCheckInterval,
 	)
-	go scheduler.run(ctx)
+	safego.Loop("presence-pulse-scheduler", func() { scheduler.run(ctx) })
 }
 
 func (s *presencePulseScheduler) run(ctx context.Context) {
@@ -156,7 +158,7 @@ func (s *presencePulseScheduler) startPulseIfDue(ctx context.Context, device pre
 
 	s.inFlight[device.id] = true
 
-	go s.runPulse(ctx, device)
+	safego.Go("presence-pulse", func() { s.runPulse(ctx, device) })
 	return true
 }
 

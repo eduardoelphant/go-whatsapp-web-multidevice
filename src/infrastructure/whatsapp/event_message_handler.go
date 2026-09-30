@@ -8,6 +8,7 @@ import (
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
@@ -199,6 +200,7 @@ func handleWebhookForward(ctx context.Context, evt *events.Message, client *what
 		return
 	}
 	go func(e *events.Message, c *whatsmeow.Client, poll *webhookPollPayload) {
+		defer safego.Recover("event_message_handler#1")
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := forwardMessageToWebhook(webhookCtx, c, e, poll); err != nil {

@@ -13,6 +13,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 )
 
 // Fork (elphant): production audit of payload.stable. With
@@ -55,6 +57,7 @@ func auditStable(event string, stable any, protoFields []string) {
 		return
 	}
 	go func() {
+		defer safego.Recover("stable_audit#1")
 		defer func() { <-stableAuditSlots }()
 		defer func() {
 			if r := recover(); r != nil {

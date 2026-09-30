@@ -8,6 +8,7 @@ import (
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/chatwoot"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest/helpers"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
@@ -70,7 +71,7 @@ func startAutoReconnectCheckerIfClientAvailable() {
 		logrus.Warn("whatsapp client is nil; auto-reconnect checker not started")
 		return
 	}
-	go helpers.SetAutoReconnectChecking(client)
+	safego.Go("auto-reconnect-checker", func() { helpers.SetAutoReconnectChecking(client) })
 }
 
 // startPresencePulseSchedulerIfEnabled starts the process-wide presence pulse scheduler once.

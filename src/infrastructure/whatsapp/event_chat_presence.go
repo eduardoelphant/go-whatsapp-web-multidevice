@@ -8,6 +8,8 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
+
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 )
 
 // handleChatPresence handles incoming chat presence (typing notification) events.
@@ -26,6 +28,7 @@ func handleChatPresence(ctx context.Context, evt *events.ChatPresence, deviceID 
 
 	// Forward chat presence event to webhook
 	go func(e *events.ChatPresence, c *whatsmeow.Client) {
+		defer safego.Recover("event_chat_presence#1")
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := forwardChatPresenceToWebhook(webhookCtx, e, deviceID, c); err != nil {

@@ -7,6 +7,7 @@ import (
 
 	domainApp "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/app"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
 )
@@ -34,6 +35,7 @@ func SetAutoReconnectChecking(cli *whatsmeow.Client) {
 	}
 	// Run every 5 minutes to check if the connection is still alive, if not, reconnect
 	go func() {
+		defer safego.Recover("common#1")
 		for {
 			time.Sleep(5 * time.Minute)
 			// Fork (elphant): leave a device whose session was opened elsewhere alone.

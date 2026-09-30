@@ -14,6 +14,7 @@ import (
 	domainSend "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/send"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/chatwoot"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
@@ -873,6 +874,7 @@ func (h *ChatwootHandler) SyncHistory(c fiber.Ctx) error {
 
 	// Start async sync
 	go func() {
+		defer safego.Recover("chatwoot#1")
 		ctx := context.Background()
 		progress, err := syncService.SyncHistory(ctx, storageDeviceID, waClient, opts)
 		if err != nil {

@@ -67,6 +67,7 @@ func Go(name string, fn func()) {
 }
 ```
 
+- [ ] Add `Loop(name, fn)` (restart after a panic, wait 1s doubling to 30s, a normal return ends it) with tests, and use it for the service loops: websocket hub, presence scheduler, webhook outbox worker and cleanup, UI auto update.
 - [ ] Apply to the sites: every `go func(...) {` closure gets `defer safego.Recover("<file>#<n>")` as its first line; every `go namedFunc(args)` becomes `safego.Go("<name>", func() { namedFunc(args) })`, with any argument that could change after the launch copied into a local first. Add the `safego` import.
 - [ ] `go build ./... && go vet ./...`, `go test ./pkg/safego/ -race`, then the full suite; commit `feat(safego): contain panics in every background goroutine`.
 

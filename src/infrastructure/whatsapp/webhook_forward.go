@@ -13,6 +13,7 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/chatwoot"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -166,6 +167,7 @@ func forwardPayloadToConfiguredWebhooks(ctx context.Context, payload map[string]
 	if globalAllowed {
 		globalDone = make(chan struct{})
 		go func() {
+			defer safego.Recover("webhook_forward#1")
 			defer close(globalDone)
 			globalErr = forwardToWebhooks(ctx, payload, eventName, globalURLs, nil)
 		}()
@@ -193,7 +195,7 @@ func forwardPayloadToConfiguredWebhooks(ctx context.Context, payload map[string]
 	}
 
 	if chatwootAllowed {
-		go forwardToChatwoot(ctx, payload, eventName)
+		safego.Go("forward-to-chatwoot", func() { forwardToChatwoot(ctx, payload, eventName) })
 	}
 
 	return webhookErr
@@ -1449,6 +1451,7 @@ func StartChatwootForwardRetryWorker(repo domainChatStorage.IChatStorageReposito
 	}
 	chatwootForwardRetryWorkerOnce.Do(func() {
 		go func() {
+			defer safego.Recover("webhook_forward#2")
 			ticker := time.NewTicker(30 * time.Second)
 			defer ticker.Stop()
 			for {

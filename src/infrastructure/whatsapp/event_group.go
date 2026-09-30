@@ -9,6 +9,8 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
+
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 )
 
 // createGroupInfoPayload creates a webhook payload for group information events
@@ -85,6 +87,7 @@ func handleJoinedGroup(ctx context.Context, evt *events.JoinedGroup, deviceID st
 
 	// Forward joined group event to webhook
 	go func(e *events.JoinedGroup, c *whatsmeow.Client) {
+		defer safego.Recover("event_group#1")
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := forwardJoinedGroupToWebhook(webhookCtx, e, deviceID, c); err != nil {

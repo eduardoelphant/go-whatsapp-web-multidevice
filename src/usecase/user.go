@@ -13,6 +13,7 @@ import (
 	domainUser "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/user"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/validations"
 	"github.com/disintegration/imaging"
@@ -246,6 +247,7 @@ func (service serviceUser) MyListNewsletter(ctx context.Context) (response domai
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(d *types.NewsletterMetadata) {
+			defer safego.Recover("user#1")
 			defer wg.Done()
 			defer func() { <-sem }()
 

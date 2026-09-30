@@ -16,6 +16,7 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/chatwoot"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/uiasset"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	uimcp "github.com/aldinokemal/go-whatsapp-web-multidevice/ui/mcp"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest"
@@ -205,10 +206,10 @@ func restServer(_ *cobra.Command, _ []string) {
 	headerDeviceGroup := apiGroup.Group("", middleware.DeviceMiddleware(dm))
 	registerDeviceScopedRoutes(headerDeviceGroup)
 
-	go websocket.RunHub()
+	safego.Loop("websocket-hub", websocket.RunHub)
 
 	// Set auto reconnect to whatsapp server after booting
-	go helpers.SetAutoConnectAfterBooting(appUsecase)
+	safego.Go("auto-connect-after-boot", func() { helpers.SetAutoConnectAfterBooting(appUsecase) })
 
 	// Set auto reconnect checking with a guaranteed client instance
 	startAutoReconnectCheckerIfClientAvailable()
@@ -222,6 +223,7 @@ func restServer(_ *cobra.Command, _ []string) {
 	// the chat storage DB connection.
 	listenErr := make(chan error, 1)
 	go func() {
+		defer safego.Recover("rest#1")
 		listenErr <- app.Listen(config.AppHost+":"+config.AppPort, fiber.ListenConfig{ListenerNetwork: "tcp"})
 	}()
 
@@ -281,11 +283,12 @@ func registerUIRoute(apiGroup fiber.Router, ctx context.Context) {
 	}
 	if config.AppUIAutoUpdate {
 		go func() {
+			defer safego.Recover("rest#2")
 			if err := uiManager.EnsureLatest(ctx); err != nil {
 				logrus.Warnf("[UI_ASSET] initial dashboard download failed: %v", err)
 			}
 		}()
-		go uiManager.StartAutoUpdate(ctx)
+		safego.Loop("ui-auto-update", func() { uiManager.StartAutoUpdate(ctx) })
 	}
 
 	apiGroup.Get("/", func(c fiber.Ctx) error {

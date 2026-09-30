@@ -6,6 +6,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow/types/events"
+
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 )
 
 // Fork (elphant): the session.status webhook reports device lifecycle changes
@@ -177,7 +179,7 @@ func dispatchSessionStatus(deliver func()) {
 		deliver()
 		return
 	}
-	go deliver()
+	safego.Go("session-status-deliver", deliver)
 }
 
 // handleSessionEvent emits session.status for lifecycle events and session.timelock for the

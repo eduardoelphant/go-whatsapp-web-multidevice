@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 )
 
 // Resolver returns the HMAC secret and the TLS-skip flag for a row's
@@ -133,7 +135,7 @@ func (o *Outbox) Start(ctx context.Context) error {
 	for _, url := range urls {
 		o.wake(url)
 	}
-	go o.cleanupLoop(ctx)
+	safego.Loop("webhook-outbox-cleanup", func() { o.cleanupLoop(ctx) })
 	return nil
 }
 
@@ -177,7 +179,8 @@ func (o *Outbox) wake(targetURL string) {
 	if !ok {
 		ch = make(chan struct{}, 1)
 		o.workers[targetURL] = ch
-		go o.run(o.ctx, targetURL, ch)
+		runCtx := o.ctx // read under the lock, not later in the goroutine
+		safego.Loop("webhook-outbox-worker", func() { o.run(runCtx, targetURL, ch) })
 	}
 	select {
 	case ch <- struct{}{}:

@@ -12,6 +12,7 @@ import (
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/websocket"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/validations"
 	fiberUtils "github.com/gofiber/utils/v2"
@@ -73,6 +74,7 @@ func (service *serviceApp) Login(ctx context.Context, deviceID string) (response
 	}
 
 	go func() {
+		defer safego.Recover("app#1")
 		defer qrCancel()
 		defer close(chImage) // Ensure channel is closed when done
 		for evt := range ch {
@@ -87,6 +89,7 @@ func (service *serviceApp) Login(ctx context.Context, deviceID string) (response
 					continue // Skip sending if QR generation failed
 				}
 				go func(path string, duration time.Duration) {
+					defer safego.Recover("app#2")
 					time.Sleep(duration * time.Second)
 					if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 						logrus.Errorf("[LOGIN][%s] error when remove qrImage file: %v", deviceID, err)

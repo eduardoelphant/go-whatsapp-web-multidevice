@@ -14,6 +14,7 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/chatwoot/pgimport"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
@@ -919,6 +920,7 @@ func TriggerAutoSync(chatStorageRepo domainChatStorage.IChatStorageRepository, w
 	syncService := GetSyncServiceForDevice(SyncServiceKeyFor(rc), rc.Client, chatStorageRepo, rc.ConfigID == 0, rc.ConfigID)
 
 	go func() {
+		defer safego.Recover("sync#1")
 		opts := DefaultSyncOptions()
 		opts.DaysLimit = config.ChatwootDaysLimitImportMessages
 

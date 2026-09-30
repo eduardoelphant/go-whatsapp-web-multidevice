@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	"github.com/sirupsen/logrus"
 )
@@ -131,6 +132,7 @@ func IsMessageSentByUs(accountID, messageID int) bool {
 
 func init() {
 	go func() {
+		defer safego.Recover("client#1")
 		ticker := time.NewTicker(sentMessageIDsTTL)
 		defer ticker.Stop()
 		for range ticker.C {

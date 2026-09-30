@@ -7,6 +7,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types/events"
+
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 )
 
 // handleNewsletterJoin handles when you join/subscribe to a newsletter
@@ -14,6 +16,7 @@ func handleNewsletterJoin(ctx context.Context, evt *events.NewsletterJoin, devic
 	log.Infof("Joined newsletter %s", evt.ID)
 
 	go func(e *events.NewsletterJoin) {
+		defer safego.Recover("event_newsletter#1")
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := forwardNewsletterJoinToWebhook(webhookCtx, e, deviceID); err != nil {
@@ -27,6 +30,7 @@ func handleNewsletterLeave(ctx context.Context, evt *events.NewsletterLeave, dev
 	log.Infof("Left newsletter %s (role: %s)", evt.ID, evt.Role)
 
 	go func(e *events.NewsletterLeave) {
+		defer safego.Recover("event_newsletter#2")
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := forwardNewsletterLeaveToWebhook(webhookCtx, e, deviceID); err != nil {
@@ -40,6 +44,7 @@ func handleNewsletterLiveUpdate(ctx context.Context, evt *events.NewsletterLiveU
 	log.Infof("Newsletter %s: %d new message(s)", evt.JID, len(evt.Messages))
 
 	go func(e *events.NewsletterLiveUpdate) {
+		defer safego.Recover("event_newsletter#3")
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := forwardNewsletterLiveUpdateToWebhook(webhookCtx, e, deviceID); err != nil {
@@ -53,6 +58,7 @@ func handleNewsletterMuteChange(ctx context.Context, evt *events.NewsletterMuteC
 	log.Infof("Newsletter %s mute changed to: %s", evt.ID, evt.Mute)
 
 	go func(e *events.NewsletterMuteChange) {
+		defer safego.Recover("event_newsletter#4")
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := forwardNewsletterMuteChangeToWebhook(webhookCtx, e, deviceID); err != nil {

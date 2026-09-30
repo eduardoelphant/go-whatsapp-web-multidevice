@@ -10,6 +10,7 @@ import (
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	domainDevice "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/device"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/chatwoot"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/websocket"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
@@ -132,6 +133,7 @@ func handleDeleteForMe(ctx context.Context, evt *events.DeleteForMe, chatStorage
 
 	// Send webhook notification for delete event
 	go func(c *whatsmeow.Client) {
+		defer safego.Recover("event_handler#1")
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := forwardDeleteToWebhook(webhookCtx, evt, message, deviceID, c); err != nil {
@@ -331,6 +333,7 @@ func handleReceipt(ctx context.Context, evt *events.Receipt, deviceID string, cl
 	}
 	if sendReceipt {
 		go func(e *events.Receipt, c *whatsmeow.Client) {
+			defer safego.Recover("event_handler#2")
 			webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
 			if err := forwardReceiptToWebhook(webhookCtx, e, deviceID, c); err != nil {
@@ -357,6 +360,7 @@ func handleAppState(ctx context.Context, evt *events.AppState, deviceID string, 
 
 	if isLabelAppState(evt) {
 		go func(e *events.AppState, c *whatsmeow.Client) {
+			defer safego.Recover("event_handler#3")
 			webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
 			if err := forwardLabelAppStateToWebhook(webhookCtx, e, deviceID, c); err != nil {
@@ -391,6 +395,7 @@ func handleGroupInfo(ctx context.Context, evt *events.GroupInfo, deviceID string
 
 	// Forward group info event to webhook
 	go func(e *events.GroupInfo, c *whatsmeow.Client) {
+		defer safego.Recover("event_handler#4")
 		webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := forwardGroupInfoToWebhook(webhookCtx, e, deviceID, c); err != nil {
