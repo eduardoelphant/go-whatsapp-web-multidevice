@@ -23,25 +23,18 @@ history of the work.
   `devlikeapro/gows-plus`), and the ElphantCRM side (listen to `session.timelock`, show the state,
   decide when to turn `WHATSAPP_REACHOUT_GUARD` on).
 
-### D-12 Minor findings of the G9 review
+### D-12 Open parts of the G9 review
 
-- **What.** Deferred from the final review of the resilience work
-  (`docs/specs/2026-09-30-gateway-g9-resilience-design.md`):
+- **What.** Still open from the final review of the resilience work:
   1. The watchdog can connect between the `Reconnect` usecase's disconnect and connect (the API
      then answers `ErrAlreadyConnected`), and `Tick` connects devices one at a time, so N down
      devices can take about 50 s each. Connect in parallel, or skip a device with a recent manual
      action.
-  2. A logout whose `cli.Logout` fails leaves `Store.ID` set; between `Disconnect` and
-     `ResetClient` a tick can redial. Re-check `Store.ID` and deletion just before `Connect`.
-  3. An outbox row whose attempt panics restarts the worker every 30 s forever and blocks its
+  2. An outbox row whose attempt panics restarts the worker every 30 s forever and blocks its
      URL. Mark the row dead after N panics.
-  4. `usecase/schedule.go` (multipart pipe) and `webhook_forward.go` (global error) goroutines: a
-     panic before the pipe is closed leaves `ReadForm` blocked, and a panic leaves `globalErr`
-     nil, so the event is reported as delivered. Close the pipe in a defer and set the error in
-     the recover.
-  5. Tests: the D4 rule on a real `DeviceInstance` (nil client, `Store.ID` nil, deleted), `Start`
-     and the disabled case, auth on `/health/devices`, and the per-pass containment in the
-     scheduler, Chatwoot retry worker and sweeper.
+  3. No test drives the logout block (`LogoutDeviceKeepSlot`), the panic of the global webhook leg
+     or the auth of `/health/devices` on the assembled server (`restServer` has no seam; the route
+     order is pinned by `TestDeviceGroupIsRegisteredLast`).
 - **Pay.** One small pass with a test per item.
 
 ### D-13 Signed URLs for `/statics`
@@ -106,6 +99,15 @@ history of the work.
   and the mass-reconnect CPU limit. Read-only on the host, no restarts.
 
 ## Paid
+
+### D-12 (part) Minor findings of the G9 review
+
+Paid in the commit "fix(resilience): minors of the review": the multipart pipe of a scheduled
+send is closed by a defer, so a panic no longer leaves `ReadForm` blocked; a panic in the global
+webhook leg leaves its error set, so the event is reported failed instead of delivered; a logout
+keeps the reconnect watchdog off the client being logged out, so a failed `Logout` cannot be
+redialed before the reset; tests for an unpaired client value, the disabled watchdog and `Start`
+ticking until the context ends.
 
 ### D-11 Minor findings of the G6 review
 

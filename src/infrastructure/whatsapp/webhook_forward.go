@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"slices"
@@ -169,6 +170,9 @@ func forwardPayloadToConfiguredWebhooks(ctx context.Context, payload map[string]
 		go func() {
 			defer safego.Recover("webhook_forward#1")
 			defer close(globalDone)
+			// A panic below leaves this value in place: the global leg counts as failed, never
+			// as delivered.
+			globalErr = errors.New("global webhook delivery panicked")
 			globalErr = forwardToWebhooks(ctx, payload, eventName, globalURLs, nil)
 		}()
 	}

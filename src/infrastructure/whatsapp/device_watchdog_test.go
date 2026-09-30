@@ -1,7 +1,9 @@
 package whatsapp
 
 import (
+	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,6 +25,7 @@ type fakeWatched struct {
 	panicState bool // panics inside Connected(), i.e. while the watchdog reads the device
 	blocked    bool
 	connects   int
+	mu         sync.Mutex // guards connects when a test reads it from another goroutine
 }
 
 func (f *fakeWatched) ID() string      { return f.id }
@@ -38,8 +41,16 @@ func (f *fakeWatched) ReconnectBlocked() bool { return f.blocked }
 func (f *fakeWatched) Replaced() bool         { return f.replaced }
 func (f *fakeWatched) LoggedIn() bool         { return f.loggedIn }
 func (f *fakeWatched) StateName() string      { return f.state }
+func (f *fakeWatched) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.connects
+}
+
 func (f *fakeWatched) Connect() error {
+	f.mu.Lock()
 	f.connects++
+	f.mu.Unlock()
 	if f.panicOn {
 		panic("connect boom")
 	}
@@ -285,4 +296,45 @@ func TestBanAndOutdatedEventsBlockReconnectAndConnectedClears(t *testing.T) {
 	if reconnectBlocked(client, now) {
 		t.Fatal("Connected must clear the block")
 	}
+}
+
+// D-12 5: the D4 rule on a real instance with a real client value.
+func TestInstanceDeviceWithAnUnpairedClientIsNotPaired(t *testing.T) {
+	client := &whatsmeow.Client{Store: nil}
+	d := instanceDevice{inst: NewDeviceInstance("unpaired", client, nil), client: client}
+	if !d.HasClient() || d.Paired() {
+		t.Fatalf("HasClient=%v Paired=%v, want a client that is not paired (no store identity)", d.HasClient(), d.Paired())
+	}
+}
+
+func TestWatchdogStartDisabledDoesNothing(t *testing.T) {
+	d := down("a")
+	w := newReconnectWatchdog(func() []watchedDevice { return []watchedDevice{d} }, 0)
+
+	w.Start(context.Background())
+	time.Sleep(50 * time.Millisecond)
+
+	if d.connects != 0 {
+		t.Fatalf("connects = %d, want 0 with the watchdog disabled", d.connects)
+	}
+}
+
+func TestWatchdogStartTicksUntilTheContextEnds(t *testing.T) {
+	d := down("a")
+	w := newReconnectWatchdog(func() []watchedDevice { return []watchedDevice{d} }, 10*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	w.Start(ctx)
+	deadline := time.After(2 * time.Second)
+	for {
+		if d.count() >= 1 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("the watchdog never ticked")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	cancel()
 }

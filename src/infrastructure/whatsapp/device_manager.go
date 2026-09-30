@@ -427,6 +427,11 @@ func (m *DeviceManager) LogoutDeviceKeepSlot(ctx context.Context, deviceID strin
 	}
 
 	if cli := inst.GetClient(); cli != nil {
+		// Fork (elphant): keep the reconnect watchdog off this client while it is being logged
+		// out; a failed Logout leaves Store.ID set and a tick would redial between Disconnect
+		// and the reset. The client is discarded after the reset, so the entry is dropped too.
+		blockReconnect(cli, time.Time{})
+		defer unblockReconnect(cli)
 		// Attempt the unlink whenever the client is paired (Store.ID set), not only when
 		// IsLoggedIn: that is true only while connected, and skipping the attempt for a
 		// momentarily-offline client would leave the phone showing the linked device

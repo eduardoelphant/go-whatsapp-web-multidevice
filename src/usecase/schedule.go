@@ -729,6 +729,9 @@ func hydrateAsset(asset scheduledAsset, field string) (*hydratedAsset, error) {
 	boundary := writer.Boundary()
 	go func() {
 		defer safego.Recover("schedule#2")
+		// A panic must still close the pipe, or ReadForm below would block forever.
+		closeErr := errors.New("scheduled media copy panicked")
+		defer func() { pw.CloseWithError(closeErr) }()
 		part, err := writer.CreatePart(partHeader)
 		if err == nil {
 			_, err = io.Copy(part, src)
@@ -736,7 +739,7 @@ func hydrateAsset(asset scheduledAsset, field string) (*hydratedAsset, error) {
 		if err == nil {
 			err = writer.Close()
 		}
-		pw.CloseWithError(err)
+		closeErr = err
 	}()
 	form, err := multipart.NewReader(pr, boundary).ReadForm(1 << 20)
 	if err != nil {
