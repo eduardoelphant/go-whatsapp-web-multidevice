@@ -16,10 +16,12 @@ history of the work.
 - **Includes.** The `pairing_requested` flag: a pairing confirmed by `sync` can leave
   `meta.status` false, so the channel stays off.
 
-### D-3 Timelock G6
+### D-3 Timelock G6: query and ElphantCRM side
 
-- **What.** Reachout timelock handling (G6). Needs a spec first. Clean-room: do not read
-  `devlikeapro/gows-plus` (no license).
+- **What.** G6 is implemented (`session.timelock`, opt-in guard). Still open: asking WhatsApp for
+  the timelock state on connect (no free source for the query; clean-room, do not read
+  `devlikeapro/gows-plus`), and the ElphantCRM side (listen to `session.timelock`, show the state,
+  decide when to turn `WHATSAPP_REACHOUT_GUARD` on).
 
 ### D-8 Minor findings of the G7 review
 
