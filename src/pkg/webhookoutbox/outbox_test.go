@@ -422,3 +422,58 @@ func TestUnsendableURLGoesDeadAtOnce(t *testing.T) {
 		}
 	}
 }
+
+// D-12: a row whose attempt panics must not block its URL forever: after a few panics it goes
+// dead and the rows behind it are delivered.
+func TestPoisonRowGoesDeadAfterRepeatedPanicsAndTheQueueMovesOn(t *testing.T) {
+	previous := attemptPanicPause
+	attemptPanicPause = time.Millisecond
+	t.Cleanup(func() { attemptPanicPause = previous })
+
+	store := openStore(t)
+	_, srv := startReceiver(t, always(http.StatusOK))
+	resolve := func(_ context.Context, ref string) (string, bool, error) {
+		if ref == "poison" {
+			panic("resolver exploded")
+		}
+		return "s", false, nil
+	}
+	outbox := New(store, resolve, fastPolicy)
+	poison, err := outbox.Enqueue(context.Background(), srv.URL, "poison", "message", map[string]any{"event": "message"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := outbox.Enqueue(context.Background(), srv.URL, "global", "message", map[string]any{"event": "message"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	startOutbox(t, outbox)
+
+	waitFor(t, "the row behind the poison row delivered", func() bool { return statusOf(store, next.EventID) == StatusDelivered })
+
+	dead, _ := store.Get(context.Background(), poison.EventID)
+	if dead.Status != StatusDead || !strings.Contains(dead.LastError, "panicked") {
+		t.Fatalf("poison row %+v, want dead with a panic reason", dead)
+	}
+}
+
+func TestAPanicOnTheFirstAttemptDoesNotKillTheRowImmediately(t *testing.T) {
+	previous := attemptPanicPause
+	attemptPanicPause = time.Millisecond
+	t.Cleanup(func() { attemptPanicPause = previous })
+
+	store := openStore(t)
+	_, srv := startReceiver(t, always(http.StatusOK))
+	var calls atomic.Int32
+	resolve := func(context.Context, string) (string, bool, error) {
+		if calls.Add(1) == 1 {
+			panic("once")
+		}
+		return "s", false, nil
+	}
+	outbox := New(store, resolve, fastPolicy)
+	row, _ := outbox.Enqueue(context.Background(), srv.URL, "global", "message", map[string]any{"event": "message"})
+	startOutbox(t, outbox)
+
+	waitFor(t, "delivery after one panic", func() bool { return statusOf(store, row.EventID) == StatusDelivered })
+}

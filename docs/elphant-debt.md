@@ -23,20 +23,6 @@ history of the work.
   `devlikeapro/gows-plus`), and the ElphantCRM side (listen to `session.timelock`, show the state,
   decide when to turn `WHATSAPP_REACHOUT_GUARD` on).
 
-### D-12 Open parts of the G9 review
-
-- **What.** Still open from the final review of the resilience work:
-  1. The watchdog can connect between the `Reconnect` usecase's disconnect and connect (the API
-     then answers `ErrAlreadyConnected`), and `Tick` connects devices one at a time, so N down
-     devices can take about 50 s each. Connect in parallel, or skip a device with a recent manual
-     action.
-  2. An outbox row whose attempt panics restarts the worker every 30 s forever and blocks its
-     URL. Mark the row dead after N panics.
-  3. No test drives the logout block (`LogoutDeviceKeepSlot`), the panic of the global webhook leg
-     or the auth of `/health/devices` on the assembled server (`restServer` has no seam; the route
-     order is pinned by `TestDeviceGroupIsRegisteredLast`).
-- **Pay.** One small pass with a test per item.
-
 ### D-13 Signed URLs for `/statics`
 
 - **What.** `APP_STATICS_AUTH` protects `/statics` with Basic Auth, which breaks a browser UI on
@@ -102,6 +88,17 @@ happens as part of a server built from scratch (a new host, stack moved over wit
 the backup restored). Do not run `apt upgrade` or SetupOrion on the current host.
 
 ## Paid
+
+### D-12 (rest) Open parts of the G9 review
+
+Paid in the commit "fix(resilience): poison rows, parallel watchdog ticks, manual reconnect hold":
+a row whose attempt panics is tried again after a pause and marked dead after three panics, so the
+rows behind it are delivered (`attemptContained`); a watchdog tick connects devices in parallel
+(up to 8), so one slow connect no longer delays the others; `Reconnect` from the API holds the
+watchdog off the client for 30 s (`HoldReconnect`), so a tick cannot dial between its disconnect
+and connect. Left as accepted: no test drives the logout block, the panic of the global webhook
+leg or the auth of `/health/devices` on the assembled server, because `restServer` has no seam
+(the route order is pinned by `TestDeviceGroupIsRegisteredLast`).
 
 ### D-12 (part) Minor findings of the G9 review
 

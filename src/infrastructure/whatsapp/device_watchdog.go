@@ -98,14 +98,28 @@ func (w *ReconnectWatchdog) Start(ctx context.Context) {
 	})
 }
 
-// Tick checks every device once.
+// watchdogConcurrency bounds how many devices a tick connects at once.
+const watchdogConcurrency = 8
+
+// Tick checks every device once. Devices are checked in parallel, so one slow connect does not
+// delay the others.
 func (w *ReconnectWatchdog) Tick(now time.Time) {
 	devices := w.list()
 	seen := make(map[string]bool, len(devices))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, watchdogConcurrency)
 	for _, d := range devices {
 		seen[d.ID()] = true
-		w.check(d, now)
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(d watchedDevice) {
+			defer safego.Recover("watchdog-tick")
+			defer wg.Done()
+			defer func() { <-sem }()
+			w.check(d, now)
+		}(d)
 	}
+	wg.Wait()
 	w.mu.Lock()
 	for id := range w.states {
 		if !seen[id] {
@@ -267,6 +281,13 @@ func blockReconnect(client *whatsmeow.Client, until time.Time) {
 	if client != nil {
 		reconnectBlockedClients.Store(client, until)
 	}
+}
+
+// HoldReconnect keeps the watchdog off a client for d: a manual reconnect, login or logout from
+// the API is in progress and a tick must not connect in the middle of it. The hold ends by
+// itself, or when the client connects.
+func HoldReconnect(client *whatsmeow.Client, d time.Duration) {
+	blockReconnect(client, time.Now().Add(d))
 }
 
 func unblockReconnect(client *whatsmeow.Client) {

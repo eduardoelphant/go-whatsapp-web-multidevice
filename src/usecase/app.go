@@ -312,6 +312,8 @@ func (service *serviceApp) Reconnect(_ context.Context, deviceID string) (err er
 		return fmt.Errorf("device %s is not logged in (session deleted)", deviceID)
 	}
 
+	// Fork (elphant): keep the reconnect watchdog from dialing between the disconnect and the connect.
+	whatsapp.HoldReconnect(client, 30*time.Second)
 	client.Disconnect()
 	err = client.Connect()
 	instance.UpdateStateFromClient()

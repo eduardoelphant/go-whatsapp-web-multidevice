@@ -338,3 +338,52 @@ func TestWatchdogStartTicksUntilTheContextEnds(t *testing.T) {
 	}
 	cancel()
 }
+
+// D-12: one slow connect must not delay the others in the same tick.
+type slowWatched struct {
+	fakeWatched
+	delay time.Duration
+}
+
+func (s *slowWatched) Connect() error {
+	time.Sleep(s.delay)
+	return s.fakeWatched.Connect()
+}
+
+func TestWatchdogTickConnectsDevicesInParallel(t *testing.T) {
+	mk := func(id string) *slowWatched {
+		d := &slowWatched{delay: 150 * time.Millisecond}
+		d.fakeWatched = *down(id)
+		return d
+	}
+	a, b, c := mk("a"), mk("b"), mk("c")
+	w := newReconnectWatchdog(func() []watchedDevice { return []watchedDevice{a, b, c} }, wdInterval)
+
+	started := time.Now()
+	w.Tick(wdNow)
+	elapsed := time.Since(started)
+
+	if elapsed > 350*time.Millisecond {
+		t.Fatalf("Tick took %v, want about one connect (150 ms), not three in a row", elapsed)
+	}
+	if attempts, _ := w.Counters(); attempts != 3 {
+		t.Fatalf("attempts = %d, want 3", attempts)
+	}
+}
+
+// D-12: a manual reconnect through the API holds the watchdog off for a while.
+func TestHoldReconnectKeepsTheWatchdogAwayUntilItExpires(t *testing.T) {
+	client := &whatsmeow.Client{}
+	t.Cleanup(func() { unblockReconnect(client) })
+	d := instanceDevice{inst: NewDeviceInstance("manual", nil, nil), client: client}
+
+	HoldReconnect(client, time.Minute)
+	if !d.ReconnectBlocked() {
+		t.Fatal("a held client must be blocked")
+	}
+
+	blockReconnect(client, time.Now().Add(-time.Second)) // the hold has expired
+	if d.ReconnectBlocked() {
+		t.Fatal("an expired hold must not block")
+	}
+}

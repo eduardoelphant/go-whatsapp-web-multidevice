@@ -86,6 +86,14 @@ func (p Policy) delay(attempt int) time.Duration {
 // storeRetryPause is the wait after a database error before a worker tries again.
 const storeRetryPause = 5 * time.Second
 
+// maxAttemptPanics is how many times an attempt on the same row may panic before the row is
+// marked dead: a row that always panics would otherwise block its URL forever (the worker
+// restarts on the same row).
+const maxAttemptPanics = 3
+
+// attemptPanicPause is the wait after a panicking attempt; a variable so tests can shorten it.
+var attemptPanicPause = 2 * time.Second
+
 // Outbox runs one delivery worker per destination URL.
 type Outbox struct {
 	store   *Store
@@ -96,6 +104,9 @@ type Outbox struct {
 	mu      sync.Mutex
 	ctx     context.Context // set by Start; nil means workers are not running yet
 	workers map[string]chan struct{}
+
+	panicMu sync.Mutex
+	panics  map[int64]int // consecutive panicking attempts per row id
 }
 
 // New prepares an outbox. Nothing is sent until Start.
@@ -107,6 +118,7 @@ func New(store *Store, resolve Resolver, policy Policy) *Outbox {
 		policy:  policy,
 		clients: [2]*http.Client{newClient(policy.Timeout, false), newClient(policy.Timeout, true)},
 		workers: map[string]chan struct{}{},
+		panics:  map[int64]int{},
 	}
 }
 
@@ -210,7 +222,7 @@ func (o *Outbox) run(ctx context.Context, targetURL string, wake chan struct{}) 
 				return
 			}
 		default:
-			failing = o.attempt(ctx, row, failing)
+			failing = o.attemptContained(ctx, row, failing)
 		}
 	}
 }
@@ -268,6 +280,49 @@ func (o *Outbox) pause(ctx context.Context) bool {
 	case <-timer.C:
 		return true
 	}
+}
+
+// attemptContained runs attempt and contains a panic: the row is tried again after a pause, and
+// marked dead after maxAttemptPanics panics so the rows behind it are not blocked.
+func (o *Outbox) attemptContained(ctx context.Context, row *Row, failing bool) (result bool) {
+	result = failing
+	defer func() {
+		r := recover()
+		if r == nil {
+			o.clearPanics(row.ID)
+			return
+		}
+		n := o.notePanic(row.ID)
+		logrus.Errorf("Webhook outbox: attempt of %s %s panicked (%d of %d): %v", row.EventName, row.EventID, n, maxAttemptPanics, r)
+		if n >= maxAttemptPanics {
+			reason := fmt.Sprintf("attempt panicked %d times: %v", n, r)
+			if err := o.store.MarkDead(ctx, row.ID, row.Attempts+1, reason, 0); err != nil {
+				logrus.Errorf("Webhook outbox: mark row %d dead after panics: %v", row.ID, err)
+			}
+			o.clearPanics(row.ID)
+			return
+		}
+		timer := time.NewTimer(attemptPanicPause)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+		case <-timer.C:
+		}
+	}()
+	return o.attempt(ctx, row, failing)
+}
+
+func (o *Outbox) notePanic(id int64) int {
+	o.panicMu.Lock()
+	defer o.panicMu.Unlock()
+	o.panics[id]++
+	return o.panics[id]
+}
+
+func (o *Outbox) clearPanics(id int64) {
+	o.panicMu.Lock()
+	defer o.panicMu.Unlock()
+	delete(o.panics, id)
 }
 
 // attempt sends one row and records the outcome. failing tracks whether the
