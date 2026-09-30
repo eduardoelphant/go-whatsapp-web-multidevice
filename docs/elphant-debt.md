@@ -67,6 +67,17 @@ history of the work.
   more sessions and fit CPU and memory per session; estimate capacity from the smaller of the RAM
   and the mass-reconnect CPU limit. Read-only on the host, no restarts.
 
+### D-14 Put the `.15` release and the statics secret in production
+
+- **What.** Owner's decision (30/09/2026): nothing of this batch goes to the production stack yet.
+  The image `v9.5.0-elphant.15` (signed `/statics` URLs, D-13) is published but the `gowa` stack stays
+  on `v9.5.0-elphant.14`. Still to do, when the owner says so: update `GOWA_VERSION`, and decide
+  whether to generate `APP_STATICS_SECRET` (a long random value) and add it to the stack
+  environment with `APP_STATICS_AUTH` already on; without the secret links are not signed and
+  nothing changes. Then turn `WHATSAPP_REACHOUT_GUARD` on only if the owner wants the guard.
+- **Also pending, ElphantCRM:** after the `develop` deploy reaches production, run
+  `php artisan gowa:webhook-sync` once so the existing channels subscribe to `session.timelock`.
+
 ## Won't do
 
 ### D-6 Debian 11 on the gateway host
