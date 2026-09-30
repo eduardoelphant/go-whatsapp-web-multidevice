@@ -264,13 +264,20 @@ empty list, more than 100 entries or a malformed body answers `400`.
 |---|---|
 | `query` | the entry as digits (the trimmed text for an invalid entry) |
 | `status` | `exists`, `not_exists` or `error` |
-| `pn` | phone JID WhatsApp returned, `null` unless `exists`. Store this one, not `query`. Checked on a real device: a Brazilian mobile number asked without the ninth digit came back `not_exists`, so WhatsApp does not fix a missing digit; send the number as it is registered |
+| `pn` | phone JID WhatsApp returned, `null` unless `exists`. Store this one, not `query`: for a Brazilian mobile number it can differ from `query` by the ninth digit |
 | `lid` | LID from the WhatsApp answer, else from the local mapping, else `null` |
 | `verified_name` | business verified name, when WhatsApp sends one |
 | `error` | `invalid_number` (bad entry, never sent) or `upstream` (the call failed or timed out); `null` otherwise |
 
 When WhatsApp answers but no answer matches a requested number, the unanswered numbers are
-`upstream` errors too. An `upstream` error is retryable and is never reported as `not_exists`. The upstream helper
+`upstream` errors too. Brazilian ninth digit: WhatsApp does not fix a missing or extra 9 (checked on a real device),
+and older accounts are registered without it. For a Brazilian mobile number (`55`, DDD, then
+nine digits starting with 9, or eight digits starting with 6 to 9) the batch also asks for the
+other form in the same call, so a call can carry up to twice the entries. If the asked form
+exists it wins; else the other form is used and `pn` is that one; `query` stays as sent.
+Landlines and numbers outside Brazil have no variant.
+
+An `upstream` error is retryable and is never reported as `not_exists`. The upstream helper
 that backs `GET /user/check` turns every error into "not registered"; the batch does not.
 
 Pacing: one batch at a time per device, with at least `WHATSAPP_USER_CHECK_MIN_INTERVAL_MS`

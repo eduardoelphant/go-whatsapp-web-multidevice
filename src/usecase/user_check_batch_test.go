@@ -47,7 +47,7 @@ func TestRunCheckBatchStates(t *testing.T) {
 	}
 	got := runCheckBatch(context.Background(), f, []string{"+55 11 98888-7777", "5511900000000", "5511911112222"})
 
-	assert.Equal(t, []string{"+5511988887777", "+5511900000000", "+5511911112222"}, f.gotPhones)
+	assert.Equal(t, []string{"+5511988887777", "+551188887777", "+5511900000000", "+551100000000", "+5511911112222", "+551111112222"}, f.gotPhones)
 	assert.Equal(t, "exists", got[0].Status)
 	assert.Equal(t, "5511988887777", got[0].Query)
 	assert.Equal(t, str("5511988887777@s.whatsapp.net"), got[0].PN)
@@ -121,7 +121,7 @@ func TestRunCheckBatchDuplicatesAndOrder(t *testing.T) {
 	}}
 	got := runCheckBatch(context.Background(), f, []string{"5511988887777", "12", "+5511988887777", "5511988887777@s.whatsapp.net"})
 
-	assert.Equal(t, []string{"+5511988887777"}, f.gotPhones) // asked once
+	assert.Equal(t, []string{"+5511988887777", "+551188887777"}, f.gotPhones) // asked once, with its variant
 	assert.Len(t, got, 4)
 	assert.Equal(t, "exists", got[0].Status)
 	assert.Equal(t, "error", got[1].Status)
@@ -177,4 +177,89 @@ func TestRunCheckBatchUnmatchedAnswerNeverMeansNotExists(t *testing.T) {
 	assert.Equal(t, "error", got[0].Status)
 	assert.Equal(t, str("upstream"), got[0].Error)
 	assert.Equal(t, "not_exists", got[1].Status) // WhatsApp answered for this one
+}
+
+func TestBRVariant(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"5511988887777", "551188887777"}, // 13 digits, mobile: drop the 9
+		{"551188887777", "5511988887777"}, // 12 digits, mobile (8 starts 6-9): add the 9
+		{"551133334444", ""},              // landline (starts 3)
+		{"551122223333", ""},              // landline (starts 2)
+		{"5511988887", ""},                // wrong length
+		{"14155550123", ""},               // not Brazil
+		{"5511888887777", ""},             // 13 digits but no 9 after the DDD
+		{"5500988887777", "550088887777"}, // no DDD rule: shape only
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, brVariant(tt.in), tt.in)
+	}
+}
+
+func TestRunCheckBatchOnlyTheVariantExists(t *testing.T) {
+	// Old account registered without the 9: asked with it, found without it.
+	f := &fakeChecker{answers: []types.IsOnWhatsAppResponse{
+		{Query: "+5511988887777", IsIn: false},
+		{Query: "+551188887777", JID: lidJID("333"), PhoneNumber: pnJID("551188887777"), IsIn: true},
+	}}
+	got := runCheckBatch(context.Background(), f, []string{"5511988887777"})
+
+	assert.Equal(t, []string{"+5511988887777", "+551188887777"}, f.gotPhones)
+	assert.Equal(t, "exists", got[0].Status)
+	assert.Equal(t, "5511988887777", got[0].Query) // as the client sent it
+	assert.Equal(t, str("551188887777@s.whatsapp.net"), got[0].PN)
+	assert.Equal(t, str("333@lid"), got[0].LID)
+}
+
+func TestRunCheckBatchTwelveDigitEntryFindsTheNineDigitAccount(t *testing.T) {
+	f := &fakeChecker{answers: []types.IsOnWhatsAppResponse{
+		{Query: "+551188887777", IsIn: false},
+		{Query: "+5511988887777", JID: pnJID("5511988887777"), PhoneNumber: pnJID("5511988887777"), IsIn: true},
+	}}
+	got := runCheckBatch(context.Background(), f, []string{"551188887777"})
+
+	assert.Equal(t, "exists", got[0].Status)
+	assert.Equal(t, str("5511988887777@s.whatsapp.net"), got[0].PN)
+}
+
+func TestRunCheckBatchBothFormsExistKeepsTheAskedOne(t *testing.T) {
+	f := &fakeChecker{answers: []types.IsOnWhatsAppResponse{
+		{Query: "+5511988887777", JID: pnJID("5511988887777"), PhoneNumber: pnJID("5511988887777"), IsIn: true},
+		{Query: "+551188887777", JID: pnJID("551188887777"), PhoneNumber: pnJID("551188887777"), IsIn: true},
+	}}
+	got := runCheckBatch(context.Background(), f, []string{"5511988887777"})
+
+	assert.Equal(t, str("5511988887777@s.whatsapp.net"), got[0].PN)
+}
+
+func TestRunCheckBatchNeitherFormExists(t *testing.T) {
+	f := &fakeChecker{answers: []types.IsOnWhatsAppResponse{
+		{Query: "+5511988887777", IsIn: false},
+		{Query: "+551188887777", IsIn: false},
+	}}
+	got := runCheckBatch(context.Background(), f, []string{"5511988887777"})
+
+	assert.Equal(t, "not_exists", got[0].Status)
+	assert.Nil(t, got[0].PN)
+}
+
+func TestRunCheckBatchNoVariantForLandlineOrForeignNumbers(t *testing.T) {
+	f := &fakeChecker{}
+	runCheckBatch(context.Background(), f, []string{"551133334444", "14155550123"})
+
+	assert.Equal(t, []string{"+551133334444", "+14155550123"}, f.gotPhones)
+}
+
+func TestRunCheckBatchVariantAlsoRequestedAsAnEntry(t *testing.T) {
+	// The client sent both forms: each entry keeps its own answer, asked once each.
+	f := &fakeChecker{answers: []types.IsOnWhatsAppResponse{
+		{Query: "+5511988887777", IsIn: false},
+		{Query: "+551188887777", JID: pnJID("551188887777"), PhoneNumber: pnJID("551188887777"), IsIn: true},
+	}}
+	got := runCheckBatch(context.Background(), f, []string{"5511988887777", "551188887777"})
+
+	assert.Equal(t, []string{"+5511988887777", "+551188887777"}, f.gotPhones)
+	assert.Equal(t, "exists", got[0].Status) // found through its variant
+	assert.Equal(t, "exists", got[1].Status)
+	assert.Equal(t, str("551188887777@s.whatsapp.net"), got[0].PN)
+	assert.Equal(t, str("551188887777@s.whatsapp.net"), got[1].PN)
 }

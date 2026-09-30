@@ -21,6 +21,7 @@ match, and whatsmeow stores the pair, but the endpoint throws both away.
 | D5 | A failed batch call marks its numbers `error`, HTTP 200 | HTTP 5xx for the whole call (client loses the answers that did work) |
 | D6 | One check at a time per device, minimum interval between batches | No limit (ban risk on large audiences) |
 | D7 | Sync request, up to 100 numbers | Async job with polling (needed only for very large lists; the CRM batches) |
+| D8 | Brazilian mobile numbers are also asked in their other ninth-digit form, same call (added after a real-device check showed WhatsApp does not fix a missing 9) | Fix the digit blindly (wrong for accounts registered either way) |
 
 ## Contract
 
@@ -57,7 +58,15 @@ repeated:
 | `verified_name` | business verified name when WhatsApp sends one, else `null` |
 | `error` | `invalid_number`, `upstream` (call failed or timed out), `null` otherwise |
 
-Matching an answer to an entry uses the `Query` field whatsmeow fills, compared as digits.
+Matching an answer to an entry uses the `Query` field whatsmeow fills, compared as digits, and
+the returned phone as a fallback. An `in` answer that matches no requested number turns the
+unanswered entries into `error` / `upstream`.
+
+**Ninth digit (D8).** For `55` numbers with 13 digits (`55`, DDD, `9`, eight digits) the entry
+without the 9 is also asked; for 12 digits whose subscriber part starts with 6 to 9 the entry
+with the 9 is asked. The request to WhatsApp can carry up to twice the entries. The asked form
+wins when it exists, else the other form gives `pn`; `query` is always what the client sent.
+Landlines and other countries have no variant.
 
 ## Behavior
 

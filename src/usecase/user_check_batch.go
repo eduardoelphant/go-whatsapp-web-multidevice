@@ -88,11 +88,20 @@ func (service serviceUser) IsOnWhatsAppBatch(ctx context.Context, request domain
 }
 
 // runCheckBatch builds one item per raw entry, in order. Valid entries are deduplicated and
-// asked in a single call; invalid entries never reach WhatsApp.
+// asked in a single call, each Brazilian mobile number together with its other ninth-digit
+// form; invalid entries never reach WhatsApp.
 func runCheckBatch(ctx context.Context, checker phoneChecker, raw []string) domainUser.CheckBatchResponse {
 	items := make(domainUser.CheckBatchResponse, len(raw))
 	var ask []string
-	asked := map[string]bool{}
+	requested := map[string]bool{} // entries as the client sent them
+	askedSet := map[string]bool{}  // requested numbers plus their variants
+	variants := map[string]string{}
+	add := func(digits string) {
+		if !askedSet[digits] {
+			askedSet[digits] = true
+			ask = append(ask, "+"+digits)
+		}
+	}
 	for i, entry := range raw {
 		digits, ok := validations.NormalizeBatchPhone(entry)
 		if !ok {
@@ -100,55 +109,65 @@ func runCheckBatch(ctx context.Context, checker phoneChecker, raw []string) doma
 			continue
 		}
 		items[i].Query = digits
-		if !asked[digits] {
-			asked[digits] = true
-			ask = append(ask, "+"+digits)
+		if requested[digits] {
+			continue
+		}
+		requested[digits] = true
+		add(digits)
+		if alt := brVariant(digits); alt != "" {
+			variants[digits] = alt
+			add(alt)
 		}
 	}
 	if len(ask) == 0 {
 		return items
 	}
 
-	resolved := make(map[string]domainUser.CheckBatchItem, len(ask))
+	resolved := make(map[string]domainUser.CheckBatchItem, len(requested))
 	answers, err := checker.IsOnWhatsApp(ctx, ask)
 	// whatsmeow can return the full answer together with a "failed to store LID mappings"
 	// error; every earlier failure returns no answers. Keep what WhatsApp answered.
 	if err != nil && len(answers) == 0 {
 		logrus.Warnf("Batch user check call failed: %v", err)
-		for digits := range asked {
+		for digits := range requested {
 			resolved[digits] = errorItem(digits, checkErrUpstream)
 		}
 	} else {
 		if err != nil {
 			logrus.Warnf("Batch user check answered with an error: %v", err)
 		}
-		for digits := range asked {
-			resolved[digits] = domainUser.CheckBatchItem{Query: digits, Status: checkStatusNotExists}
-		}
-		answered := map[string]bool{}
+		byDigits := map[string]types.IsOnWhatsAppResponse{}
 		unmatchedIn := 0
 		for _, answer := range answers {
-			digits := answerDigits(answer, asked)
+			digits := answerDigits(answer, askedSet)
 			if digits == "" {
 				if answer.IsIn {
 					unmatchedIn++
 				}
 				continue
 			}
-			answered[digits] = true
-			if answer.IsIn {
-				resolved[digits] = existsItem(ctx, checker, digits, answer)
+			if previous, seen := byDigits[digits]; !seen || (answer.IsIn && !previous.IsIn) {
+				byDigits[digits] = answer
 			}
 		}
-		// An "in" answer that matches no requested number means the answer cannot be trusted
-		// to say which numbers are absent: never call those not_exists.
+		for digits := range requested {
+			primary, hasPrimary := byDigits[digits]
+			alt, hasAlt := byDigits[variants[digits]]
+			switch {
+			case hasPrimary && primary.IsIn:
+				resolved[digits] = existsItem(ctx, checker, digits, primary)
+			case hasAlt && alt.IsIn:
+				resolved[digits] = existsItem(ctx, checker, digits, alt)
+			case unmatchedIn > 0 && !hasPrimary && !hasAlt:
+				// An "in" answer that matches no requested number means the answer cannot be
+				// trusted to say which numbers are absent: never call those not_exists.
+				resolved[digits] = errorItem(digits, checkErrUpstream)
+			default:
+				resolved[digits] = domainUser.CheckBatchItem{Query: digits, Status: checkStatusNotExists}
+			}
+		}
 		if unmatchedIn > 0 {
 			logrus.Warnf("Batch user check: %d answers matched no requested number", unmatchedIn)
-			for digits := range asked {
-				if !answered[digits] {
-					resolved[digits] = errorItem(digits, checkErrUpstream)
-				}
-			}
 		}
 	}
 
@@ -158,6 +177,27 @@ func runCheckBatch(ctx context.Context, checker phoneChecker, raw []string) doma
 		}
 	}
 	return items
+}
+
+// brVariant returns the other ninth-digit form of a Brazilian mobile number, or "" when the
+// number has none. A 13-digit number (55, DDD, 9, eight digits) also exists without the 9; a
+// 12-digit one whose subscriber part starts with 6 to 9 also exists with it. WhatsApp does not
+// fix a missing or extra 9: older accounts are registered without it.
+func brVariant(digits string) string {
+	if !strings.HasPrefix(digits, "55") {
+		return ""
+	}
+	switch len(digits) {
+	case 13:
+		if digits[4] == '9' {
+			return digits[:4] + digits[5:]
+		}
+	case 12:
+		if c := digits[4]; c >= '6' && c <= '9' {
+			return digits[:4] + "9" + digits[4:]
+		}
+	}
+	return ""
 }
 
 // answerDigits finds which requested number an answer belongs to: by the query WhatsApp
