@@ -45,6 +45,14 @@ history of the work.
      400 for an empty list or 101 entries end to end).
 - **Pay.** One small pass with a test per item.
 
+### D-9 Partial batch answer with an error can report a number as not registered
+
+- **What.** In `runCheckBatch`, when `client.IsOnWhatsApp` returns `err != nil` together with
+  partial answers (the "failed to store LID mappings" case), a number that got no answer at all
+  (neither itself nor its ninth-digit variant) and no unmatched "in" answer becomes `not_exists`.
+  Found in the review of the ElphantCRM validator (B-168).
+- **Pay.** With `err != nil`, report unanswered numbers as `error` / `upstream`, with a test.
+
 ### D-4 Gateway items G5, G8, G9
 
 - **What.** LID handling (G5), `/statics` served before Basic Auth (G8), stability work
