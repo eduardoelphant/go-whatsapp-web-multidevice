@@ -45,6 +45,28 @@ history of the work.
   Found in the review of the ElphantCRM validator (B-168).
 - **Pay.** With `err != nil`, report unanswered numbers as `error` / `upstream`, with a test.
 
+### D-10 Minor findings of the G5 review
+
+- **What.** Deferred from the final review of the LID endpoints
+  (`docs/specs/2026-09-30-gateway-g5-lid-mappings-design.md`):
+  1. A device created but never paired has no client, so the lookups answer `INVALID_WA_CLI`;
+     the spec says they only need the device to exist. The map is global, so the usecase could
+     use the store container's `LIDMap` directly.
+  2. The batch `lids` path calls `GetPNForLID` once per entry: each miss is one SQL query under
+     whatsmeow's exclusive cache lock and is cached as empty forever (the `pns` path is batched
+     and caches no misses). Batch the LIDs with `WHERE lid IN (...)` in `pkg/lidmap`.
+  3. The list handle is not really read only, is never closed and has no pool limit. Use
+     `SetMaxOpenConns(2)`, `query_only` on SQLite or `default_transaction_read_only` on
+     Postgres, and close it at shutdown.
+  4. A table whose size is an exact multiple of `limit` gives a last full page with a `next` and
+     one empty page after it. Fetch `limit+1` or reword the docs.
+  5. Store errors on the lookups are wrapped as plain errors, so the `500` message carries raw
+     driver text, unlike the list. A `file::memory:` DBURI makes the list always fail.
+  6. Tests: the usecase tests assert only that an error happens, not that it is a validation
+     error; REST has no `400` test for a bad `:phone`, a bad `:lid` or more than 500 entries; no
+     lookup test runs on the real `sqlstore`; the route-order test cannot fail.
+- **Pay.** One small pass with a test per item.
+
 ### D-4 Gateway items G8, G9
 
 - **What.** `/statics` served before Basic Auth (G8), stability work such as goroutines without

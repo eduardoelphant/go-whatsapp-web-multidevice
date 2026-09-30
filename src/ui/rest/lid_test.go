@@ -52,6 +52,7 @@ func newLIDApp(stub *lidStub, device *whatsapp.DeviceInstance) *fiber.App {
 		c.Locals("device", device)
 		return c.Next()
 	})
+	InitRestLIDList(app, stub)
 	InitRestLID(app, stub)
 	return app
 }
@@ -111,4 +112,31 @@ func TestLIDLookupsScopeTheRequestDevice(t *testing.T) {
 	do(t, app, http.MethodGet, "/lids/pn/5511988887777", "")
 
 	assert.Same(t, device, stub.device)
+}
+
+func TestLIDPathParamsAreURLDecoded(t *testing.T) {
+	stub := &lidStub{}
+	app := newLIDApp(stub, nil)
+
+	do(t, app, http.MethodGet, "/lids/pn/%2B55%2011%2098888-7777", "")
+	do(t, app, http.MethodGet, "/lids/pn/5511988887777%40s.whatsapp.net", "")
+	do(t, app, http.MethodGet, "/lids/100000000000001%40lid", "")
+
+	assert.Equal(t, []string{"pn:+55 11 98888-7777", "pn:5511988887777@s.whatsapp.net", "lid:100000000000001@lid"}, stub.calls)
+}
+
+// The list is global to the gateway: it is registered outside the device group, so it works
+// without X-Device-Id however many devices exist, while the lookups still need a device.
+func TestLIDListDoesNotNeedADevice(t *testing.T) {
+	stub := &lidStub{}
+	app := fiber.New()
+	app.Use(middleware.Recovery())
+	InitRestLIDList(app, stub)
+	group := app.Group("", func(c fiber.Ctx) error {
+		return c.Status(http.StatusBadRequest).SendString("device required")
+	})
+	InitRestLID(group, stub)
+
+	assert.Equal(t, http.StatusOK, do(t, app, http.MethodGet, "/lids?limit=2", "").StatusCode)
+	assert.Equal(t, http.StatusBadRequest, do(t, app, http.MethodGet, "/lids/pn/5511988887777", "").StatusCode)
 }

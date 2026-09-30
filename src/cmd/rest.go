@@ -145,7 +145,7 @@ func restServer(_ *cobra.Command, _ []string) {
 		rest.InitRestSend(r, sendUsecase)
 		rest.InitRestSchedule(r, scheduleUsecase)
 		rest.InitRestUser(r, userUsecase)
-		rest.InitRestLID(r, lidUsecase)
+		rest.InitRestLID(r, lidUsecase) // lookups; the global list is mounted before the device group
 		rest.InitRestMessage(r, messageUsecase, sendUsecase)
 		rest.InitRestGroup(r, groupUsecase)
 		rest.InitRestNewsletter(r, newsletterUsecase)
@@ -160,6 +160,9 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	// Fork (elphant): durable webhook outbox operations; 404 unless WHATSAPP_WEBHOOK_DELIVERY=durable.
 	rest.InitRestWebhookOutbox(apiGroup, whatsapp.DurableWebhookOutbox)
+
+	// Fork (elphant): the LID list is global to the gateway, so it stays out of the device group.
+	rest.InitRestLIDList(apiGroup, lidUsecase)
 
 	// MCP endpoint — same usecase instances as REST, so both surfaces share
 	// one whatsmeow session. With OAuth disabled it keeps the existing global

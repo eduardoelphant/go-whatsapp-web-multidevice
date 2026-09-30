@@ -1,6 +1,8 @@
 package rest
 
 import (
+	"net/url"
+
 	domainLID "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/lid"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
@@ -12,27 +14,53 @@ type LID struct {
 	Service domainLID.ILIDUsecase
 }
 
-// InitRestLID registers the routes. `/lids/pn/:phone` and the POST lookup never collide with
-// `/lids/:lid`, which is registered last.
+// InitRestLID registers the device scoped lookups. They take the device from the request, so
+// they belong in the device group.
 func InitRestLID(app fiber.Router, service domainLID.ILIDUsecase) LID {
 	rest := LID{Service: service}
 	app.Get("/lids/pn/:phone", rest.PNToLID)
 	app.Post("/lids/lookup", rest.Lookup)
-	app.Get("/lids", rest.List)
 	app.Get("/lids/:lid", rest.LIDToPN)
 	return rest
 }
 
+// InitRestLIDList registers GET /lids. The list is global to the gateway (whatsmeow's LID map
+// has no device column), so it must be mounted on the API group before the device group: it
+// works without X-Device-Id however many devices exist.
+func InitRestLIDList(app fiber.Router, service domainLID.ILIDUsecase) LID {
+	rest := LID{Service: service}
+	app.Get("/lids", rest.List)
+	return rest
+}
+
+// pathParam returns a path parameter URL-decoded: fiber hands over the raw segment, and
+// clients that encode it (a user JID, "+", spaces) would otherwise get a 400.
+func pathParam(c fiber.Ctx, name string) (string, error) {
+	return url.PathUnescape(c.Params(name))
+}
+
+func badPath(c fiber.Ctx) error {
+	return c.Status(400).JSON(utils.ResponseData{Status: 400, Code: "BAD_REQUEST", Message: "Invalid path encoding"})
+}
+
 func (controller *LID) PNToLID(c fiber.Ctx) error {
+	phone, err := pathParam(c, "phone")
+	if err != nil {
+		return badPath(c)
+	}
 	ctx := whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c))
-	response, err := controller.Service.PNToLID(ctx, c.Params("phone"))
+	response, err := controller.Service.PNToLID(ctx, phone)
 	utils.PanicIfNeeded(err)
 	return c.JSON(utils.ResponseData{Status: 200, Code: "SUCCESS", Message: "Success lookup lid", Results: response})
 }
 
 func (controller *LID) LIDToPN(c fiber.Ctx) error {
+	lid, err := pathParam(c, "lid")
+	if err != nil {
+		return badPath(c)
+	}
 	ctx := whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c))
-	response, err := controller.Service.LIDToPN(ctx, c.Params("lid"))
+	response, err := controller.Service.LIDToPN(ctx, lid)
 	utils.PanicIfNeeded(err)
 	return c.JSON(utils.ResponseData{Status: 200, Code: "SUCCESS", Message: "Success lookup phone", Results: response})
 }

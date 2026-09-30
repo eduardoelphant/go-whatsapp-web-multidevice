@@ -980,6 +980,13 @@ Wiring: `cmd/root.go` adds `lidUsecase domainLID.ILIDUsecase` next to `userUseca
 
 ---
 
+### Ruling after the final review (Task 4 amendment)
+
+- `GET /lids` is registered by `InitRestLIDList` on `apiGroup` before the device group (the
+  list is global and must not need `X-Device-Id`); the three lookups stay in
+  `registerDeviceScopedRoutes` through `InitRestLID`.
+- Path parameters are URL-decoded (`pathParam`), because fiber hands over the raw segment.
+
 ### Task 5: Docs and final checks
 
 - [ ] Add a section "LID and phone mappings" to `docs/reference/elphant-fork.md` (before "Specs and plans"): the four routes with an example each, `null` for unknown pairs, limits, the list being global (table has no device column), that unknown pairs are learned through `POST /user/check`, and that lookups read the store without calling WhatsApp.
