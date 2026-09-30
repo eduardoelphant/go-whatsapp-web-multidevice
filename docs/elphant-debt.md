@@ -16,11 +16,6 @@ history of the work.
 - **Includes.** The `pairing_requested` flag: a pairing confirmed by `sync` can leave
   `meta.status` false, so the channel stays off.
 
-### D-2 Message order after a redelivery (ElphantCRM, B-166)
-
-- **What.** A message redelivered after an outage is placed at the redelivery time, not at
-  the WhatsApp time. Tracked as B-166 in the CRM repo, `docs/reference/34-known-debt.md`.
-
 ### D-3 Validator G7 and timelock G6
 
 - **What.** Batch number check (G7) and timelock handling (G6). Each needs a spec first.
@@ -43,4 +38,8 @@ history of the work.
 
 ## Paid
 
-Nothing yet.
+### D-2 Message order after a redelivery (ElphantCRM, B-166)
+
+Paid in ElphantCRM `b9c9a1339` (branch `feature/whatsapp-gateway`, not yet in `develop`): a received
+message is placed at the WhatsApp time, capped at now. Details in `34-known-debt.md`, section
+"Pagas".
