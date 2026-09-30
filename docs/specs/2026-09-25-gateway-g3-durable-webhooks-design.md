@@ -139,7 +139,7 @@ Available only in durable mode; in `direct` mode they answer 404.
 | Hooks in upstream files | handler registration (`init.go`, `device_manager.go`), synchronous branch in `handleWebhookForward` and receipt forwarding, `chat_presence` bypass, startup call in `cmd/rest.go` |
 | REST endpoints | new file `src/ui/rest/webhook_outbox.go`, one registration line |
 | ULID | generated inside `webhookoutbox` (48-bit millisecond time + 80 random bits from `crypto/rand`, Crockford base32, 26 chars, monotonic within the same millisecond); no new dependency, `src/go.mod` unchanged. SQLite access uses GOWA's existing `pkg/sqlite` driver |
-| Docs | `docs/elphant-fork.md`; elphantcrm `docs/reference/38-gowa.md` (stack flag, what to watch in `/webhooks/stats`, how to redeliver) |
+| Docs | `docs/reference/elphant-fork.md`; elphantcrm `docs/reference/38-gowa.md` (stack flag, what to watch in `/webhooks/stats`, how to redeliver) |
 
 ## 10. Testing and verification
 

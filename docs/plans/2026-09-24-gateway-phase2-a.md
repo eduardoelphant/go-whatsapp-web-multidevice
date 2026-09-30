@@ -15,7 +15,7 @@
 - Branch `elphant`. Local commits only: no push, no PR, no issue.
 - Run every Go command from `src/` with `GOTOOLCHAIN=auto` (local Go is 1.22, `go.mod` asks for 1.26).
 - Put fork logic in new files. Hooks in upstream files stay a few lines each and carry a `// Fork (elphant):` comment.
-- Do not edit upstream docs (`docs/webhook-payload.md`, `README.md`, `AGENTS.md`). Fork docs go in `docs/elphant-fork.md`.
+- Do not edit upstream docs (`docs/webhook-payload.md`, `README.md`, `AGENTS.md`). Fork docs go in `docs/reference/elphant-fork.md`.
 - The event name is exactly `session.status`. The payload always has the five keys `status`, `reason`, `code`, `expires_at`, `qr_code`, with `null` for keys that do not apply.
 - Commit messages are in English, `type(scope): subject`, with no attribution line.
 - Tests do not call `t.Parallel()`. Every test that changes a package global or `config.*` restores it.
@@ -530,7 +530,7 @@ import (
 )
 
 // Fork (elphant): the session.status webhook reports device lifecycle changes
-// (connection, logout, bans, pairing). See docs/elphant-fork.md for the contract.
+// (connection, logout, bans, pairing). See docs/reference/elphant-fork.md for the contract.
 
 // SessionStatusEvent is the webhook event name for device lifecycle changes.
 const SessionStatusEvent = "session.status"
@@ -1312,11 +1312,11 @@ git commit -m "feat(whatsapp): emit session.status for QR and passkey pairing"
 ### Task 8: Document the fork differences
 
 **Files:**
-- Create: `docs/elphant-fork.md`
+- Create: `docs/reference/elphant-fork.md`
 
 **Interfaces:** none.
 
-- [ ] **Step 1: Write `docs/elphant-fork.md`**
+- [ ] **Step 1: Write `docs/reference/elphant-fork.md`**
 
 ````markdown
 # Fork differences (elphant)
@@ -1420,7 +1420,7 @@ Expected: the 15 status strings printed match the two tables in the doc exactly 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/elphant-fork.md
+git add docs/reference/elphant-fork.md
 git commit -m "docs: document fork differences from upstream"
 ```
 

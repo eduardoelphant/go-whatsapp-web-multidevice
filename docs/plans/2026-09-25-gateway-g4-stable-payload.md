@@ -1791,7 +1791,7 @@ import (
 )
 
 // Fork (elphant): payload.stable, the closed and versioned view of message
-// webhooks. Contract: contract/stable.schema.json; docs/elphant-fork.md.
+// webhooks. Contract: contract/stable.schema.json; docs/reference/elphant-fork.md.
 
 type stableResolver struct{ client *whatsmeow.Client }
 
@@ -2488,12 +2488,12 @@ git commit -m "feat(message): stream message media without writing to statics"
 ### Task 10: Documentation
 
 **Files:**
-- Modify: `docs/elphant-fork.md` (fork)
+- Modify: `docs/reference/elphant-fork.md` (fork)
 - Modify: `~/Documents/elphantcrm-whatsapp-gateway/docs/reference/38-gowa.md` (elphantcrm)
 
 **Interfaces:** none.
 
-- [ ] **Step 1: Add to `docs/elphant-fork.md`** a section after the `session.status` section:
+- [ ] **Step 1: Add to `docs/reference/elphant-fork.md`** a section after the `session.status` section:
 
 ````markdown
 ## `payload.stable`
@@ -2536,7 +2536,7 @@ synthetic fixture.
 
 - [ ] **Step 2: Add to `38-gowa.md`**
   - In the stack YAML `environment:` block add `WHATSAPP_STABLE_AUDIT_DIR: "/app/storages/stable-audit"`.
-  - New section `## 8. Contrato \`payload.stable\` e auditoria` (Portuguese BR) with: what `stable` is (link to the fork's `docs/elphant-fork.md`); media via `GET /message/:message_id/media` with the 404/410 meanings and "baixar logo que o webhook chegar"; the audit cycle (samples in `gowa_storages/stable-audit/`, copy to a folder outside any repo with `scp -r root@<gateway-host>:/var/lib/docker/volumes/gowa_storages/_data/stable-audit ~/gowa-stable-audit`, owner review before commit, move approved files to `contract/fixtures/real/`, run `go run ./cmd/compare`, new synthetic case per `MISSING` line).
+  - New section `## 8. Contrato \`payload.stable\` e auditoria` (Portuguese BR) with: what `stable` is (link to the fork's `docs/reference/elphant-fork.md`); media via `GET /message/:message_id/media` with the 404/410 meanings and "baixar logo que o webhook chegar"; the audit cycle (samples in `gowa_storages/stable-audit/`, copy to a folder outside any repo with `scp -r root@<gateway-host>:/var/lib/docker/volumes/gowa_storages/_data/stable-audit ~/gowa-stable-audit`, owner review before commit, move approved files to `contract/fixtures/real/`, run `go run ./cmd/compare`, new synthetic case per `MISSING` line).
 
 Run:
 ```bash
@@ -2548,7 +2548,7 @@ Expected: `1` (the file renders and carries the variable).
 - [ ] **Step 3: Commit both**
 
 ```bash
-git add docs/elphant-fork.md
+git add docs/reference/elphant-fork.md
 git commit -m "docs: document payload.stable, the media endpoint and the audit"
 cd ~/Documents/elphantcrm-whatsapp-gateway && git add docs/reference/38-gowa.md && git commit -m "docs(reference): contrato payload.stable, mídia e auditoria no GOWA"
 ```

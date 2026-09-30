@@ -11,7 +11,7 @@ import (
 )
 
 // Fork (elphant): payload.stable, the closed and versioned view of message
-// webhooks. Contract: contract/stable.schema.json; docs/elphant-fork.md.
+// webhooks. Contract: contract/stable.schema.json; docs/reference/elphant-fork.md.
 
 type stableResolver struct{ client *whatsmeow.Client }
 

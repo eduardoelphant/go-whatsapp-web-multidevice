@@ -37,7 +37,7 @@ already paired companion session continues here without a new QR scan.
 
 The dump is JSON: {"creds": <AuthenticationCreds>, "keys": {"<type>-<id>": ...}}.
 Stop the Baileys client for good before importing and never run both with the
-same credentials. See docs/import-baileys.md.`,
+same credentials. See docs/reference/import-baileys.md.`,
 	Annotations:  map[string]string{skipAppInitAnnotation: "true"},
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,

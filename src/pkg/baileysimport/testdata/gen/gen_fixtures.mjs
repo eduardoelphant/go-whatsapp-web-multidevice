@@ -7,7 +7,7 @@
 // Every key is generated here; nothing touches WhatsApp.
 //
 // This is a development tool, not a runtime dependency of the Go module.
-// Requirements (see docs/import-baileys.md, "Regenerating test fixtures"):
+// Requirements (see docs/reference/import-baileys.md, "Regenerating test fixtures"):
 //
 //   BAILEYSIMPORT_NODE_DEPS   directory whose node_modules holds
 //                             @whiskeysockets/libsignal-node (commit e81ecfc)

@@ -19,7 +19,7 @@ import (
 // Fork (elphant): durable webhook delivery (G3). With
 // WHATSAPP_WEBHOOK_DELIVERY=durable every webhook event except chat_presence is
 // written to a SQLite outbox and sent by webhookoutbox workers, in order per
-// URL, retried for up to 72 hours. See docs/elphant-fork.md.
+// URL, retried for up to 72 hours. See docs/reference/elphant-fork.md.
 
 const (
 	webhookDeliveryEnv = "WHATSAPP_WEBHOOK_DELIVERY"

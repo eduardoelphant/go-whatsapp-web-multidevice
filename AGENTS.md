@@ -29,7 +29,7 @@ enabled; both transports share the same device manager and usecases.
   For webhook payload changes, consult [the payload contract](docs/webhook-payload.md).
 - SQL queries, migrations, and cleanup: [chat storage](src/infrastructure/chatstorage/AGENTS.md).
 - Offline Baileys session import: `src/pkg/baileysimport` and `src/cmd/import_baileys.go`;
-  format, mapping, and fixture regeneration in [the import guide](docs/import-baileys.md).
+  format, mapping, and fixture regeneration in [the import guide](docs/reference/import-baileys.md).
 - Chatwoot routing, live sync, and history: [Chatwoot infrastructure](src/infrastructure/chatwoot/AGENTS.md).
   Setup or routing-mode changes: [configuration](docs/chatwoot.md).
   Direct Postgres changes: [scoped guide](src/infrastructure/chatwoot/pgimport/AGENTS.md).

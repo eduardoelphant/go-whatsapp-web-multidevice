@@ -9,7 +9,7 @@ import (
 )
 
 // Fork (elphant): the session.status webhook reports device lifecycle changes
-// (connection, logout, bans, pairing). See docs/elphant-fork.md for the contract.
+// (connection, logout, bans, pairing). See docs/reference/elphant-fork.md for the contract.
 
 // SessionStatusEvent is the webhook event name for device lifecycle changes.
 const SessionStatusEvent = "session.status"

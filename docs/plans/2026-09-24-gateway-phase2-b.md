@@ -408,7 +408,7 @@ Operação do gateway que atende o provider `whatsapp_gowa`. Desenho e decisões
 - **Código:** fork público `eduardoelphant/go-whatsapp-web-multidevice`. `main` é espelho do
   upstream (`aldinokemal/go-whatsapp-web-multidevice`); a branch `elphant` (padrão do fork) é a
   última tag do upstream mais os commits do fork. Nada vai para o upstream (modelo "só fork").
-  As diferenças do fork estão em `docs/elphant-fork.md` do próprio fork.
+  As diferenças do fork estão em `docs/reference/elphant-fork.md` do próprio fork.
 - **Imagem:** `ghcr.io/eduardoelphant/gowa:vX.Y.Z-elphant.N` (amd64 e arm64, pública, sem
   `latest`).
 - **Produção:** stack `gowa` no Swarm do `noria` (Portainer em `<portainer-host>`),

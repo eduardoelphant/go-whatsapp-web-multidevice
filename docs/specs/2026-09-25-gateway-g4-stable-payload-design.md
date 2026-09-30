@@ -119,7 +119,7 @@ Always applied after unwrapping ephemeral, view-once (all versions), device-sent
 | Audit | new file `src/infrastructure/whatsapp/stable_audit.go`, enabled by `WHATSAPP_STABLE_AUDIT_DIR` | Anonymizes a copy of each `stable`, computes its shape (event, type, set of non-null keys), stores the first 3 samples per new shape as JSON files. Never affects delivery |
 | Contract | new top-level `contract/` with its own `go.mod` | `stable.schema.json`; `fixtures/synthetic/` (written by the `src` tests with `-update`); `fixtures/real/` (reviewed audit samples); a test validating every fixture against the schema; `cmd/compare` reporting real shapes without a synthetic twin and synthetic shapes that disagree with real ones |
 | CI | `.github/workflows/elphant-ci.yml` | Adds `go test ./...` in `contract/` |
-| Docs | `docs/elphant-fork.md` (fork), `docs/reference/38-gowa.md` (elphantcrm) | Contract summary and schema link; audit cycle and media endpoint in the runbook |
+| Docs | `docs/reference/elphant-fork.md` (fork), `docs/reference/38-gowa.md` (elphantcrm) | Contract summary and schema link; audit cycle and media endpoint in the runbook |
 
 Anonymization: every string is replaced by a type-preserving placeholder (`<text:12>`,
 `<jid:pn>`, `<jid:lid>`, `<id>`, `<name>`, `<sha256>`), numbers by `0`, except the closed-set values

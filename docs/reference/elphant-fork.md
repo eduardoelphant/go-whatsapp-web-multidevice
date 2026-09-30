@@ -247,10 +247,11 @@ A redelivered or replayed row keeps its id, so it is sent before newer rows of t
 
 ## Specs and plans
 
-Design specs live in `docs/specs/` and implementation plans in `docs/plans/`, both versioned
+Knowledge pages that the fork owns live in `docs/reference/` (this page and `import-baileys.md`); files
+that come from upstream stay where upstream keeps them, so syncs do not conflict. Design specs live in `docs/specs/` and implementation plans in `docs/plans/`, both versioned
 in this fork, so each change to a spec or plan shows up in the history. Do not use
 `docs/superpowers/` (ignored by upstream's `.gitignore`); it is only the default location of
 the planning tools. Names follow `YYYY-MM-DD-<topic>-design.md` for specs and
 `YYYY-MM-DD-<topic>.md` for plans, and a plan names its spec in the header. Public repo: no
 host addresses, tokens, personal numbers or QR content in these files. Open work that is not
-in a spec is listed in [elphant-debt.md](elphant-debt.md).
+in a spec is listed in [elphant-debt.md](../elphant-debt.md).

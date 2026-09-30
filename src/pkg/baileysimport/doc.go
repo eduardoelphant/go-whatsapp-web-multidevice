@@ -4,7 +4,7 @@
 //
 // The flow is Parse (read the JSON dump), Convert (map every key to its
 // whatsmeow/go.mau.fi/libsignal form, in memory) and Write (persist the result
-// into a whatsmeow SQL store in one transaction). See docs/import-baileys.md
+// into a whatsmeow SQL store in one transaction). See docs/reference/import-baileys.md
 // for the input format, what is imported and what is deliberately dropped.
 //
 // The package has no dependency on GOWA's application layers; it only needs

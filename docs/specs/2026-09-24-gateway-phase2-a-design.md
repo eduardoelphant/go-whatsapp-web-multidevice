@@ -241,7 +241,7 @@ webhook targets.
 
 ## 6. Documentation
 
-New file `docs/elphant-fork.md`, the list of fork differences from upstream. It covers:
+New file `docs/reference/elphant-fork.md`, the list of fork differences from upstream. It covers:
 
 - StreamReplaced behavior (device stays down until a manual reconnect) and the fact that a
   container restart policy is no longer needed to survive it.

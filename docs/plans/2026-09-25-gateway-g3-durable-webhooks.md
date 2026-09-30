@@ -2209,7 +2209,7 @@ import (
 // Fork (elphant): durable webhook delivery (G3). With
 // WHATSAPP_WEBHOOK_DELIVERY=durable every webhook event except chat_presence is
 // written to a SQLite outbox and sent by webhookoutbox workers, in order per
-// URL, retried for up to 72 hours. See docs/elphant-fork.md.
+// URL, retried for up to 72 hours. See docs/reference/elphant-fork.md.
 
 const (
 	webhookDeliveryEnv = "WHATSAPP_WEBHOOK_DELIVERY"
@@ -2988,12 +2988,12 @@ git commit -m "feat(rest): add webhook outbox operations endpoints"
 ### Task 6: Documentation
 
 **Files:**
-- Modify: `docs/elphant-fork.md` (new section after `session.status`)
+- Modify: `docs/reference/elphant-fork.md` (new section after `session.status`)
 - Modify: `~/Documents/elphantcrm-whatsapp-gateway/docs/reference/38-gowa.md` (section 2 YAML + new section 9), local commit only
 
 - [ ] **Step 1: Add the fork section**
 
-Append to `docs/elphant-fork.md`:
+Append to `docs/reference/elphant-fork.md`:
 
 ```markdown
 ## Durable webhook delivery
@@ -3111,7 +3111,7 @@ Expected: `1` (read-only render on noria; nothing is deployed).
 - [ ] **Step 4: Commit both (the CRM commit stays local)**
 
 ```bash
-git add docs/elphant-fork.md
+git add docs/reference/elphant-fork.md
 git commit -m "docs: document durable webhook delivery"
 cd ~/Documents/elphantcrm-whatsapp-gateway && git add docs/reference/38-gowa.md && git commit -m "docs(reference): entrega durável de webhooks do GOWA"
 ```
