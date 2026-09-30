@@ -21,6 +21,14 @@ history of the work.
 - **What.** Batch number check (G7) and timelock handling (G6). Each needs a spec first.
   G6 is clean-room: do not read `devlikeapro/gows-plus` (no license).
 
+### D-7 `GET /user/check` ignores the device header
+
+- **What.** `UserCheck` passes `c.Context()` without `ContextWithDevice`, so
+  `ClientFromContext` falls back to the global default client and `X-Device-Id` has no effect.
+  Found while writing the G7 spec (`docs/specs/2026-09-29-gateway-g7-batch-user-check-design.md`).
+  The new `POST /user/check` scopes the device correctly.
+- **Pay.** Add `ContextWithDevice(c.Context(), getDeviceFromCtx(c))`, with a test on two devices.
+
 ### D-4 Gateway items G5, G8, G9
 
 - **What.** LID handling (G5), `/statics` served before Basic Auth (G8), stability work
