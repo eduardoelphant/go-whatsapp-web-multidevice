@@ -30,11 +30,6 @@ history of the work.
   with `APP_STATICS_SECRET`) accepted in place of Basic Auth would serve that case. Do it only if
   such a consumer appears.
 
-### D-5 Lab data cleanup (part B, task 10)
-
-- **What.** Delete `run/`, `exports/` and the logs of the migration lab on the owner's Mac.
-  They hold personal data. Only with the owner's OK.
-
 ### D-12 Production device gets `STREAM_REPLACED` shortly after connecting
 
 - **What.** Seen 2026-09-30: the only production device connected on start and, about five
@@ -88,6 +83,13 @@ happens as part of a server built from scratch (a new host, stack moved over wit
 the backup restored). Do not run `apt upgrade` or SetupOrion on the current host.
 
 ## Paid
+
+### D-5 Lab data cleanup (part B, task 10)
+
+Done on 30/09/2026 with the owner's OK: `exports/` (the exported Evolution sessions) and `run/` (the
+copied SQLite session, the log with personal messages and the lab password) were deleted from
+`~/Documents/whatsapp-gateway-lab`. The session lives only on the gateway host. The two binaries
+and `export-evolution-session.sh` were kept: they hold no personal data.
 
 ### D-12 (rest) Open parts of the G9 review
 
