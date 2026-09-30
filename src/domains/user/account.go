@@ -85,6 +85,25 @@ type CheckResponse struct {
 	IsOnWhatsApp bool `json:"is_on_whatsapp"`
 }
 
+// CheckBatchRequest is the body of POST /user/check.
+type CheckBatchRequest struct {
+	Phones []string `json:"phones"`
+}
+
+// CheckBatchItem is the answer for one entry of a batch check. Pointer fields are
+// null in JSON when there is no value.
+type CheckBatchItem struct {
+	Query        string  `json:"query"`
+	Status       string  `json:"status"` // exists | not_exists | error
+	PN           *string `json:"pn"`
+	LID          *string `json:"lid"`
+	VerifiedName *string `json:"verified_name"`
+	Error        *string `json:"error"` // invalid_number | upstream
+}
+
+// CheckBatchResponse holds one item per input entry, in input order.
+type CheckBatchResponse []CheckBatchItem
+
 type BusinessProfileRequest struct {
 	Phone string `json:"phone" query:"phone"`
 }

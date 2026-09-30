@@ -8,6 +8,7 @@ import (
 type IUserInfo interface {
 	Info(ctx context.Context, request InfoRequest) (response InfoResponse, err error)
 	IsOnWhatsApp(ctx context.Context, request CheckRequest) (response CheckResponse, err error)
+	IsOnWhatsAppBatch(ctx context.Context, request CheckBatchRequest) (response CheckBatchResponse, err error)
 	BusinessProfile(ctx context.Context, request BusinessProfileRequest) (response BusinessProfileResponse, err error)
 }
 
