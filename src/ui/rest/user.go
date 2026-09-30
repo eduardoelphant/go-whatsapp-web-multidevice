@@ -22,6 +22,7 @@ func InitRestUser(app fiber.Router, service domainUser.IUserUsecase) User {
 	app.Get("/user/my/newsletters", rest.UserMyListNewsletter)
 	app.Get("/user/my/contacts", rest.UserMyListContacts)
 	app.Get("/user/check", rest.UserCheck)
+	app.Post("/user/check", rest.UserCheckBatch)
 	app.Get("/user/business-profile", rest.UserBusinessProfile)
 
 	return rest
@@ -171,6 +172,30 @@ func (controller *User) UserCheck(c fiber.Ctx) error {
 		Status:  200,
 		Code:    "SUCCESS",
 		Message: "Success check user",
+		Results: response,
+	})
+}
+
+// UserCheckBatch checks up to 100 numbers in one call (fork: elphant, see docs/reference/elphant-fork.md).
+func (controller *User) UserCheckBatch(c fiber.Ctx) error {
+	var request domainUser.CheckBatchRequest
+	if err := c.Bind().Body(&request); err != nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: "Invalid request body",
+		})
+	}
+
+	ctx := whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c))
+
+	response, err := controller.Service.IsOnWhatsAppBatch(ctx, request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success check users",
 		Results: response,
 	})
 }
