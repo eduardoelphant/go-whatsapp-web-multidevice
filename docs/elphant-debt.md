@@ -16,12 +16,12 @@ history of the work.
 - **Includes.** The `pairing_requested` flag: a pairing confirmed by `sync` can leave
   `meta.status` false, so the channel stays off.
 
-### D-3 Timelock G6: query and ElphantCRM side
+### D-3 Timelock G6: ask WhatsApp for the state
 
-- **What.** G6 is implemented (`session.timelock`, opt-in guard). Still open: asking WhatsApp for
-  the timelock state on connect (no free source for the query; clean-room, do not read
-  `devlikeapro/gows-plus`), and the ElphantCRM side (listen to `session.timelock`, show the state,
-  decide when to turn `WHATSAPP_REACHOUT_GUARD` on).
+- **What.** The ElphantCRM side is done (webhook subscription, state on the channel, payload, send
+  errors; spec `2026-09-30-gowa-timelock-crm` in the CRM repo). Still open: asking WhatsApp for the
+  timelock state on connect (no free source for the query; clean-room, do not read
+  `devlikeapro/gows-plus`). Turning `WHATSAPP_REACHOUT_GUARD` on stays the owner's decision.
 
 ### D-12 Production device gets `STREAM_REPLACED` shortly after connecting
 
