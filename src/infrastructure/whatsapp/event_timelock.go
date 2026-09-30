@@ -80,8 +80,8 @@ func HandleReachoutTimelockEvent(ctx context.Context, instance *DeviceInstance, 
 		return
 	}
 	owner := canonicalInstance(instance)
-	if owner.reachout.applyEvent(now, suspectWindow(), evt.IsActive, evt.EnforcementType, evt.TimeEnforcementEnds.Time) {
-		EmitSessionTimelock(ctx, owner, owner.ReachoutSnapshot(now))
+	if snap, changed := owner.reachout.applyEvent(now, suspectWindow(), evt.IsActive, evt.EnforcementType, evt.TimeEnforcementEnds.Time); changed {
+		EmitSessionTimelock(ctx, owner, snap)
 	}
 }
 
@@ -92,8 +92,18 @@ func NoteReachoutTimelock(ctx context.Context, instance *DeviceInstance) {
 		return
 	}
 	owner := canonicalInstance(instance)
-	now := time.Now()
-	if owner.reachout.mark463(now, suspectWindow()) {
-		EmitSessionTimelock(ctx, owner, owner.ReachoutSnapshot(now))
+	if snap, changed := owner.reachout.mark463(time.Now(), suspectWindow()); changed {
+		EmitSessionTimelock(ctx, owner, snap)
+	}
+}
+
+// resetReachout clears the timelock state when the session ends or a new one starts, and tells
+// consumers when an active state was cleared.
+func resetReachout(ctx context.Context, instance *DeviceInstance) {
+	if instance == nil {
+		return
+	}
+	if snap, was := instance.reachout.reset(); was {
+		EmitSessionTimelock(ctx, instance, snap)
 	}
 }

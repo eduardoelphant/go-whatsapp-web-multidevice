@@ -69,6 +69,25 @@ history of the work.
      lookup test runs on the real `sqlstore`; the route-order test cannot fail.
 - **Pay.** One small pass with a test per item.
 
+### D-11 Minor findings of the G6 review
+
+- **What.** Deferred from the final review of the reach-out timelock
+  (`docs/specs/2026-09-30-gateway-g6-reachout-timelock-design.md`):
+  1. Outside durable mode two `session.timelock` webhooks can arrive out of order (`go deliver()`),
+     and `timestamp` is to the second. Add a sequence number or `RFC3339Nano`.
+  2. Reactions, revokes, edits (`usecase/message.go`) and the auto reply do not go through
+     `wrapSendMessage`: no guard and no 463 marking. Low risk (existing chats); route them through
+     a shared helper if it ever matters.
+  3. The guard runs after the media upload, so a refused media forward already downloaded and
+     uploaded the file. Check before the upload.
+  4. The guard also blocks sends to the account's own JID and to bot or PSA JIDs, which have no
+     tctoken (whatsmeow exempts PSA and bots). Exempt them.
+  5. Tests: no test drives `wrapSendMessage` through a real 463 (marking plus the `429`); no
+     config-default test (off, 30); no test that an event on a non-canonical instance and a guard
+     check on the slot instance share state; `send_reachout_test.go` calls `NoteReachoutTimelock`
+     with the real dispatch, which starts an unstubbed webhook goroutine.
+- **Pay.** One small pass with a test per item.
+
 ### D-4 Gateway items G8, G9
 
 - **What.** `/statics` served before Basic Auth (G8), stability work such as goroutines without

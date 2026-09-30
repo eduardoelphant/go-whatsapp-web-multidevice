@@ -9,6 +9,16 @@ var reachoutNow = time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 
 const reachoutSuspect = 30 * time.Minute
 
+func evChanged(s *reachoutState, now time.Time, active bool, typ string, ends time.Time) bool {
+	_, changed := s.applyEvent(now, reachoutSuspect, active, typ, ends)
+	return changed
+}
+
+func nChanged(s *reachoutState, now time.Time) bool {
+	_, changed := s.mark463(now, reachoutSuspect)
+	return changed
+}
+
 func TestReachoutStateUntouchedIsInactive(t *testing.T) {
 	var s reachoutState
 	snap, expired := s.read(reachoutNow)
@@ -21,7 +31,7 @@ func TestReachoutEventActiveWithEnds(t *testing.T) {
 	var s reachoutState
 	ends := reachoutNow.Add(3 * time.Hour)
 
-	changed := s.applyEvent(reachoutNow, reachoutSuspect, true, "spam", ends)
+	changed := evChanged(&s, reachoutNow, true, "spam", ends)
 
 	snap, _ := s.read(reachoutNow)
 	if !changed || !snap.Active || snap.Source != ReachoutSourceEvent || snap.EnforcementType != "spam" {
@@ -34,7 +44,7 @@ func TestReachoutEventActiveWithEnds(t *testing.T) {
 
 func TestReachoutEventActiveWithoutEndsExpiresBySuspectWindow(t *testing.T) {
 	var s reachoutState
-	s.applyEvent(reachoutNow, reachoutSuspect, true, "", time.Time{})
+	evChanged(&s, reachoutNow, true, "", time.Time{})
 
 	snap, _ := s.read(reachoutNow)
 	if !snap.Active || snap.EndsAt != nil {
@@ -51,9 +61,9 @@ func TestReachoutEventActiveWithoutEndsExpiresBySuspectWindow(t *testing.T) {
 
 func TestReachoutEventInactiveClears(t *testing.T) {
 	var s reachoutState
-	s.applyEvent(reachoutNow, reachoutSuspect, true, "x", reachoutNow.Add(time.Hour))
+	evChanged(&s, reachoutNow, true, "x", reachoutNow.Add(time.Hour))
 
-	changed := s.applyEvent(reachoutNow, reachoutSuspect, false, "", time.Time{})
+	changed := evChanged(&s, reachoutNow, false, "", time.Time{})
 
 	if snap, _ := s.read(reachoutNow); !changed || snap.Active {
 		t.Fatalf("state = %+v changed=%v, want cleared", snap, changed)
@@ -62,7 +72,7 @@ func TestReachoutEventInactiveClears(t *testing.T) {
 
 func TestReachoutInactiveWhenAlreadyClearedIsNoChange(t *testing.T) {
 	var s reachoutState
-	if s.applyEvent(reachoutNow, reachoutSuspect, false, "", time.Time{}) {
+	if evChanged(&s, reachoutNow, false, "", time.Time{}) {
 		t.Fatal("clearing a cleared state must not report a change")
 	}
 }
@@ -70,15 +80,15 @@ func TestReachoutInactiveWhenAlreadyClearedIsNoChange(t *testing.T) {
 func TestReachoutIdenticalEventTwiceIsNoChange(t *testing.T) {
 	var s reachoutState
 	ends := reachoutNow.Add(time.Hour)
-	s.applyEvent(reachoutNow, reachoutSuspect, true, "x", ends)
+	evChanged(&s, reachoutNow, true, "x", ends)
 
-	if s.applyEvent(reachoutNow, reachoutSuspect, true, "x", ends) {
+	if evChanged(&s, reachoutNow, true, "x", ends) {
 		t.Fatal("the same event must not report a change")
 	}
-	if !s.applyEvent(reachoutNow, reachoutSuspect, true, "x", ends.Add(time.Hour)) {
+	if !evChanged(&s, reachoutNow, true, "x", ends.Add(time.Hour)) {
 		t.Fatal("a different end must report a change")
 	}
-	if !s.applyEvent(reachoutNow, reachoutSuspect, true, "y", ends.Add(time.Hour)) {
+	if !evChanged(&s, reachoutNow, true, "y", ends.Add(time.Hour)) {
 		t.Fatal("a different type must report a change")
 	}
 }
@@ -86,7 +96,7 @@ func TestReachoutIdenticalEventTwiceIsNoChange(t *testing.T) {
 func TestReachout463WhenClearedActivates(t *testing.T) {
 	var s reachoutState
 
-	changed := s.mark463(reachoutNow, reachoutSuspect)
+	changed := nChanged(&s, reachoutNow)
 
 	snap, _ := s.read(reachoutNow)
 	if !changed || !snap.Active || snap.Source != ReachoutSourceSend463 || snap.EndsAt != nil {
@@ -96,9 +106,9 @@ func TestReachout463WhenClearedActivates(t *testing.T) {
 
 func TestReachout463WhenActiveIsNoChange(t *testing.T) {
 	var s reachoutState
-	s.applyEvent(reachoutNow, reachoutSuspect, true, "x", reachoutNow.Add(time.Hour))
+	evChanged(&s, reachoutNow, true, "x", reachoutNow.Add(time.Hour))
 
-	if s.mark463(reachoutNow, reachoutSuspect) {
+	if nChanged(&s, reachoutNow) {
 		t.Fatal("a 463 on an active state must not report a change")
 	}
 	if snap, _ := s.read(reachoutNow); snap.Source != ReachoutSourceEvent {
@@ -106,12 +116,84 @@ func TestReachout463WhenActiveIsNoChange(t *testing.T) {
 	}
 }
 
-func TestReachout463AfterExpiryActivatesAgain(t *testing.T) {
+// The consumer's last webhook still says active, so a 463 after the window is a renewal, not a
+// new activation: the state is active again and nothing is reported.
+func TestReachout463AfterExpiryKeepsItActiveWithoutAFlap(t *testing.T) {
 	var s reachoutState
-	s.mark463(reachoutNow, reachoutSuspect)
+	nChanged(&s, reachoutNow)
 
 	later := reachoutNow.Add(reachoutSuspect + time.Second)
-	if !s.mark463(later, reachoutSuspect) {
-		t.Fatal("a 463 after the window expired must activate again")
+	if nChanged(&s, later) {
+		t.Fatal("a 463 after the window must not report a change: the last webhook still said active")
+	}
+	if snap, _ := s.read(later); !snap.Active {
+		t.Fatal("the state must be active again")
+	}
+}
+
+// An active state with no known end expires by time; the consumer's last webhook still says
+// active, so WhatsApp's later "inactive" must still be reported as a change.
+func TestReachoutInactiveEventAfterSilentExpiryStillReportsTheClear(t *testing.T) {
+	var s reachoutState
+	evChanged(&s, reachoutNow, true, "", time.Time{})
+
+	later := reachoutNow.Add(reachoutSuspect + time.Minute)
+	snap, changed := s.applyEvent(later, reachoutSuspect, false, "", time.Time{})
+
+	if !changed || snap.Active {
+		t.Fatalf("snap=%+v changed=%v, want a reported clear", snap, changed)
+	}
+}
+
+func TestReachoutActiveEventAfterSilentExpiryIsNoFlap(t *testing.T) {
+	var s reachoutState
+	evChanged(&s, reachoutNow, true, "x", time.Time{})
+
+	later := reachoutNow.Add(reachoutSuspect + time.Minute)
+	snap, changed := s.applyEvent(later, reachoutSuspect, true, "x", time.Time{})
+
+	if changed || !snap.Active {
+		t.Fatalf("snap=%+v changed=%v, want still active with no new report", snap, changed)
+	}
+}
+
+func TestReachoutEventWithAnEndInThePastIsCleared(t *testing.T) {
+	var s reachoutState
+
+	snap, changed := s.applyEvent(reachoutNow, reachoutSuspect, true, "x", reachoutNow.Add(-time.Hour))
+
+	if changed || snap.Active {
+		t.Fatalf("snap=%+v changed=%v, want cleared and unchanged", snap, changed)
+	}
+}
+
+func TestReachout463OnAnActiveUnknownEndStateRenewsTheWindow(t *testing.T) {
+	var s reachoutState
+	nChanged(&s, reachoutNow)
+
+	renewedAt := reachoutNow.Add(20 * time.Minute)
+	if nChanged(&s, renewedAt) {
+		t.Fatal("renewing must not report a change")
+	}
+	if snap, _ := s.read(reachoutNow.Add(40 * time.Minute)); !snap.Active {
+		t.Fatal("the window must run from the latest 463")
+	}
+	if snap, _ := s.read(renewedAt.Add(reachoutSuspect)); snap.Active {
+		t.Fatal("the renewed window must still end")
+	}
+}
+
+func TestReachoutResetReportsWhetherItClearedAnActiveState(t *testing.T) {
+	var s reachoutState
+	if _, was := s.reset(); was {
+		t.Fatal("resetting a cleared state is not a change")
+	}
+	nChanged(&s, reachoutNow)
+	snap, was := s.reset()
+	if !was || snap.Active {
+		t.Fatalf("snap=%+v was=%v, want a reported clear", snap, was)
+	}
+	if after, _ := s.read(reachoutNow); after.Active {
+		t.Fatal("the state must be cleared")
 	}
 }

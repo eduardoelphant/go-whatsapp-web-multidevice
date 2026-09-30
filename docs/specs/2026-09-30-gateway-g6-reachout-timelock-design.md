@@ -1,6 +1,6 @@
 # G6: reach-out timelock
 
-> **Status:** written for the owner's review, no code yet. Plan: to write after approval.
+> **Status:** implemented (`docs/plans/2026-09-30-gateway-g6-reachout-timelock.md`), released only with the owner's OK.
 > **Clean-room:** this design uses only whatsmeow (MPL), upstream GOWA (MIT) and what the
 > gateway observes. `devlikeapro/gows-plus` has no license and was not read.
 
@@ -37,7 +37,7 @@ recipient with no prior conversation is then refused with server error 463. Toda
 | D3 | A state with no `ends_at` (a 463, or an event without it) expires by itself after `WHATSAPP_REACHOUT_SUSPECT_MINUTES` (default `30`) | Stay locked until an event clears it |
 | D4 | New webhook `session.timelock`, sent on transitions only | Fold it into `session.status` (a different lifecycle, and consumers filter by event name) |
 | D5 | Send guard `409`, opt-in (`WHATSAPP_REACHOUT_GUARD`, default `false`), active only while the device is locked and the recipient has no valid `tctoken` | Block whenever there is no `tctoken` (blocks sends WhatsApp would accept) |
-| D6 | The guard runs in `wrapSendMessage`, the one place every message send goes through | One check per send method |
+| D6 | The guard runs in `wrapSendMessage`, the place every new-chat send goes through (text, media, contact, location, poll and the other `SendService` methods). Reactions, revokes, edits and the auto reply go straight to the client: they target existing chats and are not guarded or used to mark a 463 | One check per send method |
 | D7 | No query endpoint in this step: the webhook and the `409`/`429` errors are the signals | `GET` of the state (add later if a consumer needs it) |
 
 ## Behavior
@@ -48,14 +48,17 @@ recipient with no prior conversation is then refused with server error 463. Toda
 |---|---|
 | event `IsActive=true` | `active`, `source=event`, `enforcement_type` and `ends_at` from the event; with no `ends_at`, expires at `now + suspect` |
 | event `IsActive=false` | cleared |
-| send refused with 463 | `active`, `source=send_463`, `ends_at = now + suspect`, `enforcement_type` unchanged if already active |
+| send refused with 463 | `active`, `source=send_463`, no known end (`now + suspect`); on an active state with no known end it renews that window, and an end WhatsApp gave is left alone |
 | time passes `ends_at` | cleared on the next read |
-| device logged out or removed | cleared with the device instance |
+| session ends (the device client is reset on logout) or a new pairing succeeds | cleared, and a `session.timelock` with `active: false` is sent when an active state was cleared |
 
 `session.timelock` is emitted when the state changes: cleared to active, active to cleared, or
 active with a different `ends_at` or type. Repeated identical inputs (a second 463 in the same
-window) emit nothing. A clearing caused by time emits on the next read that notices it (the next
-send or event), not from a timer.
+window) emit nothing. A clearing caused by time is reported on the next send (the guard reads the state) or on the
+next event, not from a timer. A change is measured against the last state a consumer was told,
+so a window that expired silently and is then confirmed by the same kind of event reports
+nothing, and an "inactive" event after a silent expiry still reports the clear. An active event
+whose end is already past counts as cleared.
 
 **Webhook** (same envelope as `session.status`: `event`, `device_id`, `session_id`, `timestamp`,
 `payload`; same delivery path, durable when enabled):
@@ -66,7 +69,7 @@ send or event), not from a timer.
 ```
 
 `enforcement_type` and `ends_at` are `null` when unknown. The device's `webhook_events` filter
-must include `session.timelock`, as for any event.
+must include `session.timelock` when the device has its own event filter; with no device filter the global list applies, and with no list at all every event is sent.
 
 **Guard** (only when `WHATSAPP_REACHOUT_GUARD=true`): in `wrapSendMessage`, before the send, when
 the device state is active and the recipient is a user JID (phone or LID; not a group, newsletter
@@ -80,9 +83,9 @@ lets the send through (the guard only blocks on a clear "no token" answer).
 
 | Layer | Change |
 |---|---|
-| `infrastructure/whatsapp/reachout_state.go` (new) | the state, its transitions, `TimelockSnapshot`, expiry |
+| `infrastructure/whatsapp/reachout_state.go` (new) | the state, its transitions, `ReachoutSnapshot`, expiry |
 | `infrastructure/whatsapp/event_session.go` (or a new `event_timelock.go`) | map `NotifyAccountReachoutTimelock` to the state; `EmitSessionTimelock` through the existing dispatch |
-| `infrastructure/whatsapp/reachout_guard.go` (new) | `ShouldBlockSend(ctx, instance, client, recipient)`: pure decision with injectable token lookup |
+| `infrastructure/whatsapp/reachout_guard.go` (new) | `CheckReachoutGuard(ctx, instance, client, recipient)` over the pure `reachoutBlocks` with injectable token and LID lookups |
 | `pkg/error/whatsapp_error.go` | `WaReachoutGuardError` (`WA_REACHOUT_GUARD`, `409`) |
 | `usecase/send.go` | `wrapSendMessage`: guard before the send, mark the state on a 463 |
 | `config/settings.go`, `cmd/root.go`, `.env.example` | `WhatsappReachoutGuard`, `WhatsappReachoutSuspectMinutes` |

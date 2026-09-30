@@ -60,12 +60,18 @@ func (s *reachoutState) read(now time.Time) (ReachoutSnapshot, bool) {
 	return s.snapshotLocked(), expired
 }
 
-// applyEvent applies WhatsApp's notification and reports whether the visible state changed.
-func (s *reachoutState) applyEvent(now time.Time, suspect time.Duration, active bool, typ string, ends time.Time) bool {
+// applyEvent applies WhatsApp's notification. It returns the state after the change and whether
+// that differs from the last state a consumer was told: the comparison is against the state
+// before any expiry, so a clear that happened by time is still reported when it is confirmed.
+// An active event whose end is already past counts as cleared.
+func (s *reachoutState) applyEvent(now time.Time, suspect time.Duration, active bool, typ string, ends time.Time) (ReachoutSnapshot, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.expireLocked(now)
 	before := s.snapshotLocked()
+	s.expireLocked(now)
+	if active && !ends.IsZero() && !ends.After(now) {
+		active = false
+	}
 	if !active {
 		s.clearLocked()
 	} else {
@@ -76,21 +82,39 @@ func (s *reachoutState) applyEvent(now time.Time, suspect time.Duration, active 
 			s.until, s.endsKnown = ends, true
 		}
 	}
-	return !sameSnapshot(before, s.snapshotLocked())
+	after := s.snapshotLocked()
+	return after, !sameSnapshot(before, after)
 }
 
-// mark463 records a send refused with 463 and reports whether the state changed. An already
-// active state is left as it is.
-func (s *reachoutState) mark463(now time.Time, suspect time.Duration) bool {
+// mark463 records a send refused with 463. It returns the state after and whether that differs
+// from the last state a consumer was told. A 463 on an active state with no known end renews
+// its window (nothing visible changes); an end WhatsApp gave is left alone.
+func (s *reachoutState) mark463(now time.Time, suspect time.Duration) (ReachoutSnapshot, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	before := s.snapshotLocked()
 	s.expireLocked(now)
-	if s.active {
-		return false
+	switch {
+	case s.active && s.endsKnown:
+		// WhatsApp's own end stays.
+	case s.active:
+		s.until = now.Add(suspect)
+	default:
+		s.active, s.source, s.typ = true, ReachoutSourceSend463, ""
+		s.until, s.endsKnown = now.Add(suspect), false
 	}
-	s.active, s.source, s.typ = true, ReachoutSourceSend463, ""
-	s.until, s.endsKnown = now.Add(suspect), false
-	return true
+	after := s.snapshotLocked()
+	return after, !sameSnapshot(before, after)
+}
+
+// reset clears the state (a logout or a new pairing) and reports whether an active state was
+// cleared, with the state after.
+func (s *reachoutState) reset() (ReachoutSnapshot, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	was := s.active
+	s.clearLocked()
+	return s.snapshotLocked(), was
 }
 
 func sameSnapshot(a, b ReachoutSnapshot) bool {

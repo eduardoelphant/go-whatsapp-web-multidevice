@@ -187,6 +187,10 @@ func handleSessionEvent(ctx context.Context, instance *DeviceInstance, rawEvt an
 		HandleReachoutTimelockEvent(ctx, instance, evt, time.Now())
 		return
 	}
+	if _, ok := rawEvt.(*events.PairSuccess); ok {
+		// A new pairing is a new session: a timelock from the old one does not carry over.
+		resetReachout(ctx, instance)
+	}
 	if status, ok := sessionStatusFromEvent(rawEvt, time.Now()); ok {
 		EmitSessionStatus(ctx, instance, status)
 	}

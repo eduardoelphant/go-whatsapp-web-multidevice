@@ -328,10 +328,12 @@ uses only free sources (whatsmeow, upstream GOWA); see
 | WhatsApp's timelock notification, active | active (`source: event`), with `enforcement_type` and `ends_at` when WhatsApp sends them |
 | the notification, inactive | cleared |
 | a send refused with 463 | active (`source: send_463`), no known end |
-| a state with no known end | clears itself after `WHATSAPP_REACHOUT_SUSPECT_MINUTES` (default `30`) |
+| a state with no known end | clears itself after `WHATSAPP_REACHOUT_SUSPECT_MINUTES` (default `30`); another 463 renews that window |
+| the session ends (logout) or a new pairing succeeds | cleared |
 
 **Webhook `session.timelock`**, sent only when the state changes, same envelope and delivery as
-`session.status` (durable when enabled). The device's `webhook_events` must include it.
+`session.status` (durable when enabled). When the device has its own `webhook_events` filter it
+must include `session.timelock`; otherwise the global list applies.
 
 ```json
 {"event":"session.timelock","device_id":"...","session_id":"...","timestamp":"...",
@@ -339,14 +341,16 @@ uses only free sources (whatsmeow, upstream GOWA); see
 ```
 
 `source`, `enforcement_type` and `ends_at` are `null` when unknown or when `active` is `false`.
-A state that ended by time is reported on the next send or event, not from a timer.
+A state that ended by time is reported on the next send, not from a timer. Outside durable mode
+the order of two webhooks is not guaranteed.
 
 **Guard.** Off by default (`WHATSAPP_REACHOUT_GUARD=true` turns it on). While the state is
 active, a send to a user (phone or LID) that has no valid `tctoken` is refused before it reaches
 WhatsApp with `409` `WA_REACHOUT_GUARD`; the message carries the end when known. A token is valid
 for four 7-day buckets (about 28 days), the rule whatsmeow uses. Groups, newsletters, recipients
 with a valid token, every send while the state is cleared, and a failed token lookup go through
-unchanged.
+unchanged. The guard covers the `SendService` methods; reactions, revokes, edits and the auto
+reply are not guarded.
 
 There is no way to query the state from WhatsApp with the free sources, so the gateway only knows
 what it was told or saw.

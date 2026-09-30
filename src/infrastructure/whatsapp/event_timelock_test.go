@@ -118,3 +118,51 @@ func itoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
 }
+
+func TestResetClientClearsAnActiveTimelockAndReportsIt(t *testing.T) {
+	got := captureSessionWebhooks(t)
+	instance := NewDeviceInstance("timelock-logout", nil, nil)
+	handler(context.Background(), instance, timelockEvent(t, `{"enforcement_type":"spam","is_active":true}`))
+	waitTimelockWebhook(t, got, "timelock-logout", 2*time.Second)
+
+	instance.ResetClient()
+
+	body, ok := waitTimelockWebhook(t, got, "timelock-logout", 2*time.Second)
+	if !ok {
+		t.Fatal("no clearing webhook after the logout")
+	}
+	if payload, _ := body["payload"].(map[string]any); payload["active"] != false {
+		t.Fatalf("payload = %v, want cleared", payload)
+	}
+	if instance.ReachoutSnapshot(time.Now()).Active {
+		t.Fatal("the state must be cleared")
+	}
+}
+
+func TestPairSuccessClearsTheOldSessionsTimelock(t *testing.T) {
+	got := captureSessionWebhooks(t)
+	instance := NewDeviceInstance("timelock-repair", nil, nil)
+	handler(context.Background(), instance, timelockEvent(t, `{"is_active":true}`))
+	waitTimelockWebhook(t, got, "timelock-repair", 2*time.Second)
+
+	handleSessionEvent(context.Background(), instance, &events.PairSuccess{})
+
+	body, ok := waitTimelockWebhook(t, got, "timelock-repair", 2*time.Second)
+	if !ok {
+		t.Fatal("no clearing webhook on a new pairing")
+	}
+	if payload, _ := body["payload"].(map[string]any); payload["active"] != false {
+		t.Fatalf("payload = %v, want cleared", payload)
+	}
+}
+
+func TestResetClientOnAClearedDeviceEmitsNothing(t *testing.T) {
+	got := captureSessionWebhooks(t)
+	instance := NewDeviceInstance("timelock-quiet", nil, nil)
+
+	instance.ResetClient()
+
+	if _, ok := waitTimelockWebhook(t, got, "timelock-quiet", 300*time.Millisecond); ok {
+		t.Fatal("a cleared state must not report a clear")
+	}
+}

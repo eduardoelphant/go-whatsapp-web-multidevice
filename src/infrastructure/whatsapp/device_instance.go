@@ -1,6 +1,7 @@
 package whatsapp
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -128,12 +129,15 @@ func (d *DeviceInstance) SetClient(client *whatsmeow.Client) {
 // slot in place after a logout.
 func (d *DeviceInstance) ResetClient() {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.client = nil
 	d.jid = ""
 	d.adJID = ""
 	d.phoneNumber = ""
 	d.state = domainDevice.DeviceStateDisconnected
+	d.mu.Unlock()
+
+	// Fork (elphant): the reach-out timelock belongs to the session that ended.
+	resetReachout(context.Background(), d)
 }
 
 // SetChatStorage swaps the chat storage repository for this device.
