@@ -355,6 +355,37 @@ reply are not guarded.
 There is no way to query the state from WhatsApp with the free sources, so the gateway only knows
 what it was told or saw.
 
+## Resilience
+
+**Panics in background goroutines.** A panic in a goroutine ends the whole process, and with it
+every device. Every goroutine GOWA starts is protected by `pkg/safego`: `safego.Go(name, fn)` for
+one-shot work, `defer safego.Recover(name)` as the first statement of a goroutine closure, and
+`safego.Loop(name, fn)` for service loops meant to run for the life of the process (websocket hub,
+presence scheduler, webhook outbox worker and cleanup, UI auto update). A contained panic is
+logged with its stack and counted; a loop is started again after a wait (1 s, doubling, capped at
+30 s), because a dead loop would leave the feature silently down while the process stays up. A test
+(`TestEveryBackgroundGoroutineIsProtected`) fails on any unprotected `go` statement.
+
+**Reconnect watchdog.** Every `WHATSAPP_WATCHDOG_INTERVAL_SECONDS` (default `120`, `0` disables) each
+paired device that is disconnected and not in `StreamReplaced` is reconnected, with a wait that
+doubles per failed attempt (the interval, then 2x, 4x, up to 15 minutes) and resets when the device
+connects. A device that is not paired (no stored identity) or has no client is never connected,
+because connecting would start a pairing. This replaces the old loop, which watched only the
+default client.
+
+**`GET /health/devices`** (Basic Auth; the public `/health` is unchanged):
+
+```json
+{"code":"SUCCESS","message":"Device health","results":{"devices":[
+  {"id":"...","state":"logged_in","connected":true,"logged_in":true,"stream_replaced":false,
+   "last_connected_at":"2026-09-30T12:00:00Z","reconnect_attempts":0,"next_attempt_at":null}],
+  "panics_recovered":0}}
+```
+
+**`GET /metrics`** (Basic Auth, Prometheus text format, no extra dependency; device ids never
+appear): `gowa_goroutine_panics_total`, `gowa_reconnect_attempts_total`,
+`gowa_reconnect_successes_total` and `gowa_devices{state="..."}`.
+
 ## Specs and plans
 
 Knowledge pages that the fork owns live in `docs/reference/` (this page and `import-baileys.md`); files

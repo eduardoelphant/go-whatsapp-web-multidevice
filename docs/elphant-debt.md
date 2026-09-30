@@ -88,10 +88,9 @@ history of the work.
      with the real dispatch, which starts an unstubbed webhook goroutine.
 - **Pay.** One small pass with a test per item.
 
-### D-4 Gateway items G8, G9
+### D-4 Gateway item G8
 
-- **What.** `/statics` served before Basic Auth (G8), stability work such as goroutines without
-  `recover` (G9). Each needs a spec first.
+- **What.** `/statics` served before Basic Auth (G8). Needs a spec first.
 
 ### D-5 Lab data cleanup (part B, task 10)
 
