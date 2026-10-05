@@ -855,8 +855,11 @@ func (m *DeviceManager) EnsureClient(ctx context.Context, deviceID string) (*Dev
 		inst.SetChatStorage(repo)
 	}
 
-	// Fork (elphant): success-status handler for durable webhooks. See webhook_durable.go.
-	registerEventHandler(ctx, client, inst)
+	// Events outlive ctx, which is usually a login request's context and is
+	// cancelled once that request responds. A client replaced by a newer login must no longer
+	// drive the slot. Fork (elphant): success-status handler for durable webhooks, see
+	// webhook_durable.go.
+	registerEventHandlerFor(context.Background(), client, inst, func() bool { return inst.GetClient() == client })
 
 	inst.SetOnLoggedOut(func(deviceID string) {
 		// On remote logout (device unlinked from the phone) keep the slot so it can

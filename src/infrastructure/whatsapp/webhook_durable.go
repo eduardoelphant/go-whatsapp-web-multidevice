@@ -170,8 +170,18 @@ func markHandlerFailed(ctx context.Context) {
 // WhatsApp redelivers it, whatsmeow reads it back from the buffer instead of
 // failing to decrypt it a second time.
 func registerEventHandler(ctx context.Context, client *whatsmeow.Client, instance *DeviceInstance) {
+	registerEventHandlerFor(ctx, client, instance, nil)
+}
+
+// registerEventHandlerFor is registerEventHandler with an optional liveness check: when active
+// returns false the event is dropped and acknowledged, so a client replaced by a newer login
+// (the slot now holds another client) no longer drives the slot.
+func registerEventHandlerFor(ctx context.Context, client *whatsmeow.Client, instance *DeviceInstance, active func() bool) {
 	client.EnableDecryptedEventBuffer = durableWebhooksEnabled()
 	client.AddEventHandlerWithSuccessStatus(func(rawEvt any) bool {
+		if active != nil && !active() {
+			return true
+		}
 		return handleEventWithStatus(ctx, instance, rawEvt)
 	})
 }
