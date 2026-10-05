@@ -94,6 +94,25 @@ history of the work.
 - **Before relying on it.** Check in a real receipt that the `message.ack` payload carries
   `is_from_me`, so the current filter keeps dropping it until this is built.
 
+### D-16 GOWA in the ElphantCRM v3: beta answers 422, dead webhook rows, work to bring over
+
+- **What.** Owner's decision (05/10/2026): the CRM is migrating versions and GOWA goes into **v3**,
+  not v2. The CRM `develop` was reset to the `master` line, so it has none of the GOWA commits
+  (driver, B-166, number validator, LID promotion, timelock state, 30-number batch cap), and the
+  beta answers `HTTP 422` to every GOWA webhook. Since 04/10 17:12 UTC the gateway holds about
+  1520 `dead` rows for the beta test channel (outbox, `/webhooks/stats`). Test traffic only; the
+  gateway itself is fine and production CRM never had the driver. Ignored on purpose until a
+  staging option exists.
+- **To do, when v3 takes GOWA.**
+  1. Bring the work over onto the v3 line. It lives on the commit `823089919` of the CRM repo
+     (a local `develop` in the `elphantcrm-v3` clone also holds it). It is not on any remote
+     branch: keep a pointer so GitHub does not drop it (for example a branch
+     `archive/gowa-2026-10` at that commit), or bring it over first.
+  2. Re-run `php artisan gowa:webhook-sync` after the deploy.
+  3. Decide about the dead rows: replay them (`POST /webhooks/replay?since=`) or let the
+     retention clean them.
+  4. The Materio connection screen (D-1) targets whatever line carries GOWA.
+
 ## Won't do
 
 ### D-6 Debian 11 on the gateway host
