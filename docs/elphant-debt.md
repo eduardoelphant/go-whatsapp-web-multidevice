@@ -75,6 +75,11 @@ history of the work.
   whether to generate `APP_STATICS_SECRET` (a long random value) and add it to the stack
   environment with `APP_STATICS_AUTH` already on; without the secret links are not signed and
   nothing changes. Then turn `WHATSAPP_REACHOUT_GUARD` on only if the owner wants the guard.
+- **Upstream sync (05/10/2026):** `v9.6.0-elphant.1` (upstream v9.6.0 plus #864, whatsmeow
+  `20260929`) is published and `elphant` points at it; the stack stays on `v9.5.0-elphant.14`. It
+  replaces `.15` as the next image to roll out (it contains the same fork code). Before the
+  rollout, check on beta or a spare device that a read receipt from the account's own linked device
+  (new upstream behavior) carries `is_from_me` in the `message.ack` webhook, so the CRM filter drops it.
 - **Also pending, ElphantCRM:** after the `develop` deploy reaches production, run
   `php artisan gowa:webhook-sync` once so the existing channels subscribe to `session.timelock`.
 
