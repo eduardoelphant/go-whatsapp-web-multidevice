@@ -109,6 +109,13 @@ history of the work.
   history up to that commit is at `~/Documents/backups-elphantcrm/elphantcrm-gowa-823089919.bundle`
   on the owner's machine (not in any repository; `git bundle verify` passes). To restore from it:
   `git clone <bundle> dir` or `git fetch <bundle> archive-gowa-tmp:gowa-restore`.
+- **Webhook removed (05/10/2026, owner's decision).** The device webhook on the gateway host was
+  cleared (`PATCH /devices/<id>/webhook` with an empty URL, secret and events) so the gateway stops
+  generating `422` rows. The count stopped at 1749 `dead` and `pending` is 0. While it is cleared the
+  gateway does not queue webhook events for that device, so nothing reaches any CRM. To turn it back
+  on: `php artisan gowa:webhook-sync` in the CRM that carries GOWA (it reapplies URL, secret and
+  events from the channel's own block), or `PATCH` the device by hand with the CRM's webhook URL,
+  the channel's `webhook_secret` and the events list.
 - **To do, when it is time.**
   1. Confirm in the v3 repository that the GOWA code is what the v3 line should carry; the v3
      branch point is later than the v2 reset, so check the later commits that touch channels.
