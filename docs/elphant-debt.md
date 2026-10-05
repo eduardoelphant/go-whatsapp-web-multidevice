@@ -83,6 +83,17 @@ history of the work.
 - **Also pending, ElphantCRM:** after the `develop` deploy reaches production, run
   `php artisan gowa:webhook-sync` once so the existing channels subscribe to `session.timelock`.
 
+### D-15 Use the account's own read receipts to mark conversations read in the CRM
+
+- **What.** Since upstream v9.6.0 (#864) the gateway forwards `message.ack` read receipts sent by
+  the account's own linked devices (WhatsApp Web, Desktop, other companions). The CRM drops acks
+  with `is_from_me`, so nothing changes today. A future ElphantCRM change could treat that ack as
+  "read by the owner" and clear the conversation's unread counter when someone reads the chat
+  outside the CRM. Only useful if the connected number is also used in parallel on WhatsApp; the
+  receipt only covers messages the contact sent. Not needed now (owner's decision, 05/10/2026).
+- **Before relying on it.** Check in a real receipt that the `message.ack` payload carries
+  `is_from_me`, so the current filter keeps dropping it until this is built.
+
 ## Won't do
 
 ### D-6 Debian 11 on the gateway host
