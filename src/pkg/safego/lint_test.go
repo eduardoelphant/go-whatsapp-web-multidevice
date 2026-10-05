@@ -1,6 +1,7 @@
 package safego
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -57,6 +58,12 @@ func TestEveryBackgroundGoroutineIsProtected(t *testing.T) {
 
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			// Other packages' tests create and remove temporary directories under src/ while
+			// this walk runs (`go test ./...` runs packages in parallel): a path that vanished
+			// is not a source file.
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 		if d.IsDir() {
@@ -73,6 +80,9 @@ func TestEveryBackgroundGoroutineIsProtected(t *testing.T) {
 			return nil
 		}
 		file, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if errors.Is(parseErr, fs.ErrNotExist) {
+			return nil // removed between the listing and the read
+		}
 		if parseErr != nil {
 			return parseErr
 		}
