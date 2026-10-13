@@ -168,21 +168,33 @@ func (service serviceUser) Avatar(ctx context.Context, request domainUser.Avatar
 				if avatarCtx2.Err() == context.DeadlineExceeded {
 					return response, pkgError.ContextError("Error timeout get avatar!")
 				}
-				return response, err
+				return response, avatarLookupError(err)
 			}
 		} else {
-			return response, err
+			return response, avatarLookupError(err)
 		}
 	}
 
 	if pic == nil {
-		return response, errors.New("no avatar found")
+		return response, pkgError.ErrAvatarNotSet
 	}
 
 	response.URL = pic.URL
 	response.ID = pic.ID
 	response.Type = pic.Type
 	return response, nil
+}
+
+// avatarLookupError (fork: elphant) turns "no picture to show" into a 404, so a contact who hides
+// or never set a picture is not reported as a server error.
+func avatarLookupError(err error) error {
+	switch {
+	case errors.Is(err, whatsmeow.ErrProfilePictureUnauthorized):
+		return pkgError.ErrAvatarHidden
+	case errors.Is(err, whatsmeow.ErrProfilePictureNotSet):
+		return pkgError.ErrAvatarNotSet
+	}
+	return err
 }
 
 // MyListGroups returns all groups the user has joined.

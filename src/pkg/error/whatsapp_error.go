@@ -119,7 +119,27 @@ func NewWaReachoutGuard(endsAt *time.Time) WaReachoutGuardError {
 	return WaReachoutGuardError(message + ". Reply inside an existing conversation, ask the recipient to message first, or wait for the restriction to clear.")
 }
 
+// WaGroupAdminsOnlyError (fork: elphant): the group only lets admins send and this account is
+// not one, so whatsmeow refused the send before it reached WhatsApp.
+type WaGroupAdminsOnlyError string
+
+// Error for complying the error interface
+func (e WaGroupAdminsOnlyError) Error() string {
+	return string(e)
+}
+
+// ErrCode will return the error code based on the error data type
+func (e WaGroupAdminsOnlyError) ErrCode() string {
+	return "WA_GROUP_ADMINS_ONLY"
+}
+
+// StatusCode will return the HTTP status code based on the error data type
+func (e WaGroupAdminsOnlyError) StatusCode() int {
+	return http.StatusForbidden
+}
+
 const (
+	ErrWaGroupAdminsOnly  = WaGroupAdminsOnlyError("Only admins can send messages to this group, and this account is not an admin. The send was refused before reaching WhatsApp.")
 	ErrUserNotRegistered  = InvalidJID("user is not registered")
 	ErrWaCLI              = WaCliError("your WhatsApp CLI is invalid or empty")
 	ErrWaReachoutTimelock = WaReachoutTimelockError("WhatsApp rejected this send with error 463 (reach-out timelock). This is WhatsApp's server-side anti-spam restriction on starting new chats and cannot be bypassed by the API. It usually means there is no prior conversation with this recipient, or the sending account is temporarily restricted from reaching new contacts. To get through: ask the recipient to message you first, reply within an already-established conversation, or open and send the chat once from the phone linked to this session, then reduce your sending rate and wait for the restriction to clear. Newly-linked or low-activity numbers are affected most.")

@@ -353,3 +353,75 @@ func TestShouldIgnoreImageDownload(t *testing.T) {
 		})
 	}
 }
+
+func TestIsProtocolOnlyMessage(t *testing.T) {
+	skdm := &waE2E.SenderKeyDistributionMessage{GroupID: protoString("120363000000@g.us")}
+	contextInfo := &waE2E.MessageContextInfo{MessageSecret: []byte{1, 2, 3}}
+	tests := []struct {
+		name string
+		msg  *waE2E.Message
+		want bool
+	}{
+		{"nil message", nil, false},
+		{"empty message", &waE2E.Message{}, false},
+		{"sender key distribution only", &waE2E.Message{SenderKeyDistributionMessage: skdm}, true},
+		{"sender key distribution with context info", &waE2E.Message{SenderKeyDistributionMessage: skdm, MessageContextInfo: contextInfo}, true},
+		{"context info only", &waE2E.Message{MessageContextInfo: contextInfo}, false},
+		{"sender key distribution with text", &waE2E.Message{SenderKeyDistributionMessage: skdm, Conversation: protoString("hi")}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isProtocolOnlyMessage(tt.msg); got != tt.want {
+				t.Fatalf("isProtocolOnlyMessage() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHandleMessageSkipsSenderKeyDistributionOnly(t *testing.T) {
+	originalWebhookURLs := config.WhatsappWebhook
+	originalWebhookEvents := config.WhatsappWebhookEvents
+	originalSubmit := submitWebhookFn
+	originalLog := log
+	defer func() {
+		config.WhatsappWebhook = originalWebhookURLs
+		config.WhatsappWebhookEvents = originalWebhookEvents
+		submitWebhookFn = originalSubmit
+		log = originalLog
+	}()
+	log = waLog.Noop
+	config.WhatsappWebhook = []string{"https://example.test/webhook"}
+	config.WhatsappWebhookEvents = nil
+
+	repo := &messageHandlerRepoSpy{}
+	submitted := make(chan struct{}, 1)
+	submitWebhookFn = func(context.Context, map[string]any, string, *domainChatStorage.DeviceWebhookConfig) error {
+		submitted <- struct{}{}
+		return nil
+	}
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{
+				Chat:   types.NewJID("120363000000", types.GroupServer),
+				Sender: types.NewJID("628111111111", types.DefaultUserServer),
+			},
+			ID:        "SKDM-ONLY-1",
+			Timestamp: time.Date(2026, time.October, 13, 10, 0, 0, 0, time.UTC),
+		},
+		Message: &waE2E.Message{
+			SenderKeyDistributionMessage: &waE2E.SenderKeyDistributionMessage{GroupID: protoString("120363000000@g.us")},
+			MessageContextInfo:           &waE2E.MessageContextInfo{MessageSecret: []byte{1}},
+		},
+	}
+
+	handleMessage(context.Background(), evt, repo, nil)
+
+	if got := repo.createMessageCount(); got != 0 {
+		t.Fatalf("expected a protocol-only message not to be stored, got %d CreateMessage calls", got)
+	}
+	select {
+	case <-submitted:
+		t.Fatal("expected a protocol-only message not to reach the webhook")
+	case <-time.After(200 * time.Millisecond):
+	}
+}

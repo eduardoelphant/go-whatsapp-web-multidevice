@@ -40,6 +40,8 @@ func handler(ctx context.Context, instance *DeviceInstance, rawEvt any) {
 		handleDeleteForMe(ctx, evt, chatStorageRepo, instance.JID(), client)
 	case *events.AppStateSyncComplete:
 		handleAppStateSyncComplete(ctx, client, evt)
+	case *events.AppStateSyncError:
+		handleAppStateSyncError(ctx, evt)
 	case *events.PairSuccess:
 		instance.ClearPasskeyState()
 		handlePairSuccess(ctx, evt)
