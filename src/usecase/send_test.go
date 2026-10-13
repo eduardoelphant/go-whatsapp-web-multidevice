@@ -627,3 +627,24 @@ func TestWithAllowReshare(t *testing.T) {
 	assert.Equal(t, []string{"628123456789@s.whatsapp.net"}, got.GetMentionedJID())
 	assert.True(t, got.GetFeatureEligibilities().GetCanBeReshared())
 }
+
+func TestNormalizeSendErrorMapsGroupAdminsOnly(t *testing.T) {
+	err := normalizeSendError(whatsmeow.ErrNoPermissionInGroup)
+
+	genericErr, ok := err.(pkgError.GenericError)
+	if !ok {
+		t.Fatalf("expected generic error, got %T", err)
+	}
+	if got := genericErr.ErrCode(); got != "WA_GROUP_ADMINS_ONLY" {
+		t.Fatalf("expected WA_GROUP_ADMINS_ONLY code, got %q", got)
+	}
+	if got := genericErr.StatusCode(); got != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, got)
+	}
+}
+
+func TestSendRequestExtraChecksGroupPermissions(t *testing.T) {
+	if !sendRequestExtra().CheckPermissions {
+		t.Fatal("expected sends to ask whatsmeow to check group permissions before sending")
+	}
+}

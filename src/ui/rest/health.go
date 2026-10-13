@@ -80,6 +80,7 @@ func (h Health) Metrics(c fiber.Ctx) error {
 	metric("gowa_goroutine_panics_total", "counter", "Panics recovered in background goroutines.", safego.Panics())
 	metric("gowa_reconnect_attempts_total", "counter", "Reconnect attempts made by the watchdog.", attempts)
 	metric("gowa_reconnect_successes_total", "counter", "Reconnect attempts that connected.", successes)
+	metric("gowa_app_state_sync_errors_total", "counter", "Full app state syncs that failed.", whatsapp.AppStateSyncErrors())
 	b.WriteString("# HELP gowa_devices Devices by state.\n# TYPE gowa_devices gauge\n")
 	for _, name := range names {
 		fmt.Fprintf(&b, "gowa_devices{state=%q} %d\n", name, states[name])

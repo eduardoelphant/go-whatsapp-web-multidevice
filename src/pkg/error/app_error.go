@@ -92,4 +92,7 @@ var (
 	ErrSessionSaved          = sessionSavedError("your session have been saved, please wait to connect 2 second and refresh again")
 	ErrDeviceNotFound        = notFoundError("device not found")
 	ErrScheduledSendNotFound = notFoundError("scheduled send not found")
+	// Fork (elphant): avatar lookups that find no picture answer 404 instead of a 500.
+	ErrAvatarHidden = notFoundError("the user has hidden their profile picture from you")
+	ErrAvatarNotSet = notFoundError("that user or group does not have a profile picture")
 )

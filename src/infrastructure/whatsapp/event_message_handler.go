@@ -18,6 +18,13 @@ import (
 )
 
 func handleMessage(ctx context.Context, evt *events.Message, chatStorageRepo domainChatStorage.IChatStorageRepository, client *whatsmeow.Client) {
+	// Fork (elphant): a group sender-key handshake carries no content. whatsmeow has already
+	// applied the key; storing or forwarding it only produced empty messages and a warning each.
+	if isProtocolOnlyMessage(evt.Message) {
+		log.Debugf("Skipping protocol-only message %s from %s", evt.Info.ID, evt.Info.SourceString())
+		return
+	}
+
 	// Log message metadata
 	metaParts := buildMessageMetaParts(evt)
 	log.Infof("Received message %s from %s (%s): %+v",
@@ -207,4 +214,18 @@ func handleWebhookForward(ctx context.Context, evt *events.Message, client *what
 			logrus.Error("Failed forward to webhook: ", err)
 		}
 	}(evt, client, pollPayload)
+}
+
+// isProtocolOnlyMessage reports whether msg carries only a sender key distribution message,
+// optionally with its message context info, and nothing a person wrote.
+func isProtocolOnlyMessage(msg *waE2E.Message) bool {
+	if msg.GetSenderKeyDistributionMessage() == nil {
+		return false
+	}
+	for _, field := range populatedMessageFields(msg) {
+		if field != "senderKeyDistributionMessage" && field != "messageContextInfo" {
+			return false
+		}
+	}
+	return true
 }
