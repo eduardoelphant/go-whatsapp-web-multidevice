@@ -27,6 +27,10 @@ Two stages, in order:
 - **Never use the owner's personal number**, and never the device paired on the gateway host
   ("devias (gowa)"). A dedicated test number is required; ask the owner for it and for the OK
   before pairing. Two processes holding the same WhatsApp session fight (`StreamReplaced`).
+  **Update 2026-10-13:** the owner accepted the ban risk and authorized the number already used
+  on "devias (gowa)" for this spike, paired as a *new* linked device of its own (never a copy of
+  the gateway's session database). Incoming calls ring on every linked device, so the gateway,
+  the phone and the prototype all ring together.
 - **No production, no server.** Do not touch the gateway host, its Portainer stack or any CRM
   environment. Everything runs on the owner's Mac.
 - **No push, tag, image or PR** without the owner's explicit OK. Never open issues or PRs upstream
