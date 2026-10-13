@@ -4,11 +4,15 @@
 //	spike pair                       Pair a new linked device (QR saved to data/qr.png).
 //	spike answer [flags]             Auto-answer incoming calls.
 //	spike call [flags] <target>      Place a call to target (+5527...).
+//	spike serve [flags]              Answer incoming calls and take commands on
+//	                                 127.0.0.1:8099 (see spike ctl).
+//	spike ctl call <target> | hangup Send a command to a running spike serve.
 //
-// Flags for answer and call:
+// Flags:
 //
 //	-play <file>     .wav/.mp3/.opus streamed to the peer once media is ready.
 //	-max <duration>  Hang up this long after media is ready (0 = never).
+//	-db <path>       whatsmeow session database (default data/session.db).
 //
 // The peer's audio is always recorded to data/rec/<call-id>.wav.
 package main
@@ -18,10 +22,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -42,7 +50,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const dataDir = "data"
+const (
+	dataDir  = "data"
+	ctlAddr  = "127.0.0.1:8099"
+	ctlUsage = "usage: spike ctl call <target> | hangup"
+)
+
+var dbPath = filepath.Join(dataDir, "session.db")
 
 func main() {
 	level := zerolog.InfoLevel
@@ -66,7 +80,10 @@ func main() {
 	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
 	play := fs.String("play", "", "audio file streamed to the peer once media is ready")
 	maxDur := fs.Duration("max", 0, "hang up this long after media is ready (0 = never)")
-	_ = fs.Parse(os.Args[2:])
+	fs.StringVar(&dbPath, "db", dbPath, "whatsmeow session database")
+	if os.Args[1] != "ctl" {
+		_ = fs.Parse(os.Args[2:])
+	}
 
 	var err error
 	switch os.Args[1] {
@@ -79,6 +96,10 @@ func main() {
 			usage()
 		}
 		err = runCall(ctx, fs.Arg(0), *play, *maxDur)
+	case "serve":
+		err = runServe(ctx, *play, *maxDur)
+	case "ctl":
+		err = runCtl(os.Args[2:])
 	default:
 		usage()
 	}
@@ -88,7 +109,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: spike pair | answer [-play file] [-max 15m] | call [-play file] [-max 15m] <target>")
+	fmt.Fprintln(os.Stderr, "usage: spike pair | answer|serve [-play file] [-max 15m] | call [-play file] [-max 15m] <target> | ctl call <target> | ctl hangup")
 	os.Exit(2)
 }
 
@@ -98,7 +119,7 @@ func runPair(ctx context.Context) error {
 		return err
 	}
 	if wa.Store.ID != nil {
-		zerolog.Ctx(ctx).Info().Msg("already paired; delete data/session.db to pair again")
+		zerolog.Ctx(ctx).Info().Msg("already paired; delete the session database to pair again")
 		return nil
 	}
 	if err := connect(ctx, wa); err != nil {
@@ -163,6 +184,105 @@ func runCall(ctx context.Context, target, play string, maxDur time.Duration) err
 	case <-t.done:
 		return nil
 	}
+}
+
+// runServe answers every incoming call and places outbound calls on request
+// from spike ctl, all on one whatsmeow session.
+func runServe(ctx context.Context, play string, maxDur time.Duration) error {
+	log := zerolog.Ctx(ctx)
+	wa, client, err := connectManaged(ctx)
+	if err != nil {
+		return err
+	}
+	defer wa.Disconnect()
+	stopStats := startStats(ctx)
+	defer stopStats()
+
+	var mu sync.Mutex
+	active := map[string]*meowcaller.Call{}
+	track := func(call *meowcaller.Call, t *timeline) {
+		mu.Lock()
+		active[call.ID()] = call
+		mu.Unlock()
+		go func() {
+			<-t.done
+			mu.Lock()
+			delete(active, call.ID())
+			mu.Unlock()
+		}()
+	}
+
+	client.OnIncomingCall(func(call *meowcaller.Call) {
+		t := newTimeline(ctx, call, "inbound")
+		t.mark("offer")
+		if err := call.Answer(); err != nil {
+			log.Error().Err(err).Str("call_id", call.ID()).Msg("answer failed")
+			return
+		}
+		t.mark("answered")
+		track(call, t)
+		wireCall(ctx, call, t, play, maxDur)
+	})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/call", func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		call, err := client.Call(ctx, r.URL.Query().Get("to"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		t := newTimeline(ctx, call, "outbound")
+		t.start = start
+		t.mark("offer_sent")
+		call.OnPeerAccept(func() { t.mark("peer_accepted") })
+		track(call, t)
+		wireCall(ctx, call, t, play, maxDur)
+		fmt.Fprintln(w, "placed", call.ID())
+	})
+	mux.HandleFunc("/hangup", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		for id, call := range active {
+			err := call.Hangup()
+			fmt.Fprintln(w, "hangup", id, err)
+		}
+	})
+	srv := &http.Server{Addr: ctlAddr, Handler: mux}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error().Err(err).Msg("control server failed")
+		}
+	}()
+	defer srv.Close()
+
+	log.Info().Str("ctl", ctlAddr).Msg("serving: answering incoming calls; Ctrl+C to stop")
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// runCtl sends one command to a running spike serve.
+func runCtl(args []string) error {
+	var u string
+	switch {
+	case len(args) == 2 && args[0] == "call":
+		u = "http://" + ctlAddr + "/call?to=" + url.QueryEscape(args[1])
+	case len(args) == 1 && args[0] == "hangup":
+		u = "http://" + ctlAddr + "/hangup"
+	default:
+		return errors.New(ctlUsage)
+	}
+	resp, err := http.Get(u)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Print(string(body))
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ctl: %s", resp.Status)
+	}
+	return nil
 }
 
 // wireCall records the peer, plays the optional file, logs the lifecycle and
@@ -302,6 +422,9 @@ func cpuTime() time.Duration {
 }
 
 func rssKB() int64 {
+	if runtime.GOOS == "linux" {
+		return procField("/proc/self/status", "VmRSS:")
+	}
 	out, err := exec.Command("ps", "-o", "rss=", "-p", fmt.Sprint(os.Getpid())).Output()
 	if err != nil {
 		return -1
@@ -313,6 +436,9 @@ func rssKB() int64 {
 
 // netBytes returns this process's total bytes in and out, as reported by nettop.
 func netBytes() (int64, int64) {
+	if runtime.GOOS == "linux" {
+		return linuxNetBytes()
+	}
 	out, err := exec.Command("nettop", "-P", "-L", "1", "-x", "-J", "bytes_in,bytes_out",
 		"-p", fmt.Sprint(os.Getpid())).Output()
 	if err != nil {
@@ -332,6 +458,48 @@ func netBytes() (int64, int64) {
 	return in, outB
 }
 
+// procField returns the first number after prefix in a /proc text file.
+func procField(path, prefix string) int64 {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return -1
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(line, prefix) {
+			var n int64
+			_, _ = fmt.Sscan(strings.TrimPrefix(line, prefix), &n)
+			return n
+		}
+	}
+	return -1
+}
+
+// linuxNetBytes sums bytes in and out of every non-loopback interface in this
+// network namespace (the whole container when run in its own network).
+func linuxNetBytes() (int64, int64) {
+	b, err := os.ReadFile("/proc/self/net/dev")
+	if err != nil {
+		return -1, -1
+	}
+	var in, out int64
+	for _, line := range strings.Split(string(b), "\n") {
+		name, rest, ok := strings.Cut(line, ":")
+		if !ok || strings.TrimSpace(name) == "lo" {
+			continue
+		}
+		f := strings.Fields(rest)
+		if len(f) < 9 {
+			continue
+		}
+		var i, o int64
+		_, _ = fmt.Sscan(f[0], &i)
+		_, _ = fmt.Sscan(f[8], &o)
+		in += i
+		out += o
+	}
+	return in, out
+}
+
 func round1(f float64) float64 { return float64(int64(f*10)) / 10 }
 
 func openClient(ctx context.Context) (*whatsmeow.Client, error) {
@@ -339,10 +507,17 @@ func openClient(ctx context.Context) (*whatsmeow.Client, error) {
 	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_CHROME.Enum()
 
 	waLogger := zerolog.Ctx(ctx).Level(zerolog.InfoLevel)
-	dsn := "file:" + filepath.Join(dataDir, "session.db") + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
+	dsn := "file:" + dbPath + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
 	container, err := sqlstore.New(ctx, "sqlite", dsn, waLog.Zerolog(waLogger).Sub("db"))
 	if err != nil {
 		return nil, fmt.Errorf("open store: %w", err)
+	}
+	devices, err := container.GetAllDevices(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list devices: %w", err)
+	}
+	if len(devices) > 1 {
+		return nil, fmt.Errorf("session database holds %d devices; refusing to guess", len(devices))
 	}
 	device, err := container.GetFirstDevice(ctx)
 	if err != nil {
@@ -402,7 +577,7 @@ func connect(ctx context.Context, wa *whatsmeow.Client) error {
 			}
 			log.Info().Int("valid_s", int(evt.Timeout.Seconds())).Str("file", qrPath).
 				Msg("scan in WhatsApp > Linked devices")
-			if !opened {
+			if !opened && runtime.GOOS == "darwin" {
 				_ = exec.Command("open", qrPath).Run()
 				opened = true
 			}
