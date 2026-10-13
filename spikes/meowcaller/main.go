@@ -56,7 +56,10 @@ const (
 	ctlUsage = "usage: spike ctl call <target> | hangup"
 )
 
-var dbPath = filepath.Join(dataDir, "session.db")
+var (
+	dbPath    = filepath.Join(dataDir, "session.db")
+	deviceNum = -1
+)
 
 func main() {
 	level := zerolog.InfoLevel
@@ -81,6 +84,7 @@ func main() {
 	play := fs.String("play", "", "audio file streamed to the peer once media is ready")
 	maxDur := fs.Duration("max", 0, "hang up this long after media is ready (0 = never)")
 	fs.StringVar(&dbPath, "db", dbPath, "whatsmeow session database")
+	fs.IntVar(&deviceNum, "device", deviceNum, "device number to use when the database holds several (the N in user:N@s.whatsapp.net)")
 	if os.Args[1] != "ctl" {
 		_ = fs.Parse(os.Args[2:])
 	}
@@ -516,12 +520,23 @@ func openClient(ctx context.Context) (*whatsmeow.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list devices: %w", err)
 	}
-	if len(devices) > 1 {
-		return nil, fmt.Errorf("session database holds %d devices; refusing to guess", len(devices))
-	}
-	device, err := container.GetFirstDevice(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("load device: %w", err)
+	var device *store.Device
+	switch {
+	case deviceNum >= 0:
+		for _, d := range devices {
+			if d.ID != nil && int(d.ID.Device) == deviceNum {
+				device = d
+			}
+		}
+		if device == nil {
+			return nil, fmt.Errorf("no device %d in the session database", deviceNum)
+		}
+	case len(devices) > 1:
+		return nil, fmt.Errorf("session database holds %d devices; pick one with -device", len(devices))
+	default:
+		if device, err = container.GetFirstDevice(ctx); err != nil {
+			return nil, fmt.Errorf("load device: %w", err)
+		}
 	}
 	return whatsmeow.NewClient(device, waLog.Zerolog(waLogger).Sub("wa")), nil
 }
