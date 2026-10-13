@@ -44,3 +44,6 @@ docs/superpowers/
 # whatsmeow store (legacy path)
 src/whatsapp/
 .mcp.json
+
+# Fork (elphant): meowcaller spike session data
+spikes/meowcaller/data/
