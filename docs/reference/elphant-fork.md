@@ -422,6 +422,29 @@ that exact path opens that one file without credentials; anything else still nee
 `path` fields of webhook payloads stay relative and unsigned. Changing the secret invalidates
 every link already handed out.
 
+## Voice calls (stage 2a, off by default)
+
+GOWA can answer and place WhatsApp voice calls through the fork
+[eduardoelphant/meowcaller](https://github.com/eduardoelphant/meowcaller). Design:
+[2026-10-14-gateway-voice-calls-design.md](../specs/2026-10-14-gateway-voice-calls-design.md).
+
+- `WHATSAPP_CALLS_ENABLED` (default `false`). Off means no change: `call.offer`,
+  `POST /call/reject` and `WHATSAPP_AUTO_REJECT_CALL` behave as before.
+- `WHATSAPP_CALLS_DEVICES`: comma-separated phone numbers or JIDs. Empty means all devices.
+  The list is read at start: a device paired after start needs a restart to get calls.
+- `WHATSAPP_CALLS_CODEC`: `opus` (default) or `mlow`.
+- `WHATSAPP_CALLS_MAX_PER_DEVICE` (default `1`): simultaneous calls per device.
+- `WHATSAPP_CALLS_TEST_AUDIO`: path to a `.wav`, `.mp3` or `.opus` played to the peer. Empty
+  means silence.
+- Routes: `POST /call/answer` `{call_id}`, `POST /call/start` `{phone}`,
+  `POST /call/hangup` `{call_id}`, `GET /calls/active`.
+- The peer's audio is recorded to `storages/calls/<call_id>.wav`.
+- Build: meowcaller's `opus/` package uses cgo, so every build needs libopus headers and
+  `pkg-config` (`libopus-dev pkg-config` on Debian/Ubuntu, `opus-dev pkgconf` on Alpine). The
+  Dockerfile and `elphant-ci.yml` / `elphant-image.yml` install them. The upstream release
+  workflow (goreleaser cross-builds with CGO) is disabled in this fork; if it is ever
+  re-enabled it needs libopus too.
+
 ## Specs and plans
 
 Knowledge pages that the fork owns live in `docs/reference/` (this page and `import-baileys.md`); files

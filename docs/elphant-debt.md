@@ -135,6 +135,19 @@ history of the work.
   2. Measure CPU per call on the gateway host's hardware.
   3. Check the recordings by ear: they cover 50% to 85% of the call time.
   4. Send and receive text messages during a call.
+- **Stage 2a (integration in GOWA).** Code done on branch `spike/meowcaller-calls`; runtime
+  checks pending (Task 7). Open items:
+  - (a) The meowcaller fork should gain an offer-filter option, so calls attach to every client
+    and are gated at offer/lookup time. This removes the restart a newly paired device needs.
+  - (b) Deferred minors:
+    - Config: `WHATSAPP_CALLS_CODEC` / `MAX_PER_DEVICE` are not validated at config time (fallback and clamp cover it).
+    - An expired offer is dropped without Reject; a failed Answer is not followed by Reject.
+    - Comment on ringing calls is not counted in the cap.
+    - Start returns State "active" even if the call ended during setup.
+    - Concurrent EnsureClient on one slot can leave the losing client's manager in the map (pre-existing race).
+    - The WARN repeats on every reconnect; closeAll Hangup path and Record-on-ended are untested.
+    - A bare-digit slot alias is not masked in logs (JID context only).
+    - Missing tests: ErrCallsOff at usecase level, hangup success and empty-field REST cases, zero StartedAt rendering.
 - **Cleanup.** The prototype's linked device on the test number (paired 2026-10-13) and
   `/root/meowcaller-spike/` on the gateway host (binary, scripts, session backup and logs) stay
   until the owner says the spike is over.
