@@ -510,7 +510,10 @@ func openClient(ctx context.Context) (*whatsmeow.Client, error) {
 	store.DeviceProps.Os = proto.String("meowcaller spike")
 	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_CHROME.Enum()
 
-	waLogger := zerolog.Ctx(ctx).Level(zerolog.InfoLevel)
+	waLogger := *zerolog.Ctx(ctx)
+	if os.Getenv("SPIKE_WA_DEBUG") == "" {
+		waLogger = waLogger.Level(zerolog.InfoLevel)
+	}
 	dsn := "file:" + dbPath + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
 	container, err := sqlstore.New(ctx, "sqlite", dsn, waLog.Zerolog(waLogger).Sub("db"))
 	if err != nil {
@@ -562,6 +565,14 @@ func connectManaged(ctx context.Context) (*whatsmeow.Client, *meowcaller.Client,
 			zerolog.Ctx(ctx).Error().Str("ban", e.String()).Msg("TEMPORARY BAN: stop and tell the owner")
 		case *events.Disconnected:
 			zerolog.Ctx(ctx).Warn().Msg("disconnected")
+		case *events.CallOffer:
+			zerolog.Ctx(ctx).Info().Str("call_id", e.CallID).Str("from", maskJID(e.From)).Msg("whatsmeow CallOffer")
+		case *events.CallOfferNotice:
+			zerolog.Ctx(ctx).Info().Str("call_id", e.CallID).Str("media", e.Media).Str("type", e.Type).Msg("whatsmeow CallOfferNotice")
+		case *events.CallTerminate:
+			zerolog.Ctx(ctx).Info().Str("call_id", e.CallID).Str("reason", e.Reason).Msg("whatsmeow CallTerminate")
+		case *events.UnknownCallEvent:
+			zerolog.Ctx(ctx).Info().Str("tag", e.Node.Tag).Msg("whatsmeow UnknownCallEvent")
 		}
 	})
 	if err := connect(ctx, wa); err != nil {
