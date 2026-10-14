@@ -162,6 +162,15 @@ history of the work.
 
 ## Won't do
 
+- **Runtime on the gateway host (2026-10-14, `v9.6.0-elphant.3`, calls on the DDD 11 device only):**
+  - inbound from WhatsApp Web answered through `POST /call/answer`, test audio heard by the caller;
+  - text messages sent and received during a call;
+  - `POST /call/hangup` and `GET /calls/active` behave;
+  - a 64 s call gave a 54 s recording with speech throughout;
+  - CPU: about 10% to 25% of one core during a call against under 1% idle (container on 4 vCPU).
+  - **Open:** in one of two inbound calls the relay never bridged the caller's audio (no "relay is bridging" log, empty recording) while our audio reached the caller. A host and container UDP capture on the next call showed every relay packet reaching the container, so it is not Docker NAT. Likely meowcaller issues #36/#40; investigate in the fork before the CRM beta.
+  - **Open:** the end reason is empty when the peer hangs up; map it to `hangup_peer` for the 2b webhook.
+
 ### D-6 Debian 11 on the gateway host
 
 Decision of the owner (30/09/2026): the host is **not** upgraded in place. A Debian upgrade only
