@@ -46,3 +46,66 @@ func (service serviceCall) RejectCall(ctx context.Context, callerJID string, cal
 	logrus.Info("Rejected call successfully")
 	return nil
 }
+
+// Fork (elphant): voice calls.
+
+func toCallInfo(c whatsapp.CallInfo) domainCall.CallInfo {
+	return domainCall.CallInfo{
+		CallID: c.CallID, Direction: c.Direction, Peer: c.Peer, State: c.State,
+		StartedAt: c.StartedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func (service serviceCall) AnswerCall(ctx context.Context, callID string) error {
+	if callID == "" {
+		return pkgError.ValidationError("call_id is required")
+	}
+	m, err := whatsapp.CallsFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return m.Answer(callID)
+}
+
+func (service serviceCall) StartCall(ctx context.Context, phone string) (domainCall.CallInfo, error) {
+	if phone == "" {
+		return domainCall.CallInfo{}, pkgError.ValidationError("phone is required")
+	}
+	m, err := whatsapp.CallsFromContext(ctx)
+	if err != nil {
+		return domainCall.CallInfo{}, err
+	}
+	// meowcaller uses this ctx only for signaling (peer resolution, device discovery,
+	// offer send in engine.go placeCall); the Call does not keep it, so a timeout is safe.
+	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	info, err := m.Start(startCtx, phone)
+	if err != nil {
+		return domainCall.CallInfo{}, err
+	}
+	return toCallInfo(info), nil
+}
+
+func (service serviceCall) HangupCall(ctx context.Context, callID string) error {
+	if callID == "" {
+		return pkgError.ValidationError("call_id is required")
+	}
+	m, err := whatsapp.CallsFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return m.Hangup(callID)
+}
+
+func (service serviceCall) ActiveCalls(ctx context.Context) ([]domainCall.CallInfo, error) {
+	m, err := whatsapp.CallsFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	calls := m.Active()
+	out := make([]domainCall.CallInfo, 0, len(calls))
+	for _, c := range calls {
+		out = append(out, toCallInfo(c))
+	}
+	return out, nil
+}
