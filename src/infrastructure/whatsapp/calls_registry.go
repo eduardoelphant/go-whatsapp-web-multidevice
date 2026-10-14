@@ -41,17 +41,17 @@ func offerFilter(slotID string, client *whatsmeow.Client) func(*events.CallOffer
 	return func(*events.CallOffer) bool { return callsAllowedNow(slotID, client) }
 }
 
-// effectiveCodec applies the configured codec and returns the one in effect. Builds
-// without cgo cannot do opus and stay on mlow.
-func effectiveCodec(want string) (string, error) {
-	err := meowcaller.SetCodec(want)
+// effectiveCodec applies the configured codec and returns the one in effect and whether
+// opus was wanted but unavailable. Builds without cgo cannot do opus and stay on mlow.
+func effectiveCodec(want string) (codec string, opusMissing bool, err error) {
+	err = meowcaller.SetCodec(want)
 	if errors.Is(err, meowcaller.ErrOpusUnavailable) {
-		return "mlow", nil
+		return "mlow", true, nil
 	}
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return want, nil
+	return want, false, nil
 }
 
 // attachCalls installs a call manager on client when calls are enabled. It must run
@@ -62,15 +62,12 @@ func attachCalls(slotID string, client *whatsmeow.Client) {
 		return
 	}
 	setCodecOnce.Do(func() {
-		codec, err := effectiveCodec(config.WhatsappCallsCodec)
+		codec, missing, err := effectiveCodec(config.WhatsappCallsCodec)
 		if err != nil {
 			logrus.Errorf("[CALLS] %v; using opus", err)
-			codec, err = effectiveCodec("opus")
-			if err != nil {
-				logrus.Errorf("[CALLS] %v", err)
-			}
+			codec, missing, _ = effectiveCodec("opus")
 		}
-		if codec == "mlow" && config.WhatsappCallsCodec == "opus" {
+		if missing {
 			logrus.Warn("[CALLS] opus unavailable in this build; using mlow")
 		}
 		effectiveCodecName = codec

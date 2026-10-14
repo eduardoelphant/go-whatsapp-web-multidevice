@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	meowcaller "github.com/purpshell/meowcaller"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mau.fi/whatsmeow"
@@ -147,4 +148,23 @@ func TestMaskDigits(t *testing.T) {
 	got := MaskDigits("usync 5511987654321@s.whatsapp.net, id 1234567, lid 123456789012345:7@lid")
 	assert.Equal(t, "usync …4321@s.whatsapp.net, id 1234567, lid …2345:7@lid", got)
 	assert.NotRegexp(t, `[0-9]{8,}`, MaskDigits("bare 5511987654321 here"))
+}
+
+func TestEffectiveCodec(t *testing.T) {
+	t.Cleanup(func() { _ = meowcaller.SetCodec("mlow") })
+	codec, missing, err := effectiveCodec("mlow")
+	require.NoError(t, err)
+	assert.Equal(t, "mlow", codec)
+	assert.False(t, missing)
+
+	_, _, err = effectiveCodec("bogus")
+	assert.Error(t, err)
+
+	codec, missing, err = effectiveCodec("opus")
+	require.NoError(t, err)
+	if missing {
+		assert.Equal(t, "mlow", codec) // !cgo build
+	} else {
+		assert.Equal(t, "opus", codec)
+	}
 }
