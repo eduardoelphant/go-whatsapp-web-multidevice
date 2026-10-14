@@ -391,7 +391,23 @@ check that saw the device connected, so it is `null` for the first interval afte
 
 **`GET /metrics`** (same auth, Prometheus text format, no extra dependency; device ids never
 appear): `gowa_goroutine_panics_total`, `gowa_reconnect_attempts_total`,
-`gowa_reconnect_successes_total` and `gowa_devices{state="..."}`.
+`gowa_reconnect_successes_total`, `gowa_app_state_sync_errors_total` (full syncs of contacts, chat
+settings and labels that failed; the data stays stale until a later sync) and
+`gowa_devices{state="..."}`.
+
+## Errors and log noise
+
+- **Group sender-key handshakes are dropped.** A message that carries only a
+  `senderKeyDistributionMessage` (with or without `messageContextInfo`) has nothing a person wrote.
+  whatsmeow applies the key; the message itself is no longer stored, forwarded to webhooks or
+  logged as an unrecognized type.
+- **Admins-only groups.** A send to a group where only admins can post, from an account that is not
+  an admin, is refused before it reaches WhatsApp with `403 WA_GROUP_ADMINS_ONLY`. Reactions and
+  poll votes are still allowed.
+- **Avatars.** `GET /user/avatar` answers `404 NOT_FOUND` when the contact hides the picture or has
+  none, instead of a `500`.
+- **Client errors are not logged as errors.** A request that fails with a 4xx is logged at info
+  level ("Request failed with ..."); a 5xx or an unexpected panic is still logged at error level.
 
 ## Authenticated `/statics`
 

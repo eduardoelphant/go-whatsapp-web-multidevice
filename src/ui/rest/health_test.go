@@ -97,6 +97,8 @@ func TestMetricsTextFormat(t *testing.T) {
 		"# TYPE gowa_reconnect_attempts_total counter",
 		"gowa_reconnect_attempts_total 7\n",
 		"gowa_reconnect_successes_total 5\n",
+		"# TYPE gowa_app_state_sync_errors_total counter",
+		"gowa_app_state_sync_errors_total ",
 		"# TYPE gowa_devices gauge",
 		`gowa_devices{state="logged_in"} 2` + "\n",
 		`gowa_devices{state="disconnected"} 1` + "\n",

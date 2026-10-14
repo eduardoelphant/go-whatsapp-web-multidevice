@@ -210,7 +210,7 @@ func (service serviceSend) wrapSendMessage(ctx context.Context, client *whatsmeo
 		return whatsmeow.SendResponse{}, err
 	}
 
-	ts, err := client.SendMessage(ctx, recipient, msg)
+	ts, err := client.SendMessage(ctx, recipient, msg, sendRequestExtra())
 	if err != nil {
 		noteReachoutFailure(ctx, err)
 		return whatsmeow.SendResponse{}, normalizeSendError(err)
@@ -327,7 +327,17 @@ func normalizeSendError(err error) error {
 	if whatsapp.IsReachoutTimelockError(err) {
 		return pkgError.ErrWaReachoutTimelock
 	}
+	if errors.Is(err, whatsmeow.ErrNoPermissionInGroup) {
+		return pkgError.ErrWaGroupAdminsOnly
+	}
 	return err
+}
+
+// sendRequestExtra (fork: elphant) asks whatsmeow to refuse a send to an admins-only group when
+// this account is not an admin, so the caller gets a clear error instead of a message WhatsApp
+// silently drops. It has no effect on sends to users.
+func sendRequestExtra() whatsmeow.SendRequestExtra {
+	return whatsmeow.SendRequestExtra{CheckPermissions: true}
 }
 
 func (service serviceSend) SendText(ctx context.Context, request domainSend.MessageRequest) (response domainSend.GenericResponse, err error) {

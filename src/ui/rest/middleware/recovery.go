@@ -20,9 +20,6 @@ func Recovery() fiber.Handler {
 				res.Code = "INTERNAL_SERVER_ERROR"
 				res.Message = fmt.Sprintf("%v", err)
 
-				// Log the panic using logrus
-				logrus.Errorf("Panic recovered in middleware: %v", err)
-
 				// Check for context deadline exceeded (timeout)
 				if ctxErr, ok := err.(error); ok && ctxErr == context.DeadlineExceeded {
 					res.Status = 504
@@ -35,6 +32,14 @@ func Recovery() fiber.Handler {
 					res.Status = errValidation.StatusCode()
 					res.Code = errValidation.ErrCode()
 					res.Message = errValidation.Error()
+				}
+
+				// Fork (elphant): a 4xx is the caller's or the contact's state, not a fault here;
+				// logging it at error level buried the real failures.
+				if res.Status < 500 {
+					logrus.Infof("Request failed with %d %s: %v", res.Status, res.Code, err)
+				} else {
+					logrus.Errorf("Panic recovered in middleware: %v", err)
 				}
 
 				_ = ctx.Status(res.Status).JSON(res)
