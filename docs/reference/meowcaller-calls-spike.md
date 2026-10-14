@@ -63,8 +63,10 @@ The reported "drops after about 20 seconds" did not happen in any call.
   Android phone carried audio both ways (the recording of the peer decodes as speech, 92% of
   the call time) at **about 4.2% of one core** (2.8% to 5.2%). One Opus frame encodes in
   0.31 ms on the Mac against 2.7 to 6 ms for MLow. The server's own `voip_settings` still said
-  `use_mlow_codec_v1=true`; the capability bit decides. Not yet tested: inbound in Opus mode,
-  iOS, WhatsApp Web and Desktop peers.
+  `use_mlow_codec_v1=true`; the capability bit decides.
+- **Inbound in Opus mode from WhatsApp Web** also works: answered in 150 ms, media ready in
+  1.15 s, the full 180 s, peer audio decoded as speech (97% of the call time), about 4.3% of one
+  core (3% to 5.3%). Not yet tested in Opus mode: iOS and WhatsApp Desktop peers.
 
 ## Not done yet
 
