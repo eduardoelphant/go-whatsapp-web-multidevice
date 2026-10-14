@@ -1,6 +1,6 @@
 # Voice calls, stage 2b: the Cloud Calling contract on GOWA, with server-side recording
 
-> **Status:** draft for the owner's review (2026-10-14). It builds on stage 2a (shipped in
+> **Status:** approved by the owner (2026-10-14). It builds on stage 2a (shipped in
 > `v9.6.0-elphant.3`, see `docs/specs/2026-10-14-gateway-voice-calls-design.md`). It replaces
 > that spec's REST shapes (D5, D6) and merges its stage 2c (recording and webhooks) into this
 > stage.
