@@ -123,3 +123,11 @@ func (mw maskingWriter) Write(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+var digitRun = regexp.MustCompile(`[0-9]{8,}`)
+
+// MaskDigits replaces every run of 8 or more digits with an ellipsis plus its last 4,
+// so error text from the call engine can be returned to API clients without phone numbers.
+func MaskDigits(s string) string {
+	return digitRun.ReplaceAllStringFunc(s, func(r string) string { return "…" + r[len(r)-4:] })
+}

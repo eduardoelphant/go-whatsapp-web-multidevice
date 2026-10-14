@@ -87,3 +87,12 @@ func CallsFromContext(ctx context.Context) (*CallManager, error) {
 	}
 	return nil, ErrCallsOff
 }
+
+// hasCallManager reports whether client has a call manager (calls enabled for it).
+func hasCallManager(client *whatsmeow.Client) bool {
+	if client == nil {
+		return false
+	}
+	_, ok := callsByClient.Load(client)
+	return ok
+}

@@ -220,6 +220,7 @@ func initEnvConfig() {
 	if viper.IsSet("whatsapp_auto_reject_call") {
 		config.WhatsappAutoRejectCall = viper.GetBool("whatsapp_auto_reject_call")
 	}
+	// Fork (elphant): voice calls
 	if viper.IsSet("whatsapp_calls_enabled") {
 		config.WhatsappCallsEnabled = viper.GetBool("whatsapp_calls_enabled")
 	}
@@ -525,6 +526,7 @@ func initFlags() {
 		config.WhatsappAutoRejectCall,
 		`auto reject incoming calls --auto-reject-call <true/false> | example: --auto-reject-call=true`,
 	)
+	// Fork (elphant): voice calls
 	rootCmd.PersistentFlags().BoolVarP(&config.WhatsappCallsEnabled, "calls-enabled", "", config.WhatsappCallsEnabled,
 		`answer and place voice calls on allowed devices --calls-enabled <true/false> | example: --calls-enabled=true`)
 	rootCmd.PersistentFlags().StringSliceVarP(&config.WhatsappCallsDevices, "calls-devices", "", config.WhatsappCallsDevices,

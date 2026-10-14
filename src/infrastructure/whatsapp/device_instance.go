@@ -118,6 +118,9 @@ func (d *DeviceInstance) CreatedAt() time.Time {
 func (d *DeviceInstance) SetClient(client *whatsmeow.Client) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.client != nil && d.client != client { // Fork (elphant): drop the replaced client's call manager.
+		forgetCalls(d.client)
+	}
 	d.client = client
 	d.refreshIdentityLocked()
 	d.state = domainDevice.DeviceStateDisconnected

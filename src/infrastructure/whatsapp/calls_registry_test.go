@@ -108,3 +108,27 @@ func TestCloseAll(t *testing.T) {
 	defer ringing.mu.Unlock()
 	assert.True(t, ringing.rejected)
 }
+
+func TestHasCallManager(t *testing.T) {
+	client := &whatsmeow.Client{}
+	assert.False(t, hasCallManager(client))
+	assert.False(t, hasCallManager(nil))
+	callsByClient.Store(client, newCallManager(&fakeEngine{}, callManagerOptions{}))
+	t.Cleanup(func() { callsByClient.Delete(client) })
+	assert.True(t, hasCallManager(client))
+}
+
+func TestSetClientForgetsReplacedClient(t *testing.T) {
+	a, b := &whatsmeow.Client{}, &whatsmeow.Client{}
+	callsByClient.Store(a, newCallManager(&fakeEngine{}, callManagerOptions{}))
+	t.Cleanup(func() { callsByClient.Delete(a) })
+	inst := NewDeviceInstance("slot-a", a, nil)
+	inst.SetClient(b)
+	assert.False(t, hasCallManager(a))
+}
+
+func TestMaskDigits(t *testing.T) {
+	got := MaskDigits("usync 5511987654321@s.whatsapp.net, id 1234567, lid 123456789012345:7@lid")
+	assert.Equal(t, "usync …4321@s.whatsapp.net, id 1234567, lid …2345:7@lid", got)
+	assert.NotRegexp(t, `[0-9]{8,}`, MaskDigits("bare 5511987654321 here"))
+}

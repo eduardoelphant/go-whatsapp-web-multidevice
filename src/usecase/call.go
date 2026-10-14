@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -56,6 +57,19 @@ func toCallInfo(c whatsapp.CallInfo) domainCall.CallInfo {
 	}
 }
 
+// mapCallError turns engine errors, which can embed full phone numbers, into a masked
+// ValidationError. Errors that already carry an HTTP status pass through.
+func mapCallError(err error, prefix string) error {
+	if err == nil {
+		return nil
+	}
+	var ge pkgError.GenericError
+	if errors.As(err, &ge) {
+		return err
+	}
+	return pkgError.ValidationError(prefix + whatsapp.MaskDigits(err.Error()))
+}
+
 func (service serviceCall) AnswerCall(ctx context.Context, callID string) error {
 	if callID == "" {
 		return pkgError.ValidationError("call_id is required")
@@ -64,7 +78,7 @@ func (service serviceCall) AnswerCall(ctx context.Context, callID string) error 
 	if err != nil {
 		return err
 	}
-	return m.Answer(callID)
+	return mapCallError(m.Answer(callID), "call operation failed: ")
 }
 
 func (service serviceCall) StartCall(ctx context.Context, phone string) (domainCall.CallInfo, error) {
@@ -81,7 +95,7 @@ func (service serviceCall) StartCall(ctx context.Context, phone string) (domainC
 	defer cancel()
 	info, err := m.Start(startCtx, phone)
 	if err != nil {
-		return domainCall.CallInfo{}, err
+		return domainCall.CallInfo{}, mapCallError(err, "could not place the call: ")
 	}
 	return toCallInfo(info), nil
 }
@@ -94,7 +108,7 @@ func (service serviceCall) HangupCall(ctx context.Context, callID string) error 
 	if err != nil {
 		return err
 	}
-	return m.Hangup(callID)
+	return mapCallError(m.Hangup(callID), "call operation failed: ")
 }
 
 func (service serviceCall) ActiveCalls(ctx context.Context) ([]domainCall.CallInfo, error) {
