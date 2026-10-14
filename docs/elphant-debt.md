@@ -124,6 +124,21 @@ history of the work.
      retention clean them.
   4. The Materio connection screen (D-1) targets whatever line carries GOWA.
 
+### D-17 Calls spike (meowcaller): open items before stage 2
+
+- **What.** Stage 1 works (5 and 15 minute calls, both directions); results in
+  `docs/reference/meowcaller-calls-spike.md`. Open before deciding on stage 2:
+  1. In-call CPU is about 48% of a core per call, and 84% of it is the MLow encoder. In a paced
+     test the same encoder costs about 7%. Find what makes it 7x more expensive inside the call
+     (input frames, encoder state, call path); meowcaller PR #38 speeds the benchmark but not
+     the call.
+  2. Measure CPU per call on the gateway host's hardware.
+  3. Check the recordings by ear: they cover 50% to 85% of the call time.
+  4. Send and receive text messages during a call.
+- **Cleanup.** The prototype's linked device on the test number (paired 2026-10-13) and
+  `/root/meowcaller-spike/` on the gateway host (binary, scripts, session backup and logs) stay
+  until the owner says the spike is over.
+
 ## Won't do
 
 ### D-6 Debian 11 on the gateway host
