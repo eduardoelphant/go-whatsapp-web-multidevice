@@ -52,35 +52,29 @@ var (
 	WhatsappIgnoreStatusMedia         = false // Ignore downloading status media
 	WhatsappWebhook                   []string
 	WhatsappWebhookSecret             = "secret"
-	WhatsappWebhookInsecureSkipVerify = false  // Skip TLS certificate verification for webhooks (insecure)
-	WhatsappWebhookEvents             []string // Whitelist of events to forward to webhook (empty = all events)
-	WhatsappWebhookIgnoreJids         []string // JIDs (or "@g.us"/"@s.whatsapp.net"/"@lid" wildcards) to skip when forwarding to webhooks
-	WhatsappWebhookDeviceMergeGlobal  = false  // Per-device webhook adds to the global WHATSAPP_WEBHOOK targets instead of replacing them
-	WhatsappAutoRejectCall            = false  // Auto-reject incoming calls
-	// Fork (elphant): voice calls through meowcaller. See docs/specs/2026-10-14-gateway-voice-calls-design.md.
-	WhatsappCallsEnabled            = false           // answer and place calls on allowed devices
-	WhatsappCallsDevices            []string          // device ids, phone numbers or JIDs allowed; empty = all
-	WhatsappCallsCodec                       = "opus" // "opus" or "mlow"
-	WhatsappCallsMaxPerDevice                = 1      // simultaneous calls per device
-	WhatsappCallsTestAudio                   = ""     // file played to the peer (stage 2a); empty = silence
-	WhatsappLogLevel                         = "ERROR"
-	WhatsappSettingMaxImageSize     int64    = 20000000  // 20MB
-	WhatsappSettingMaxFileSize      int64    = 50000000  // 50MB
-	WhatsappSettingMaxVideoSize     int64    = 100000000 // 100MB
-	WhatsappSettingMaxDownloadSize  int64    = 500000000 // 500MB
-	WhatsappTypeUser                         = "@s.whatsapp.net"
-	WhatsappTypeGroup                        = "@g.us"
-	WhatsappTypeLid                          = "@lid"
-	WhatsappTypeNewsletter                   = "@newsletter"
-	WhatsappAccountValidation                = true
-	WhatsappUserCheckMinIntervalMs           = 500           // Fork (elphant): minimum wait between POST /user/check batches on one device
-	WhatsappReachoutGuard                    = false         // Fork (elphant): refuse sends to recipients without a tctoken while the account is timelocked
-	WhatsappReachoutSuspectMinutes           = 30            // Fork (elphant): how long a timelock with no known end (a 463, or an event without one) is assumed to last
-	WhatsappWatchdogIntervalSeconds          = 120           // Fork (elphant): seconds between reconnect watchdog checks of every paired device (0 or less disables it)
-	WhatsappPresenceOnConnect                = "unavailable" // Presence to send on connect: "available", "unavailable", or "none"
-	WhatsappPresencePulseEnabled             = true          // Periodically pulse presence available, then unavailable
-	WhatsappPresencePulseInterval            = 24 * time.Hour
-	WhatsappPresencePulseDuration            = 5 * time.Minute
+	WhatsappWebhookInsecureSkipVerify = false          // Skip TLS certificate verification for webhooks (insecure)
+	WhatsappWebhookEvents             []string         // Whitelist of events to forward to webhook (empty = all events)
+	WhatsappWebhookIgnoreJids         []string         // JIDs (or "@g.us"/"@s.whatsapp.net"/"@lid" wildcards) to skip when forwarding to webhooks
+	WhatsappWebhookDeviceMergeGlobal           = false // Per-device webhook adds to the global WHATSAPP_WEBHOOK targets instead of replacing them
+	WhatsappAutoRejectCall                     = false // Auto-reject incoming calls
+	WhatsappLogLevel                           = "ERROR"
+	WhatsappSettingMaxImageSize       int64    = 20000000  // 20MB
+	WhatsappSettingMaxFileSize        int64    = 50000000  // 50MB
+	WhatsappSettingMaxVideoSize       int64    = 100000000 // 100MB
+	WhatsappSettingMaxDownloadSize    int64    = 500000000 // 500MB
+	WhatsappTypeUser                           = "@s.whatsapp.net"
+	WhatsappTypeGroup                          = "@g.us"
+	WhatsappTypeLid                            = "@lid"
+	WhatsappTypeNewsletter                     = "@newsletter"
+	WhatsappAccountValidation                  = true
+	WhatsappUserCheckMinIntervalMs             = 500           // Fork (elphant): minimum wait between POST /user/check batches on one device
+	WhatsappReachoutGuard                      = false         // Fork (elphant): refuse sends to recipients without a tctoken while the account is timelocked
+	WhatsappReachoutSuspectMinutes             = 30            // Fork (elphant): how long a timelock with no known end (a 463, or an event without one) is assumed to last
+	WhatsappWatchdogIntervalSeconds            = 120           // Fork (elphant): seconds between reconnect watchdog checks of every paired device (0 or less disables it)
+	WhatsappPresenceOnConnect                  = "unavailable" // Presence to send on connect: "available", "unavailable", or "none"
+	WhatsappPresencePulseEnabled               = true          // Periodically pulse presence available, then unavailable
+	WhatsappPresencePulseInterval              = 24 * time.Hour
+	WhatsappPresencePulseDuration              = 5 * time.Minute
 
 	// WhatsappProxy is forwarded to whatsmeow's *Client.SetProxyAddress before
 	// Connect. Accepts SOCKS5/HTTP/HTTPS schemes, e.g.
