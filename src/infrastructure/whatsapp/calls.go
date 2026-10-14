@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"sync"
 	"time"
@@ -55,14 +56,16 @@ type CallInfo struct {
 type trackedCall struct {
 	handle callHandle
 	info   CallInfo
+	ended  bool // guarded by CallManager.mu
 }
 
 // CallManager tracks ringing and active calls of one device client.
 type CallManager struct {
-	engine callEngine
-	opts   callManagerOptions
-	mu     sync.Mutex
-	calls  map[string]*trackedCall
+	engine   callEngine
+	opts     callManagerOptions
+	mu       sync.Mutex
+	calls    map[string]*trackedCall
+	reserved int // outbound slots claimed before dialing
 }
 
 func newCallManager(engine callEngine, opts callManagerOptions) *CallManager {
@@ -83,30 +86,43 @@ func newCallManager(engine callEngine, opts callManagerOptions) *CallManager {
 func (m *CallManager) onIncoming(h callHandle) {
 	m.mu.Lock()
 	m.pruneLocked()
-	if m.activeCountLocked() >= m.opts.MaxCalls {
-		m.mu.Unlock()
+	full := m.activeCountLocked() >= m.opts.MaxCalls
+	m.mu.Unlock()
+	if full {
 		logrus.Infof("[CALLS] rejecting %s from %s: device at its call limit", h.ID(), h.PeerMasked())
 		_ = h.Reject()
 		return
 	}
-	m.track(h, "inbound", "ringing")
+	tc := m.newTracked(h, "inbound", "ringing")
+	m.mu.Lock()
+	m.insertLocked(tc)
 	m.mu.Unlock()
 }
 
-// track registers a call; caller holds m.mu.
-func (m *CallManager) track(h callHandle, direction, state string) *trackedCall {
+// newTracked builds a tracked call and wires OnEnd. It must be called without
+// m.mu held: a handle may invoke the callback synchronously.
+func (m *CallManager) newTracked(h callHandle, direction, state string) *trackedCall {
 	tc := &trackedCall{handle: h, info: CallInfo{
 		CallID: h.ID(), Direction: direction, Peer: h.PeerMasked(), State: state, StartedAt: m.opts.Now(),
 	}}
-	m.calls[h.ID()] = tc
-	id := h.ID()
+	id := tc.info.CallID
 	h.OnEnd(func(reason string) {
 		m.mu.Lock()
-		delete(m.calls, id)
+		tc.ended = true
+		if m.calls[id] == tc {
+			delete(m.calls, id)
+		}
 		m.mu.Unlock()
 		logrus.Infof("[CALLS] call %s ended: %s", id, reason)
 	})
 	return tc
+}
+
+// insertLocked registers a call unless it already ended; caller holds m.mu.
+func (m *CallManager) insertLocked(tc *trackedCall) {
+	if !tc.ended {
+		m.calls[tc.info.CallID] = tc
+	}
 }
 
 // pruneLocked drops offers that rang past the ring window.
@@ -120,7 +136,7 @@ func (m *CallManager) pruneLocked() {
 }
 
 func (m *CallManager) activeCountLocked() int {
-	n := 0
+	n := m.reserved
 	for _, tc := range m.calls {
 		if tc.info.State == "active" || tc.info.Direction == "outbound" {
 			n++
@@ -129,6 +145,8 @@ func (m *CallManager) activeCountLocked() int {
 	return n
 }
 
+var safeCallID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
 func (m *CallManager) attachMedia(h callHandle) {
 	if m.opts.TestAudio != "" {
 		if err := h.Play(m.opts.TestAudio); err != nil {
@@ -136,8 +154,13 @@ func (m *CallManager) attachMedia(h callHandle) {
 		}
 	}
 	if m.opts.RecordDir != "" {
-		if err := h.Record(filepath.Join(m.opts.RecordDir, h.ID()+".wav")); err != nil {
-			logrus.Warnf("[CALLS] record %s: %v", h.ID(), err)
+		id := h.ID()
+		if !safeCallID.MatchString(id) {
+			logrus.Warnf("[CALLS] not recording call from %s: unsafe call id", h.PeerMasked())
+			return
+		}
+		if err := h.Record(filepath.Join(m.opts.RecordDir, id+".wav")); err != nil {
+			logrus.Warnf("[CALLS] record %s: %v", id, err)
 		}
 	}
 }
@@ -160,7 +183,9 @@ func (m *CallManager) Answer(callID string) error {
 
 	if err := tc.handle.Answer(); err != nil {
 		m.mu.Lock()
-		delete(m.calls, callID)
+		if m.calls[callID] == tc {
+			delete(m.calls, callID)
+		}
 		m.mu.Unlock()
 		return err
 	}
@@ -176,17 +201,26 @@ func (m *CallManager) Start(ctx context.Context, target string) (CallInfo, error
 		m.mu.Unlock()
 		return CallInfo{}, ErrCallLimit
 	}
+	m.reserved++
 	m.mu.Unlock()
 
 	h, err := m.engine.Call(ctx, target)
 	if err != nil {
+		m.mu.Lock()
+		m.reserved--
+		m.mu.Unlock()
 		return CallInfo{}, err
 	}
+	tc := m.newTracked(h, "outbound", "active")
 	m.mu.Lock()
-	tc := m.track(h, "outbound", "active")
+	m.reserved--
+	m.insertLocked(tc)
+	ended := tc.ended
 	info := tc.info
 	m.mu.Unlock()
-	m.attachMedia(h)
+	if !ended {
+		m.attachMedia(h)
+	}
 	return info, nil
 }
 
@@ -194,14 +228,19 @@ func (m *CallManager) Start(ctx context.Context, target string) (CallInfo, error
 func (m *CallManager) Hangup(callID string) error {
 	m.mu.Lock()
 	tc, ok := m.calls[callID]
+	var state string
+	var h callHandle
+	if ok {
+		state, h = tc.info.State, tc.handle
+	}
 	m.mu.Unlock()
 	if !ok {
 		return ErrCallNotFound
 	}
-	if tc.info.State == "ringing" {
-		return tc.handle.Reject()
+	if state == "ringing" {
+		return h.Reject()
 	}
-	return tc.handle.Hangup()
+	return h.Hangup()
 }
 
 // Active lists ringing and active calls, oldest first.
