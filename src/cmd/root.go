@@ -220,6 +220,22 @@ func initEnvConfig() {
 	if viper.IsSet("whatsapp_auto_reject_call") {
 		config.WhatsappAutoRejectCall = viper.GetBool("whatsapp_auto_reject_call")
 	}
+	// Fork (elphant): voice calls
+	if viper.IsSet("whatsapp_calls_enabled") {
+		config.WhatsappCallsEnabled = viper.GetBool("whatsapp_calls_enabled")
+	}
+	if env := viper.GetString("whatsapp_calls_devices"); env != "" {
+		config.WhatsappCallsDevices = strings.Split(env, ",")
+	}
+	if env := viper.GetString("whatsapp_calls_codec"); env != "" {
+		config.WhatsappCallsCodec = env
+	}
+	if viper.IsSet("whatsapp_calls_max_per_device") {
+		config.WhatsappCallsMaxPerDevice = viper.GetInt("whatsapp_calls_max_per_device")
+	}
+	if env := viper.GetString("whatsapp_calls_test_audio"); env != "" {
+		config.WhatsappCallsTestAudio = env
+	}
 	if envPresenceOnConnect := viper.GetString("whatsapp_presence_on_connect"); envPresenceOnConnect != "" {
 		config.WhatsappPresenceOnConnect = envPresenceOnConnect
 	}
@@ -510,6 +526,17 @@ func initFlags() {
 		config.WhatsappAutoRejectCall,
 		`auto reject incoming calls --auto-reject-call <true/false> | example: --auto-reject-call=true`,
 	)
+	// Fork (elphant): voice calls
+	rootCmd.PersistentFlags().BoolVarP(&config.WhatsappCallsEnabled, "calls-enabled", "", config.WhatsappCallsEnabled,
+		`answer and place voice calls on allowed devices --calls-enabled <true/false> | example: --calls-enabled=true`)
+	rootCmd.PersistentFlags().StringSliceVarP(&config.WhatsappCallsDevices, "calls-devices", "", config.WhatsappCallsDevices,
+		`devices allowed to use calls (ids, phone numbers or JIDs); empty = all --calls-devices <list> | example: --calls-devices=5511900000000`)
+	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsCodec, "calls-codec", "", config.WhatsappCallsCodec,
+		`call audio codec --calls-codec <opus|mlow> | example: --calls-codec=opus`)
+	rootCmd.PersistentFlags().IntVarP(&config.WhatsappCallsMaxPerDevice, "calls-max-per-device", "", config.WhatsappCallsMaxPerDevice,
+		`simultaneous calls per device --calls-max-per-device <n> | example: --calls-max-per-device=1`)
+	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsTestAudio, "calls-test-audio", "", config.WhatsappCallsTestAudio,
+		`audio file played to the peer --calls-test-audio <path> | example: --calls-test-audio=storages/hello.wav`)
 	rootCmd.PersistentFlags().StringVarP(
 		&config.WhatsappPresenceOnConnect,
 		"presence-on-connect", "",
@@ -747,7 +774,7 @@ func initApp() {
 	}
 
 	//preparing folder if not exist
-	err := utils.CreateFolder(config.PathQrCode, config.PathSendItems, config.PathStorages, config.PathMedia, config.PathUICache)
+	err := utils.CreateFolder(config.PathQrCode, config.PathSendItems, config.PathStorages, config.PathMedia, config.PathUICache, config.PathCalls)
 	if err != nil {
 		logrus.Errorln(err)
 	}

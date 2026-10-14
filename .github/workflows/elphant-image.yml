@@ -45,6 +45,8 @@ jobs:
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
+      - name: Install libopus
+        run: sudo apt-get update && sudo apt-get install -y libopus-dev pkg-config
       - name: Vet and test
         working-directory: src
         run: |

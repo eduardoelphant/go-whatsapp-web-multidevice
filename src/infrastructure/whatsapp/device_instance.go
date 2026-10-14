@@ -118,6 +118,9 @@ func (d *DeviceInstance) CreatedAt() time.Time {
 func (d *DeviceInstance) SetClient(client *whatsmeow.Client) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.client != nil && d.client != client { // Fork (elphant): drop the replaced client's call manager.
+		forgetCalls(d.client)
+	}
 	d.client = client
 	d.refreshIdentityLocked()
 	d.state = domainDevice.DeviceStateDisconnected
@@ -129,6 +132,7 @@ func (d *DeviceInstance) SetClient(client *whatsmeow.Client) {
 // slot in place after a logout.
 func (d *DeviceInstance) ResetClient() {
 	d.mu.Lock()
+	forgetCalls(d.client) // Fork (elphant): the call manager belongs to the discarded client.
 	d.client = nil
 	d.jid = ""
 	d.adJID = ""

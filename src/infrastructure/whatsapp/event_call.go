@@ -19,7 +19,7 @@ func handleCallOffer(ctx context.Context, evt *events.CallOffer, chatStorageRepo
 
 	// Auto-reject call if configured
 	autoRejected := false
-	if config.WhatsappAutoRejectCall {
+	if config.WhatsappAutoRejectCall && !hasCallManager(client) { // Fork (elphant): call-enabled devices answer or reject via the API.
 		rejectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 

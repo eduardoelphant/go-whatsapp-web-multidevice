@@ -2,7 +2,7 @@
 # STEP 1 build executable binary
 ############################
 FROM golang:1.26-alpine3.23 AS builder
-RUN apk add --no-cache gcc musl-dev gcompat
+RUN apk add --no-cache gcc musl-dev gcompat opus-dev pkgconf
 WORKDIR /whatsapp
 
 # Cache dependencies — only re-downloads when go.mod/go.sum change
@@ -17,7 +17,7 @@ RUN go build -ldflags="-w -s" -o /app/whatsapp
 ## STEP 2 build a smaller image
 #############################
 FROM alpine:3.23
-RUN apk add --no-cache ffmpeg libwebp-tools poppler-utils tzdata su-exec
+RUN apk add --no-cache ffmpeg libwebp-tools poppler-utils tzdata su-exec opus
 
 # BusyBox adduser rejects uid == gid when that gid already exists as a group; use distinct ids.
 # Host bind mounts (if entrypoint cannot chown): chown -R 20001:20000 storages statics

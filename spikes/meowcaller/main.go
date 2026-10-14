@@ -1,0 +1,675 @@
+// Command spike is a throwaway prototype that checks whether WhatsApp voice calls
+// work on top of whatsmeow through meowcaller. See README.md.
+//
+//	spike pair                       Pair a new linked device (QR saved to data/qr.png).
+//	spike answer [flags]             Auto-answer incoming calls.
+//	spike call [flags] <target>      Place a call to target (+5527...).
+//	spike serve [flags]              Answer incoming calls and take commands on
+//	                                 127.0.0.1:8099 (see spike ctl).
+//	spike ctl call <target> | hangup Send a command to a running spike serve.
+//
+// Flags:
+//
+//	-play <file>     .wav/.mp3/.opus streamed to the peer once media is ready.
+//	-max <duration>  Hang up this long after media is ready (0 = never).
+//	-db <path>       whatsmeow session database (default data/session.db).
+//
+// The peer's audio is always recorded to data/rec/<call-id>.wav.
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/pprof"
+	"net/url"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	meowcaller "github.com/purpshell/meowcaller"
+	"github.com/rs/zerolog"
+	"github.com/skip2/go-qrcode"
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waCompanionReg"
+	"go.mau.fi/whatsmeow/store"
+	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
+	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
+
+	_ "modernc.org/sqlite"
+)
+
+const (
+	dataDir  = "data"
+	ctlAddr  = "127.0.0.1:8099"
+	ctlUsage = "usage: spike ctl call <target> | hangup"
+)
+
+var (
+	dbPath    = filepath.Join(dataDir, "session.db")
+	deviceNum = -1
+)
+
+func main() {
+	level := zerolog.InfoLevel
+	if lvl, err := zerolog.ParseLevel(os.Getenv("SPIKE_LOG_LEVEL")); err == nil && lvl != zerolog.NoLevel {
+		level = lvl
+	}
+	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "15:04:05.000"}).
+		Level(level).With().Timestamp().Logger()
+
+	if len(os.Args) < 2 {
+		usage()
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx = logger.WithContext(ctx)
+
+	if err := os.MkdirAll(filepath.Join(dataDir, "rec"), 0o700); err != nil {
+		logger.Fatal().Err(err).Msg("create data dir")
+	}
+
+	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
+	play := fs.String("play", "", "audio file streamed to the peer once media is ready")
+	maxDur := fs.Duration("max", 0, "hang up this long after media is ready (0 = never)")
+	fs.StringVar(&dbPath, "db", dbPath, "whatsmeow session database")
+	fs.IntVar(&deviceNum, "device", deviceNum, "device number to use when the database holds several (the N in user:N@s.whatsapp.net)")
+	if os.Args[1] != "ctl" {
+		_ = fs.Parse(os.Args[2:])
+	}
+
+	var err error
+	switch os.Args[1] {
+	case "pair":
+		err = runPair(ctx)
+	case "answer":
+		err = runAnswer(ctx, *play, *maxDur)
+	case "call":
+		if fs.NArg() != 1 {
+			usage()
+		}
+		err = runCall(ctx, fs.Arg(0), *play, *maxDur)
+	case "serve":
+		err = runServe(ctx, *play, *maxDur)
+	case "ctl":
+		err = runCtl(os.Args[2:])
+	case "logout":
+		err = runLogout(ctx)
+	default:
+		usage()
+	}
+	if err != nil && !errors.Is(err, context.Canceled) {
+		logger.Fatal().Err(err).Str("command", os.Args[1]).Msg("command failed")
+	}
+}
+
+func usage() {
+	fmt.Fprintln(os.Stderr, "usage: spike pair | answer|serve [-play file] [-max 15m] | call [-play file] [-max 15m] <target> | ctl call <target> | ctl hangup")
+	os.Exit(2)
+}
+
+func runPair(ctx context.Context) error {
+	wa, err := openClient(ctx)
+	if err != nil {
+		return err
+	}
+	if wa.Store.ID != nil {
+		zerolog.Ctx(ctx).Info().Msg("already paired; delete the session database to pair again")
+		return nil
+	}
+	if err := connect(ctx, wa); err != nil {
+		return err
+	}
+	wa.Disconnect()
+	return nil
+}
+
+// runLogout unlinks this device from the account and clears its session.
+func runLogout(ctx context.Context) error {
+	wa, err := openClient(ctx)
+	if err != nil {
+		return err
+	}
+	if wa.Store.ID == nil {
+		return errors.New("not paired")
+	}
+	if err := wa.Connect(); err != nil {
+		return err
+	}
+	if err := waitUntilReady(ctx, wa, 30*time.Second); err != nil {
+		return err
+	}
+	return wa.Logout(ctx)
+}
+
+func runAnswer(ctx context.Context, play string, maxDur time.Duration) error {
+	log := zerolog.Ctx(ctx)
+	wa, client, err := connectManaged(ctx)
+	if err != nil {
+		return err
+	}
+	defer wa.Disconnect()
+	stopStats := startStats(ctx)
+	defer stopStats()
+
+	client.OnIncomingCall(func(call *meowcaller.Call) {
+		t := newTimeline(ctx, call, "inbound")
+		t.mark("offer")
+		if err := call.Answer(); err != nil {
+			log.Error().Err(err).Str("call_id", call.ID()).Msg("answer failed")
+			return
+		}
+		t.mark("answered")
+		wireCall(ctx, call, t, play, maxDur)
+	})
+
+	log.Info().Msg("waiting for incoming calls; Ctrl+C to stop")
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func runCall(ctx context.Context, target, play string, maxDur time.Duration) error {
+	log := zerolog.Ctx(ctx)
+	wa, client, err := connectManaged(ctx)
+	if err != nil {
+		return err
+	}
+	defer wa.Disconnect()
+	stopStats := startStats(ctx)
+	defer stopStats()
+
+	start := time.Now()
+	call, err := client.Call(ctx, target)
+	if err != nil {
+		return fmt.Errorf("place call: %w", err)
+	}
+	t := newTimeline(ctx, call, "outbound")
+	t.start = start
+	t.mark("offer_sent")
+	call.OnPeerAccept(func() { t.mark("peer_accepted") })
+	wireCall(ctx, call, t, play, maxDur)
+
+	log.Info().Str("call_id", call.ID()).Msg("call placed; Ctrl+C to stop")
+	select {
+	case <-ctx.Done():
+		_ = call.Hangup()
+		return ctx.Err()
+	case <-t.done:
+		return nil
+	}
+}
+
+// runServe answers every incoming call and places outbound calls on request
+// from spike ctl, all on one whatsmeow session.
+func runServe(ctx context.Context, play string, maxDur time.Duration) error {
+	log := zerolog.Ctx(ctx)
+	wa, client, err := connectManaged(ctx)
+	if err != nil {
+		return err
+	}
+	defer wa.Disconnect()
+	stopStats := startStats(ctx)
+	defer stopStats()
+
+	var mu sync.Mutex
+	active := map[string]*meowcaller.Call{}
+	track := func(call *meowcaller.Call, t *timeline) {
+		mu.Lock()
+		active[call.ID()] = call
+		mu.Unlock()
+		go func() {
+			<-t.done
+			mu.Lock()
+			delete(active, call.ID())
+			mu.Unlock()
+		}()
+	}
+
+	client.OnIncomingCall(func(call *meowcaller.Call) {
+		t := newTimeline(ctx, call, "inbound")
+		t.mark("offer")
+		if err := call.Answer(); err != nil {
+			log.Error().Err(err).Str("call_id", call.ID()).Msg("answer failed")
+			return
+		}
+		t.mark("answered")
+		track(call, t)
+		wireCall(ctx, call, t, play, maxDur)
+	})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/call", func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		call, err := client.Call(ctx, r.URL.Query().Get("to"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		t := newTimeline(ctx, call, "outbound")
+		t.start = start
+		t.mark("offer_sent")
+		call.OnPeerAccept(func() { t.mark("peer_accepted") })
+		track(call, t)
+		wireCall(ctx, call, t, play, maxDur)
+		fmt.Fprintln(w, "placed", call.ID())
+	})
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/hangup", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		for id, call := range active {
+			err := call.Hangup()
+			fmt.Fprintln(w, "hangup", id, err)
+		}
+	})
+	srv := &http.Server{Addr: ctlAddr, Handler: mux}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error().Err(err).Msg("control server failed")
+		}
+	}()
+	defer srv.Close()
+
+	log.Info().Str("ctl", ctlAddr).Msg("serving: answering incoming calls; Ctrl+C to stop")
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// runCtl sends one command to a running spike serve.
+func runCtl(args []string) error {
+	var u string
+	switch {
+	case len(args) == 2 && args[0] == "call":
+		u = "http://" + ctlAddr + "/call?to=" + url.QueryEscape(args[1])
+	case len(args) == 1 && args[0] == "hangup":
+		u = "http://" + ctlAddr + "/hangup"
+	default:
+		return errors.New(ctlUsage)
+	}
+	resp, err := http.Get(u)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Print(string(body))
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ctl: %s", resp.Status)
+	}
+	return nil
+}
+
+// wireCall records the peer, plays the optional file, logs the lifecycle and
+// hangs up after maxDur of media.
+func wireCall(ctx context.Context, call *meowcaller.Call, t *timeline, play string, maxDur time.Duration) {
+	log := zerolog.Ctx(ctx)
+	recPath := filepath.Join(dataDir, "rec", call.ID()+".wav")
+	if rec, err := meowcaller.WAVRecorder(recPath); err != nil {
+		log.Error().Err(err).Msg("open recorder failed")
+	} else {
+		call.Receive(rec)
+	}
+	call.OnStateChange(func(p meowcaller.CallPhase) {
+		log.Info().Str("call_id", call.ID()).Int("phase", int(p)).Msg("call state")
+	})
+	call.OnReady(func() {
+		t.mark("media_ready")
+		if play != "" {
+			src, err := openSource(play)
+			if err != nil {
+				log.Error().Err(err).Str("file", play).Msg("open audio failed")
+			} else {
+				call.Play(src)
+			}
+		}
+		if maxDur > 0 {
+			time.AfterFunc(maxDur, func() {
+				log.Info().Dur("after", maxDur).Msg("max duration reached; hanging up")
+				_ = call.Hangup()
+			})
+		}
+	})
+	call.OnEnd(func(reason string) {
+		t.mark("ended")
+		t.finish(reason, recPath)
+	})
+}
+
+func openSource(file string) (meowcaller.AudioSource, error) {
+	switch ext := strings.ToLower(filepath.Ext(file)); ext {
+	case ".mp3":
+		return meowcaller.MP3File(file)
+	case ".wav":
+		return meowcaller.WAVFile(file)
+	case ".opus":
+		return meowcaller.OpusFile(file)
+	default:
+		return nil, fmt.Errorf("unsupported audio file extension %q", ext)
+	}
+}
+
+// timeline records when each step of one call happened, relative to its start.
+type timeline struct {
+	log   zerolog.Logger
+	start time.Time
+	mu    sync.Mutex
+	steps []string
+	ready time.Time
+	done  chan struct{}
+	once  sync.Once
+}
+
+func newTimeline(ctx context.Context, call *meowcaller.Call, dir string) *timeline {
+	return &timeline{
+		log:   zerolog.Ctx(ctx).With().Str("call_id", call.ID()).Str("dir", dir).Str("peer", maskJID(call.Peer())).Logger(),
+		start: time.Now(),
+		done:  make(chan struct{}),
+	}
+}
+
+func (t *timeline) mark(step string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	since := time.Since(t.start)
+	if step == "media_ready" {
+		t.ready = time.Now()
+	}
+	t.steps = append(t.steps, fmt.Sprintf("%s=%s", step, since.Round(time.Millisecond)))
+	t.log.Info().Str("step", step).Dur("since_start", since).Msg("call step")
+}
+
+func (t *timeline) finish(reason, recPath string) {
+	t.once.Do(func() {
+		t.mu.Lock()
+		var media time.Duration
+		if !t.ready.IsZero() {
+			media = time.Since(t.ready)
+		}
+		steps := strings.Join(t.steps, " ")
+		t.mu.Unlock()
+		t.log.Info().Str("reason", reason).Dur("media_duration", media).Str("steps", steps).
+			Str("recording", recPath).Msg("call summary")
+		close(t.done)
+	})
+}
+
+// maskJID keeps only the last four digits of the peer's user part.
+func maskJID(j types.JID) string {
+	u := j.User
+	if len(u) > 4 {
+		u = "…" + u[len(u)-4:]
+	}
+	return u + "@" + j.Server
+}
+
+// startStats logs CPU, memory and network use of this process every 10 seconds.
+func startStats(ctx context.Context) func() {
+	log := zerolog.Ctx(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		prevCPU, prevAt := cpuTime(), time.Now()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			cpu, at := cpuTime(), time.Now()
+			pct := float64(cpu-prevCPU) / float64(at.Sub(prevAt)) * 100
+			prevCPU, prevAt = cpu, at
+			in, out := netBytes()
+			log.Info().Float64("cpu_pct", round1(pct)).Int64("rss_kb", rssKB()).
+				Int64("net_in_bytes", in).Int64("net_out_bytes", out).Msg("stats")
+		}
+	}()
+	return cancel
+}
+
+func cpuTime() time.Duration {
+	var ru syscall.Rusage
+	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &ru); err != nil {
+		return 0
+	}
+	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
+}
+
+func rssKB() int64 {
+	if runtime.GOOS == "linux" {
+		return procField("/proc/self/status", "VmRSS:")
+	}
+	out, err := exec.Command("ps", "-o", "rss=", "-p", fmt.Sprint(os.Getpid())).Output()
+	if err != nil {
+		return -1
+	}
+	var kb int64
+	_, _ = fmt.Sscan(strings.TrimSpace(string(out)), &kb)
+	return kb
+}
+
+// netBytes returns this process's total bytes in and out, as reported by nettop.
+func netBytes() (int64, int64) {
+	if runtime.GOOS == "linux" {
+		return linuxNetBytes()
+	}
+	out, err := exec.Command("nettop", "-P", "-L", "1", "-x", "-J", "bytes_in,bytes_out",
+		"-p", fmt.Sprint(os.Getpid())).Output()
+	if err != nil {
+		return -1, -1
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 {
+		return -1, -1
+	}
+	fields := strings.Split(lines[len(lines)-1], ",")
+	if len(fields) < 3 {
+		return -1, -1
+	}
+	var in, outB int64
+	_, _ = fmt.Sscan(fields[1], &in)
+	_, _ = fmt.Sscan(fields[2], &outB)
+	return in, outB
+}
+
+// procField returns the first number after prefix in a /proc text file.
+func procField(path, prefix string) int64 {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return -1
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(line, prefix) {
+			var n int64
+			_, _ = fmt.Sscan(strings.TrimPrefix(line, prefix), &n)
+			return n
+		}
+	}
+	return -1
+}
+
+// linuxNetBytes sums bytes in and out of every non-loopback interface in this
+// network namespace (the whole container when run in its own network).
+func linuxNetBytes() (int64, int64) {
+	b, err := os.ReadFile("/proc/self/net/dev")
+	if err != nil {
+		return -1, -1
+	}
+	var in, out int64
+	for _, line := range strings.Split(string(b), "\n") {
+		name, rest, ok := strings.Cut(line, ":")
+		if !ok || strings.TrimSpace(name) == "lo" {
+			continue
+		}
+		f := strings.Fields(rest)
+		if len(f) < 9 {
+			continue
+		}
+		var i, o int64
+		_, _ = fmt.Sscan(f[0], &i)
+		_, _ = fmt.Sscan(f[8], &o)
+		in += i
+		out += o
+	}
+	return in, out
+}
+
+func round1(f float64) float64 { return float64(int64(f*10)) / 10 }
+
+func openClient(ctx context.Context) (*whatsmeow.Client, error) {
+	store.DeviceProps.Os = proto.String("Mac OS")
+	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_CHROME.Enum()
+
+	waLogger := *zerolog.Ctx(ctx)
+	if os.Getenv("SPIKE_WA_DEBUG") == "" {
+		waLogger = waLogger.Level(zerolog.InfoLevel)
+	}
+	dsn := "file:" + dbPath + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
+	container, err := sqlstore.New(ctx, "sqlite", dsn, waLog.Zerolog(waLogger).Sub("db"))
+	if err != nil {
+		return nil, fmt.Errorf("open store: %w", err)
+	}
+	devices, err := container.GetAllDevices(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list devices: %w", err)
+	}
+	var device *store.Device
+	switch {
+	case deviceNum >= 0:
+		for _, d := range devices {
+			if d.ID != nil && int(d.ID.Device) == deviceNum {
+				device = d
+			}
+		}
+		if device == nil {
+			return nil, fmt.Errorf("no device %d in the session database", deviceNum)
+		}
+	case len(devices) > 1:
+		return nil, fmt.Errorf("session database holds %d devices; pick one with -device", len(devices))
+	default:
+		if device, err = container.GetFirstDevice(ctx); err != nil {
+			return nil, fmt.Errorf("load device: %w", err)
+		}
+	}
+	return whatsmeow.NewClient(device, waLog.Zerolog(waLogger).Sub("wa")), nil
+}
+
+// connectManaged installs meowcaller before connecting, so its call handlers
+// see signaling from the first stanza.
+func connectManaged(ctx context.Context) (*whatsmeow.Client, *meowcaller.Client, error) {
+	wa, err := openClient(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if wa.Store.ID == nil {
+		return nil, nil, errors.New("not paired; run `spike pair` first")
+	}
+	client := meowcaller.NewClient(wa, meowcaller.WithLogger(*zerolog.Ctx(ctx)))
+	wa.AddEventHandler(func(evt any) {
+		switch e := evt.(type) {
+		case *events.LoggedOut:
+			zerolog.Ctx(ctx).Error().Int("reason", int(e.Reason)).Msg("LOGGED OUT: stop and tell the owner")
+		case *events.StreamReplaced:
+			zerolog.Ctx(ctx).Error().Msg("STREAM REPLACED")
+		case *events.TemporaryBan:
+			zerolog.Ctx(ctx).Error().Str("ban", e.String()).Msg("TEMPORARY BAN: stop and tell the owner")
+		case *events.Disconnected:
+			zerolog.Ctx(ctx).Warn().Msg("disconnected")
+		case *events.CallOffer:
+			zerolog.Ctx(ctx).Info().Str("call_id", e.CallID).Str("from", maskJID(e.From)).Msg("whatsmeow CallOffer")
+		case *events.CallOfferNotice:
+			zerolog.Ctx(ctx).Info().Str("call_id", e.CallID).Str("media", e.Media).Str("type", e.Type).Msg("whatsmeow CallOfferNotice")
+		case *events.CallTerminate:
+			zerolog.Ctx(ctx).Info().Str("call_id", e.CallID).Str("reason", e.Reason).Msg("whatsmeow CallTerminate")
+		case *events.UnknownCallEvent:
+			zerolog.Ctx(ctx).Info().Str("tag", e.Node.Tag).Msg("whatsmeow UnknownCallEvent")
+		}
+	})
+	if err := connect(ctx, wa); err != nil {
+		return nil, nil, err
+	}
+	return wa, client, nil
+}
+
+// connect logs in, writing the pairing QR to data/qr.png on first run. The QR
+// content is never logged.
+func connect(ctx context.Context, wa *whatsmeow.Client) error {
+	log := zerolog.Ctx(ctx)
+	if wa.Store.ID == nil {
+		qr, _ := wa.GetQRChannel(ctx)
+		if err := wa.Connect(); err != nil {
+			return fmt.Errorf("connect: %w", err)
+		}
+		qrPath := filepath.Join(dataDir, "qr.png")
+		defer os.Remove(qrPath)
+		opened := false
+		for evt := range qr {
+			if evt.Event != "code" {
+				log.Info().Str("event", evt.Event).Msg("login event")
+				continue
+			}
+			if err := qrcode.WriteFile(evt.Code, qrcode.Medium, 512, qrPath); err != nil {
+				return fmt.Errorf("write qr: %w", err)
+			}
+			log.Info().Int("valid_s", int(evt.Timeout.Seconds())).Str("file", qrPath).
+				Msg("scan in WhatsApp > Linked devices")
+			if !opened && runtime.GOOS == "darwin" {
+				_ = exec.Command("open", qrPath).Run()
+				opened = true
+			}
+		}
+	} else if err := wa.Connect(); err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	if err := waitUntilReady(ctx, wa, 60*time.Second); err != nil {
+		return err
+	}
+	log.Info().Msg("connected")
+	if wa.Store.PushName == "" {
+		wa.Store.PushName = "meowcaller spike"
+	}
+	// Call signaling is only delivered to a client that announced availability.
+	if err := wa.SendPresence(ctx, types.PresenceAvailable); err != nil {
+		log.Warn().Err(err).Msg("send presence failed; continuing")
+	}
+	return nil
+}
+
+// waitUntilReady blocks until the client is connected and logged in, tolerating
+// the expected disconnect and reconnect right after pairing.
+func waitUntilReady(ctx context.Context, wa *whatsmeow.Client, timeout time.Duration) error {
+	ready := make(chan struct{}, 8)
+	id := wa.AddEventHandler(func(evt any) {
+		if _, ok := evt.(*events.Connected); ok {
+			select {
+			case ready <- struct{}{}:
+			default:
+			}
+		}
+	})
+	defer wa.RemoveEventHandler(id)
+	deadline := time.After(timeout)
+	for !(wa.IsConnected() && wa.IsLoggedIn()) {
+		select {
+		case <-ready:
+		case <-deadline:
+			return errors.New("timed out waiting for whatsmeow connection")
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}

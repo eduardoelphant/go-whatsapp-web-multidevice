@@ -41,6 +41,7 @@ var (
 	PathMedia     = "statics/media"
 	PathStorages  = "storages"
 	PathUICache   = "storages/ui"
+	PathCalls     = "storages/calls"
 
 	DBURI     = "file:storages/whatsapp.db"
 	DBKeysURI = ""
