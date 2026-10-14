@@ -30,3 +30,16 @@ Set `SPIKE_LOG_LEVEL=debug` (or `trace`) for meowcaller's media logs.
 
 meowcaller is MIT licensed (Copyright purpshell). This prototype only calls its public API; the
 login boilerplate follows its `examples/cli`.
+
+## Patches to meowcaller
+
+`patches/` holds two diffs against meowcaller `27a3c6b` (MIT, Copyright purpshell; PR #38 by its
+author, also MIT). Apply them to a checkout at that commit and point this module at it with
+`go mod edit -replace github.com/purpshell/meowcaller=<checkout>`:
+
+- `0001-pr38-fft-twiddle-cache.patch`: meowcaller PR #38 (same change as PR #30), FFT twiddle
+  cache. 2.2x on the encoder benchmark.
+- `0002-dither-before-encode.patch`: adds about 1 LSB of noise to every frame before
+  `MlowEncoder.Encode`. Without it, silence after speech drives the encoder's filter state into
+  subnormal floats and each frame costs about 3x more. In a live call, CPU went from about 48% to
+  about 11.5% of a core with both patches.

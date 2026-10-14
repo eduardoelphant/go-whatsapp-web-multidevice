@@ -128,10 +128,10 @@ history of the work.
 
 - **What.** Stage 1 works (5 and 15 minute calls, both directions); results in
   `docs/reference/meowcaller-calls-spike.md`. Open before deciding on stage 2:
-  1. In-call CPU is about 48% of a core per call, and 84% of it is the MLow encoder. In a paced
-     test the same encoder costs about 7%. Find what makes it 7x more expensive inside the call
-     (input frames, encoder state, call path); meowcaller PR #38 speeds the benchmark but not
-     the call.
+  1. In-call CPU: the 48% per call came from subnormal floats in the MLow encoder; dither plus
+     PR #38 brought it to about 11.5% (patches in `spikes/meowcaller/patches/`). Still open: the
+     audio check with dither, and the Opus option (the apps still accept Opus when the MLow
+     capability bit is off; whatsapp-rust does it), which should cost a few percent.
   2. Measure CPU per call on the gateway host's hardware.
   3. Check the recordings by ear: they cover 50% to 85% of the call time.
   4. Send and receive text messages during a call.

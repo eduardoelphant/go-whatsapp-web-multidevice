@@ -47,7 +47,15 @@ The reported "drops after about 20 seconds" did not happen in any call.
     the Mac (5.9 ms to 2.7 ms per 60 ms frame) and passes the `mlow` tests, but did **not** lower
     in-call CPU (47.6% with it against 48.6% without).
   - The same encoder, paced at 60 ms in a test, costs 3.4 ms per frame and 6.8% of a core. In the
-    call it costs about 24 ms per frame. The cause of that 7x gap is open (see the debt list).
+    call it costs about 24 ms per frame.
+  - **Cause of that gap: subnormal floats.** When speech turns to silence, the encoder's
+    high-pass filter state (`hpState`) and history buffers decay into the subnormal float range,
+    which is several times slower on x86, and the frame no longer takes the cheap silent branch.
+    Measured on the Mac: 5.3 ms per frame for silence on a fresh encoder, 6.1 ms for speech, 17.7
+    to 21.9 ms for silence after speech, 6.0 ms with 1-LSB dither.
+  - **Fix measured in a live call:** dither before `Encode` plus PR #38 brought a 3-minute
+    outbound call from about 48% to **about 11.5% of one core** (7.7% to 12.8% over the call).
+    Patches in `spikes/meowcaller/patches/`.
 
 ## Not done yet
 
