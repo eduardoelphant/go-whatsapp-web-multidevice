@@ -56,6 +56,15 @@ The reported "drops after about 20 seconds" did not happen in any call.
   - **Fix measured in a live call:** dither before `Encode` plus PR #38 brought a 3-minute
     outbound call from about 48% to **about 11.5% of one core** (7.7% to 12.8% over the call).
     Patches in `spikes/meowcaller/patches/`.
+- **Opus instead of MLow works.** MLow is negotiated by capability 31 (`use_mlow_codec_v1`) and
+  only used when every side announces it; standard Opus stays the fallback on the same RTP
+  profile (PT120, 16 kHz, 60 ms). With the bit cleared, `voip_settings` turning MLow off in the
+  accept, and libopus (24 kbps, complexity 5, DTX), a 3-minute outbound call to the owner's
+  Android phone carried audio both ways (the recording of the peer decodes as speech, 92% of
+  the call time) at **about 4.2% of one core** (2.8% to 5.2%). One Opus frame encodes in
+  0.31 ms on the Mac against 2.7 to 6 ms for MLow. The server's own `voip_settings` still said
+  `use_mlow_codec_v1=true`; the capability bit decides. Not yet tested: inbound in Opus mode,
+  iOS, WhatsApp Web and Desktop peers.
 
 ## Not done yet
 

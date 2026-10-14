@@ -1,0 +1,238 @@
+diff --git a/engine.go b/engine.go
+index 94cd09e..d380f41 100644
+--- a/engine.go
++++ b/engine.go
+@@ -703,12 +703,17 @@ func (e *engine) sendAccept(callID string, to, creator types.JID) {
+ 	m.acceptPending = false
+ 	e.mu.Unlock()
+ 
+-	accept := signaling.BuildAccept(&signaling.AcceptParams{
++	acceptParams := &signaling.AcceptParams{
+ 		CallID: callID, To: to, CallCreator: creator,
+ 		AudioRates: []string{"16000"},
+ 		Metadata:   waBinary.Attrs{"peer_abtest_bucket_id_list": "125208,94276"},
+ 		Video:      isVideo,
+-	})
++	}
++	if opusMode {
++		acceptParams.Capability = append([]byte(nil), signaling.CapabilityOffer...)
++		acceptParams.VoipSettings = opusVoipSettings
++	}
++	accept := signaling.BuildAccept(acceptParams)
+ 	accept.Attrs["id"] = e.c.wa.DangerousInternals().GenerateRequestID()
+ 	if err := e.c.wa.DangerousInternals().SendNode(context.Background(), accept); err != nil {
+ 		e.c.log.Error().Err(err).Str("call_id", callID).Msg("send accept failed")
+diff --git a/engine_media.go b/engine_media.go
+index ec5fd56..49bd45c 100644
+--- a/engine_media.go
++++ b/engine_media.go
+@@ -258,7 +258,15 @@ func (e *engine) runMedia(ctx context.Context, callID string, call *Call, callKe
+ 		"participant_id": selfParticipantID,
+ 	})
+ 
+-	enc := mlow.NewMlowEncoder(mlow.WithLogger(log))
++	var enc audioEncoder = mlow.NewMlowEncoder(mlow.WithLogger(log))
++	if opusMode {
++		oe, err := newOpusEncoder()
++		if err != nil {
++			return err
++		}
++		enc = oe
++		log.Info().Msg("audio codec: opus")
++	}
+ 	e.mu.Lock()
+ 	m := e.calls[callID]
+ 	audioReceivers := (*participantReceiveRegistry)(nil)
+@@ -275,6 +283,11 @@ func (e *engine) runMedia(ctx context.Context, callID string, call *Call, callKe
+ 			selfLID,
+ 			peerLID,
+ 			func() participantAudioDecoder {
++				if opusMode {
++					if od, err := newOpusDecoder(); err == nil {
++						return od
++					}
++				}
+ 				return mlow.NewMlowDecoder(mlow.WithLogger(log))
+ 			},
+ 			WithLogger(log),
+@@ -562,6 +575,8 @@ func (e *engine) runMedia(ctx context.Context, callID string, call *Call, callKe
+ 	frameInterval := time.Duration(FrameSamples) * time.Second / SampleRate
+ 	go func() {
+ 		silence := make([]float32, FrameSamples)
++		ditherBuf := make([]float32, FrameSamples*2)
++		ditherSeed := uint32(1)
+ 		ticker := time.NewTicker(frameInterval)
+ 		defer ticker.Stop()
+ 		var txCount uint64
+@@ -577,7 +592,14 @@ func (e *engine) runMedia(ctx context.Context, callID string, call *Call, callKe
+ 					frame = f
+ 				}
+ 			}
+-			payload, err := enc.Encode(frame)
++			// Dither keeps the encoder's recursive filter state out of the subnormal
++			// float range after speech turns to silence, which is several times slower.
++			dithered := ditherBuf[:len(frame)]
++			for i, v := range frame {
++				ditherSeed = ditherSeed*1664525 + 1013904223
++				dithered[i] = v + (float32(int32(ditherSeed))/2147483648)*3e-5
++			}
++			payload, err := enc.Encode(dithered)
+ 			if err != nil {
+ 				continue
+ 			}
+diff --git a/go.mod b/go.mod
+index 536d08d..7311c96 100644
+--- a/go.mod
++++ b/go.mod
+@@ -32,4 +32,5 @@ require (
+ 	golang.org/x/sync v0.22.0 // indirect
+ 	golang.org/x/sys v0.47.0 // indirect
+ 	golang.org/x/text v0.40.0 // indirect
++	gopkg.in/hraban/opus.v2 v2.0.0-20230925203106-0188a62cb302 // indirect
+ )
+diff --git a/go.sum b/go.sum
+index c1240c5..2f9ada2 100644
+--- a/go.sum
++++ b/go.sum
+@@ -73,5 +73,7 @@ golang.org/x/time v0.10.0 h1:3usCWA8tQn0L8+hFJQNgzpWbd89begxN66o1Ojdn5L4=
+ golang.org/x/time v0.10.0/go.mod h1:3BpzKBy/shNhVucY/MWOyx10tF3SFh9QdLuxbVysPQM=
+ google.golang.org/protobuf v1.36.11 h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=
+ google.golang.org/protobuf v1.36.11/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
++gopkg.in/hraban/opus.v2 v2.0.0-20230925203106-0188a62cb302 h1:xeVptzkP8BuJhoIjNizd2bRHfq9KB9HfOLZu90T04XM=
++gopkg.in/hraban/opus.v2 v2.0.0-20230925203106-0188a62cb302/go.mod h1:/L5E7a21VWl8DeuCPKxQBdVG5cy+L0MRZ08B1wnqt7g=
+ gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
+ gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+diff --git a/opus_mode.go b/opus_mode.go
+new file mode 100644
+index 0000000..113806a
+--- /dev/null
++++ b/opus_mode.go
+@@ -0,0 +1,82 @@
++package meowcaller
++
++import (
++	"os"
++
++	"github.com/purpshell/meowcaller/signaling"
++	"gopkg.in/hraban/opus.v2"
++)
++
++// Opus mode (spike patch): with MEOWCALLER_CODEC=opus the client stops advertising
++// capability 31 (use_mlow_codec_v1) and answers with voip_settings that turn MLow
++// off, so both sides fall back to standard Opus on the same PT120 / 16 kHz / 60 ms
++// RTP profile. Modelled on whatsapp-rust PR #1050 (wacore/src/stanza/call.rs).
++var opusMode = os.Getenv("MEOWCALLER_CODEC") == "opus"
++
++// opusVoipSettings is the accept-side override that stops the peer encoding MLow.
++var opusVoipSettings = []byte(`{"encode":{"use_mlow_codec_v1":"false"},"options":{"enable_48khz_rtp_clock":"false"}}`)
++
++func init() {
++	if !opusMode {
++		return
++	}
++	// Capability index 31 is bit 0x80 of byte 5.
++	signaling.CapabilityOffer[5] &^= 0x80
++	signaling.CapabilityVideoOffer[5] &^= 0x80
++	signaling.CapabilityPreaccept[5] &^= 0x80
++}
++
++type audioEncoder interface {
++	Encode(pcm []float32) ([]byte, error)
++}
++
++type opusEncoder struct {
++	enc *opus.Encoder
++	buf []byte
++}
++
++func newOpusEncoder() (*opusEncoder, error) {
++	enc, err := opus.NewEncoder(SampleRate, 1, opus.AppVoIP)
++	if err != nil {
++		return nil, err
++	}
++	if err := enc.SetBitrate(24000); err != nil {
++		return nil, err
++	}
++	if err := enc.SetComplexity(5); err != nil {
++		return nil, err
++	}
++	if err := enc.SetDTX(true); err != nil {
++		return nil, err
++	}
++	return &opusEncoder{enc: enc, buf: make([]byte, 1275)}, nil
++}
++
++func (o *opusEncoder) Encode(pcm []float32) ([]byte, error) {
++	n, err := o.enc.EncodeFloat32(pcm, o.buf)
++	if err != nil {
++		return nil, err
++	}
++	return append([]byte(nil), o.buf[:n]...), nil
++}
++
++type opusDecoder struct {
++	dec *opus.Decoder
++	buf []float32
++}
++
++func newOpusDecoder() (*opusDecoder, error) {
++	dec, err := opus.NewDecoder(SampleRate, 1)
++	if err != nil {
++		return nil, err
++	}
++	return &opusDecoder{dec: dec, buf: make([]float32, 1920)}, nil
++}
++
++func (o *opusDecoder) Decode(payload []byte) []float32 {
++	n, err := o.dec.DecodeFloat32(payload, o.buf)
++	if err != nil || n <= 0 {
++		return nil
++	}
++	return append([]float32(nil), o.buf[:n]...)
++}
+diff --git a/opus_mode_test.go b/opus_mode_test.go
+new file mode 100644
+index 0000000..c4565a1
+--- /dev/null
++++ b/opus_mode_test.go
+@@ -0,0 +1,40 @@
++package meowcaller
++
++import "testing"
++
++func TestOpusRoundTrip(t *testing.T) {
++	enc, err := newOpusEncoder()
++	if err != nil {
++		t.Fatal(err)
++	}
++	dec, err := newOpusDecoder()
++	if err != nil {
++		t.Fatal(err)
++	}
++	pcm := make([]float32, FrameSamples)
++	for i := range pcm {
++		pcm[i] = 0.3 * float32((i%40)-20) / 20
++	}
++	pkt, err := enc.Encode(pcm)
++	if err != nil {
++		t.Fatal(err)
++	}
++	out := dec.Decode(pkt)
++	if len(out) != FrameSamples {
++		t.Fatalf("decoded %d samples, want %d", len(out), FrameSamples)
++	}
++	t.Logf("packet %d bytes", len(pkt))
++}
++
++func BenchmarkOpusEncodeFrame(b *testing.B) {
++	enc, _ := newOpusEncoder()
++	pcm := make([]float32, FrameSamples)
++	for i := range pcm {
++		pcm[i] = 0.3 * float32((i%40)-20) / 20
++	}
++	for i := 0; i < b.N; i++ {
++		if _, err := enc.Encode(pcm); err != nil {
++			b.Fatal(err)
++		}
++	}
++}

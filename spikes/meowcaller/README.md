@@ -33,7 +33,7 @@ login boilerplate follows its `examples/cli`.
 
 ## Patches to meowcaller
 
-`patches/` holds two diffs against meowcaller `27a3c6b` (MIT, Copyright purpshell; PR #38 by its
+`patches/` holds diffs against meowcaller `27a3c6b` (MIT, Copyright purpshell; PR #38 by its
 author, also MIT). Apply them to a checkout at that commit and point this module at it with
 `go mod edit -replace github.com/purpshell/meowcaller=<checkout>`:
 
@@ -43,3 +43,10 @@ author, also MIT). Apply them to a checkout at that commit and point this module
   `MlowEncoder.Encode`. Without it, silence after speech drives the encoder's filter state into
   subnormal floats and each frame costs about 3x more. In a live call, CPU went from about 48% to
   about 11.5% of a core with both patches.
+- `0003-opus-mode.patch` (applies on top of 0001 and 0002; it repeats the dither hunk of
+  `engine_media.go`, so apply it instead of 0002 when both are wanted): with
+  `MEOWCALLER_CODEC=opus` the client clears capability 31 (`use_mlow_codec_v1`), sends
+  `voip_settings` turning MLow off in `<accept>`, and encodes and decodes standard Opus through
+  libopus (`gopkg.in/hraban/opus.v2`, cgo; build with `-tags nolibopusfile`). Modelled on
+  whatsapp-rust PR #1050. In a live 3-minute outbound call to an Android phone: audio both ways,
+  about 4.2% of one core.
