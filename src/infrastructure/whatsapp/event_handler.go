@@ -56,7 +56,6 @@ func handler(ctx context.Context, instance *DeviceInstance, rawEvt any) {
 	case *events.Connected:
 		// Fork (elphant): a successful connection ends any stream replaced state.
 		clearStreamReplaced(client)
-		warnCallsNeedRestart(instance.ID(), client) // Fork (elphant): voice calls.
 		handleConnectionEvents(ctx, client, instance)
 	case *events.PushNameSetting:
 		handleConnectionEvents(ctx, client, instance)

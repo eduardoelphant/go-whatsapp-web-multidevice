@@ -447,7 +447,7 @@ GOWA can answer and place WhatsApp voice calls through the fork
 - `WHATSAPP_CALLS_ENABLED` (default `false`). Off means no change: `call.offer`,
   `POST /call/reject` and `WHATSAPP_AUTO_REJECT_CALL` behave as before.
 - `WHATSAPP_CALLS_DEVICES`: comma-separated phone numbers or JIDs. Empty means all devices.
-  The list is read at start: a device paired after start needs a restart to get calls.
+  The list is read at start (changing it needs a restart; a runtime per-device switch comes in 2b). A device paired after start gets calls without a restart.
 - `WHATSAPP_CALLS_CODEC`: `opus` (default) or `mlow`.
 - `WHATSAPP_CALLS_MAX_PER_DEVICE` (default `1`): simultaneous calls per device.
 - `WHATSAPP_CALLS_TEST_AUDIO`: path to a `.wav`, `.mp3` or `.opus` played to the peer. Empty

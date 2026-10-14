@@ -14,15 +14,16 @@ import (
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
 )
 
 // Fork (elphant): adapter from meowcaller to the callEngine/callHandle seams.
 
 type meowEngine struct{ client *meowcaller.Client }
 
-func newMeowEngine(wa *whatsmeow.Client) *meowEngine {
+func newMeowEngine(wa *whatsmeow.Client, filter func(*events.CallOffer) bool) *meowEngine {
 	log := zerolog.New(maskingWriter{os.Stdout}).With().Timestamp().Str("component", "calls").Logger().Level(zerolog.InfoLevel)
-	return &meowEngine{client: meowcaller.NewClient(wa, meowcaller.WithLogger(log))}
+	return &meowEngine{client: meowcaller.NewClient(wa, meowcaller.WithLogger(log), meowcaller.WithOfferFilter(filter))}
 }
 
 func (e *meowEngine) OnIncomingCall(fn func(callHandle)) {

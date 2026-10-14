@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	meowcaller "github.com/purpshell/meowcaller"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types/events"
 )
 
 // callsByClient maps a *whatsmeow.Client to its CallManager. It is keyed by client,
@@ -17,36 +19,71 @@ import (
 // default instance shares its client with a registry slot.
 var callsByClient sync.Map
 
-var setCodecOnce sync.Once
+var (
+	setCodecOnce       sync.Once
+	effectiveCodecName = "mlow"
+)
 
-// attachCalls installs a call manager on client when calls are allowed for it. It must
-// run before client.Connect: meowcaller installs raw call handlers that must see the
-// first stanza.
-func attachCalls(slotID string, client *whatsmeow.Client) {
-	if client == nil {
-		return
-	}
+// callsAllowedNow reports whether calls are allowed for client right now. The phone
+// number and JID are read from the store at call time, so a device paired after start
+// is covered without a restart.
+func callsAllowedNow(slotID string, client *whatsmeow.Client) bool {
 	user, jid := "", ""
-	if client.Store != nil && client.Store.ID != nil {
+	if client != nil && client.Store != nil && client.Store.ID != nil {
 		user, jid = client.Store.ID.User, client.Store.ID.String()
 	}
-	if !config.CallsAllowed(slotID, user, jid) {
+	return config.CallsAllowed(slotID, user, jid)
+}
+
+// offerFilter gates inbound offers in the call engine: a false return makes it ignore
+// the offer completely.
+func offerFilter(slotID string, client *whatsmeow.Client) func(*events.CallOffer) bool {
+	return func(*events.CallOffer) bool { return callsAllowedNow(slotID, client) }
+}
+
+// effectiveCodec applies the configured codec and returns the one in effect. Builds
+// without cgo cannot do opus and stay on mlow.
+func effectiveCodec(want string) (string, error) {
+	err := meowcaller.SetCodec(want)
+	if errors.Is(err, meowcaller.ErrOpusUnavailable) {
+		return "mlow", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return want, nil
+}
+
+// attachCalls installs a call manager on client when calls are enabled. It must run
+// before client.Connect: meowcaller installs raw call handlers that must see the first
+// stanza. Per-device permission is checked at use time (offer filter, CallsFromContext).
+func attachCalls(slotID string, client *whatsmeow.Client) {
+	if client == nil || !config.WhatsappCallsEnabled {
 		return
 	}
 	setCodecOnce.Do(func() {
-		if err := meowcaller.SetCodec(config.WhatsappCallsCodec); err != nil {
+		codec, err := effectiveCodec(config.WhatsappCallsCodec)
+		if err != nil {
 			logrus.Errorf("[CALLS] %v; using opus", err)
-			_ = meowcaller.SetCodec("opus")
+			codec, err = effectiveCodec("opus")
+			if err != nil {
+				logrus.Errorf("[CALLS] %v", err)
+			}
 		}
+		if codec == "mlow" && config.WhatsappCallsCodec == "opus" {
+			logrus.Warn("[CALLS] opus unavailable in this build; using mlow")
+		}
+		effectiveCodecName = codec
 	})
-	m := newCallManager(newMeowEngine(client), callManagerOptions{
+	m := newCallManager(newMeowEngine(client, offerFilter(slotID, client)), callManagerOptions{
 		MaxCalls:   config.WhatsappCallsMaxPerDevice,
 		RingWindow: time.Minute,
 		TestAudio:  config.WhatsappCallsTestAudio,
 		RecordDir:  config.PathCalls,
 	})
+	m.slotID = slotID
 	callsByClient.Store(client, m)
-	logrus.Infof("[CALLS] calls enabled for device %s (codec %s)", maskSlot(slotID), config.WhatsappCallsCodec)
+	logrus.Infof("[CALLS] calls enabled for device %s (codec %s)", maskSlot(slotID), effectiveCodecName)
 }
 
 // forgetCalls drops the manager of a client that is being discarded and ends its live
@@ -60,22 +97,6 @@ func forgetCalls(client *whatsmeow.Client) {
 	}
 }
 
-// warnCallsNeedRestart warns when calls are allowed for a connected device that has no
-// manager, which happens when it was paired after start. It reports whether it warned.
-func warnCallsNeedRestart(slotID string, client *whatsmeow.Client) bool {
-	if client == nil || client.Store == nil || client.Store.ID == nil {
-		return false
-	}
-	if !config.CallsAllowed(slotID, client.Store.ID.User, client.Store.ID.String()) {
-		return false
-	}
-	if _, ok := callsByClient.Load(client); ok {
-		return false
-	}
-	logrus.Warnf("[CALLS] calls are allowed for device %s but it was paired after start; restart GOWA to enable calls", maskSlot(slotID))
-	return true
-}
-
 // CallsFromContext returns the call manager of the request's device.
 func CallsFromContext(ctx context.Context) (*CallManager, error) {
 	client := ClientFromContext(ctx)
@@ -83,7 +104,10 @@ func CallsFromContext(ctx context.Context) (*CallManager, error) {
 		return nil, ErrCallsOff
 	}
 	if v, ok := callsByClient.Load(client); ok {
-		return v.(*CallManager), nil
+		m := v.(*CallManager)
+		if callsAllowedNow(m.slotID, client) {
+			return m, nil
+		}
 	}
 	return nil, ErrCallsOff
 }
@@ -93,6 +117,6 @@ func hasCallManager(client *whatsmeow.Client) bool {
 	if client == nil {
 		return false
 	}
-	_, ok := callsByClient.Load(client)
-	return ok
+	v, ok := callsByClient.Load(client)
+	return ok && callsAllowedNow(v.(*CallManager).slotID, client)
 }

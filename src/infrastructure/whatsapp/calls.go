@@ -65,7 +65,8 @@ type CallManager struct {
 	opts     callManagerOptions
 	mu       sync.Mutex
 	calls    map[string]*trackedCall
-	reserved int // outbound slots claimed before dialing
+	reserved int    // outbound slots claimed before dialing
+	slotID   string // slot the manager was attached with; used for the allow list
 }
 
 func newCallManager(engine callEngine, opts callManagerOptions) *CallManager {

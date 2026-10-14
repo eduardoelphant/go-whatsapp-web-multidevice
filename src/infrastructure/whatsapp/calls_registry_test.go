@@ -27,6 +27,7 @@ func TestCallsFromContextDisabled(t *testing.T) {
 }
 
 func TestForgetCallsOnReset(t *testing.T) {
+	withCallsConfig(t, true, nil)
 	client := &whatsmeow.Client{}
 	m := newCallManager(&fakeEngine{}, callManagerOptions{})
 	callsByClient.Store(client, m)
@@ -47,29 +48,43 @@ func withCallsConfig(t *testing.T, enabled bool, devices []string) {
 	config.WhatsappCallsEnabled, config.WhatsappCallsDevices = enabled, devices
 }
 
-func TestAttachCallsNotListed(t *testing.T) {
+func TestAttachCallsNotAllowedKeepsOff(t *testing.T) {
 	withCallsConfig(t, true, []string{"other"})
-	client := &whatsmeow.Client{}
+	client := &whatsmeow.Client{Store: &store.Device{}}
 	attachCalls("slot-a", client)
+	t.Cleanup(func() { forgetCalls(client) })
 	_, ok := callsByClient.Load(client)
-	assert.False(t, ok)
+	require.True(t, ok, "manager is attached to every client when the flag is on")
+	assert.False(t, hasCallManager(client))
 	inst := NewDeviceInstance("slot-a", client, nil)
 	_, err := CallsFromContext(ContextWithDevice(context.Background(), inst))
 	assert.ErrorIs(t, err, ErrCallsOff)
+	assert.False(t, offerFilter("slot-a", client)(nil))
 }
 
-func TestWarnCallsNeedRestart(t *testing.T) {
+func TestAllowedAfterPairing(t *testing.T) {
 	withCallsConfig(t, true, []string{"5511987654321"})
-	client := &whatsmeow.Client{Store: &store.Device{ID: &types.JID{User: "5511987654321", Server: types.DefaultUserServer}}}
-	assert.True(t, warnCallsNeedRestart("slot-a", client))
+	dev := &store.Device{}
+	client := &whatsmeow.Client{Store: dev}
+	attachCalls("slot-a", client)
+	t.Cleanup(func() { forgetCalls(client) })
+	filter := offerFilter("slot-a", client)
+	assert.False(t, filter(nil))
+	assert.False(t, hasCallManager(client))
 
-	callsByClient.Store(client, newCallManager(&fakeEngine{}, callManagerOptions{}))
-	t.Cleanup(func() { callsByClient.Delete(client) })
-	assert.False(t, warnCallsNeedRestart("slot-a", client))
+	dev.ID = &types.JID{User: "5511987654321", Server: types.DefaultUserServer}
+	assert.True(t, filter(nil))
+	assert.True(t, hasCallManager(client))
+	inst := NewDeviceInstance("slot-a", client, nil)
+	_, err := CallsFromContext(ContextWithDevice(context.Background(), inst))
+	assert.NoError(t, err)
+}
 
-	assert.False(t, warnCallsNeedRestart("slot-a", &whatsmeow.Client{}))
-	withCallsConfig(t, false, nil)
-	assert.False(t, warnCallsNeedRestart("slot-a", &whatsmeow.Client{Store: &store.Device{ID: &types.JID{User: "1", Server: "s.whatsapp.net"}}}))
+func TestCallsAllowedNowNilSafe(t *testing.T) {
+	withCallsConfig(t, true, []string{"x"})
+	assert.False(t, callsAllowedNow("s", nil))
+	assert.False(t, callsAllowedNow("s", &whatsmeow.Client{}))
+	assert.True(t, callsAllowedNow("x", &whatsmeow.Client{}))
 }
 
 func TestMaskingWriter(t *testing.T) {
@@ -110,6 +125,7 @@ func TestCloseAll(t *testing.T) {
 }
 
 func TestHasCallManager(t *testing.T) {
+	withCallsConfig(t, true, nil)
 	client := &whatsmeow.Client{}
 	assert.False(t, hasCallManager(client))
 	assert.False(t, hasCallManager(nil))
