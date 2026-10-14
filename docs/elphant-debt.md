@@ -137,8 +137,10 @@ history of the work.
   4. Send and receive text messages during a call.
 - **Stage 2a (integration in GOWA).** Code done on branch `spike/meowcaller-calls`; runtime
   checks pending (Task 7). Open items:
-  - (a) The meowcaller fork should gain an offer-filter option, so calls attach to every client
-    and are gated at offer/lookup time. This removes the restart a newly paired device needs.
+  - (a) CLOSED: fork v0.2.0-elphant.1 has `WithOfferFilter`; calls attach to every client and are
+    gated at offer/lookup time, so a newly paired device needs no restart. The GOWA codec log now
+    shows the codec in effect (warns when opus is unavailable). Inbound-audio fix candidates
+    (fork PR #26/#43) are in fork v0.2.0, pending live verification.
   - (b) Deferred minors:
     - Config: `WHATSAPP_CALLS_CODEC` / `MAX_PER_DEVICE` are not validated at config time (fallback and clamp cover it).
     - An expired offer is dropped without Reject; a failed Answer is not followed by Reject.
@@ -148,7 +150,7 @@ history of the work.
     - The WARN repeats on every reconnect; closeAll Hangup path and Record-on-ended are untested.
     - A bare-digit slot alias is not masked in logs (JID context only).
     - Missing tests: ErrCallsOff at usecase level, hangup success and empty-field REST cases, zero StartedAt rendering.
-  - (c) Build: add a `//go:build !cgo` stub to the fork's opus package returning errors, so
+  - (c) DONE in fork v0.2.0 (CGO_ENABLED=0 go build -tags purego . passes): add a `//go:build !cgo` stub to the fork's opus package returning errors, so
     CGO-free (`-tags purego`) builds work when calls are off. Today libopus is required always.
   - (d) REST responses (`/calls/active`, `/call/start`) return a masked peer; the CRM needs the
     full JID. Masking belongs in logs, not API responses; change before stage 2b/CRM.
