@@ -443,7 +443,10 @@ GOWA can answer and place WhatsApp voice calls through the fork
   `pkg-config` (`libopus-dev pkg-config` on Debian/Ubuntu, `opus-dev pkgconf` on Alpine). The
   Dockerfile and `elphant-ci.yml` / `elphant-image.yml` install them. The upstream release
   workflow (goreleaser cross-builds with CGO) is disabled in this fork; if it is ever
-  re-enabled it needs libopus too.
+  re-enabled it needs libopus too. Local `go vet` and `go test` also need libopus and
+  `pkg-config`; the CGO-free `-tags purego` build does not work for now.
+- On call-enabled devices `WHATSAPP_AUTO_REJECT_CALL` is ignored: calls are answered or
+  rejected through the API.
 
 ## Specs and plans
 

@@ -148,6 +148,14 @@ history of the work.
     - The WARN repeats on every reconnect; closeAll Hangup path and Record-on-ended are untested.
     - A bare-digit slot alias is not masked in logs (JID context only).
     - Missing tests: ErrCallsOff at usecase level, hangup success and empty-field REST cases, zero StartedAt rendering.
+  - (c) Build: add a `//go:build !cgo` stub to the fork's opus package returning errors, so
+    CGO-free (`-tags purego`) builds work when calls are off. Today libopus is required always.
+  - (d) REST responses (`/calls/active`, `/call/start`) return a masked peer; the CRM needs the
+    full JID. Masking belongs in logs, not API responses; change before stage 2b/CRM.
+  - (e) A stale call can hold the cap if OnEnd never fires (media death or a terminate lost
+    during reconnect). Add a max call duration and a media-ended to finish path.
+  - (f) Recordings in `storages/calls` have no retention yet (personal data); retention lands
+    with the recording stage (spec D7).
 - **Cleanup.** The prototype's linked device on the test number (paired 2026-10-13) and
   `/root/meowcaller-spike/` on the gateway host (binary, scripts, session backup and logs) stay
   until the owner says the spike is over.

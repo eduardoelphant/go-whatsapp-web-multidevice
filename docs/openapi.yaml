@@ -2781,13 +2781,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericResponse'
         '400':
-          description: Bad Request (missing or invalid fields)
+          description: Bad Request (missing or invalid fields, calls not enabled for this device, unknown call, or an engine error with phone numbers masked)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBadRequest'
         '500':
-          description: Internal Server Error (calls disabled, unknown call, etc.)
+          description: Internal Server Error (unexpected failure)
           content:
             application/json:
               schema:
@@ -2815,7 +2815,7 @@ paths:
               properties:
                 phone:
                   type: string
-                  description: Phone number to call
+                  description: Phone number in international format, e.g. +5511999999999, or digits only
       responses:
         '200':
           description: Call placed
@@ -2824,13 +2824,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericResponse'
         '400':
-          description: Bad Request (missing or invalid fields)
+          description: Bad Request (missing or invalid fields, calls not enabled for this device, unknown call, or an engine error with phone numbers masked)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBadRequest'
         '500':
-          description: Internal Server Error (calls disabled, unknown call, etc.)
+          description: Internal Server Error (unexpected failure)
           content:
             application/json:
               schema:
@@ -2867,13 +2867,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericResponse'
         '400':
-          description: Bad Request (missing or invalid fields)
+          description: Bad Request (missing or invalid fields, calls not enabled for this device, unknown call, or an engine error with phone numbers masked)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBadRequest'
         '500':
-          description: Internal Server Error (calls disabled, unknown call, etc.)
+          description: Internal Server Error (unexpected failure)
           content:
             application/json:
               schema:
@@ -2898,13 +2898,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericResponse'
         '400':
-          description: Bad Request (missing or invalid fields)
+          description: Bad Request (calls are not enabled for this device)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBadRequest'
         '500':
-          description: Internal Server Error (calls disabled, unknown call, etc.)
+          description: Internal Server Error (unexpected failure)
           content:
             application/json:
               schema:

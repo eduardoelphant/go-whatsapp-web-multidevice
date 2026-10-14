@@ -76,7 +76,8 @@ for new edits, failures, or unresolved risks. For Markdown-only changes, check t
 diff and references; application tests are unnecessary. Report checks actually run
 and any unverified behavior.
 Default SQLite builds use CGO; `-tags purego` selects `modernc.org/sqlite` when that
-build variant is relevant. Run `go mod tidy` when changing dependencies.
+build variant is relevant, but it is not available while the meowcaller fork has no `!cgo`
+stub for opus (see D-17). Run `go mod tidy` when changing dependencies.
 
 For an authorized runtime check, `go run . rest` starts the server. Runtime paths
 are relative to the process directory. Direct runs use `src/storages`

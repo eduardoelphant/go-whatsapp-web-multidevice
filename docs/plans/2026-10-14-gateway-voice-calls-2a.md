@@ -1357,6 +1357,10 @@ Not code. Record each result in `docs/reference/meowcaller-calls-spike.md` under
    is still delivered to the configured webhook.
 3. Then `POST /call/start` to the owner's other number, and `POST /call/hangup`.
 
+4. With `WHATSAPP_AUTO_REJECT_CALL=true`, check a call-enabled device still rings and can be
+   answered via the API.
+5. Drop the network mid-call, then check `GET /calls/active` empties; if not, note it (D-17 e).
+
 - [ ] **Step 3: Messages during a call**
 
 During a call, send a text with `POST /send/message` and receive one from the phone. Expected:
