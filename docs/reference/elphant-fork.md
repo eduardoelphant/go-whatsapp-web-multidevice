@@ -441,14 +441,19 @@ every link already handed out.
 ## Voice calls (stage 2a, off by default)
 
 GOWA can answer and place WhatsApp voice calls through the fork
-[eduardoelphant/meowcaller](https://github.com/eduardoelphant/meowcaller). Design:
+[eduardoelphant/meowcaller](https://github.com/eduardoelphant/meowcaller) (`v0.2.0-elphant.1`). Design:
 [2026-10-14-gateway-voice-calls-design.md](../specs/2026-10-14-gateway-voice-calls-design.md).
 
 - `WHATSAPP_CALLS_ENABLED` (default `false`). Off means no change: `call.offer`,
   `POST /call/reject` and `WHATSAPP_AUTO_REJECT_CALL` behave as before.
 - `WHATSAPP_CALLS_DEVICES`: comma-separated phone numbers or JIDs. Empty means all devices.
-  The list is read at start: a device paired after start needs a restart to get calls.
+  The list is read at start (changing it needs a restart; a runtime per-device switch comes in 2b). A device paired after start gets calls without a restart.
 - `WHATSAPP_CALLS_CODEC`: `opus` (default) or `mlow`.
+  With the flag on, a call manager is attached to every client and the engine's offer filter
+  (`meowcaller.WithOfferFilter`) drops offers for devices that are not allowed: no preaccept, no
+  handler, no state. REST routes and auto-reject use the same check at request time.
+- `WHATSAPP_CALLS_LOG_LEVEL` (default `info`): `debug`, `info`, `warn` or `error` for the call
+  engine log; invalid values fall back to `info`. Logs still go through the phone masking writer.
 - `WHATSAPP_CALLS_MAX_PER_DEVICE` (default `1`): simultaneous calls per device.
 - `WHATSAPP_CALLS_TEST_AUDIO`: path to a `.wav`, `.mp3` or `.opus` played to the peer. Empty
   means silence.
@@ -460,7 +465,7 @@ GOWA can answer and place WhatsApp voice calls through the fork
   Dockerfile and `elphant-ci.yml` / `elphant-image.yml` install them. The upstream release
   workflow (goreleaser cross-builds with CGO) is disabled in this fork; if it is ever
   re-enabled it needs libopus too. Local `go vet` and `go test` also need libopus and
-  `pkg-config`; the CGO-free `-tags purego` build does not work for now.
+  `pkg-config`. The CGO-free `-tags purego` build works with fork v0.2.0 (the opus stub returns `ErrOpusUnavailable`, calls stay on mlow).
 - On call-enabled devices `WHATSAPP_AUTO_REJECT_CALL` is ignored: calls are answered or
   rejected through the API.
 

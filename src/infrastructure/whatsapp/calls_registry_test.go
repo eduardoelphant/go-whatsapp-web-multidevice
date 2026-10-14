@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	meowcaller "github.com/purpshell/meowcaller"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mau.fi/whatsmeow"
@@ -27,6 +29,7 @@ func TestCallsFromContextDisabled(t *testing.T) {
 }
 
 func TestForgetCallsOnReset(t *testing.T) {
+	withCallsConfig(t, true, nil)
 	client := &whatsmeow.Client{}
 	m := newCallManager(&fakeEngine{}, callManagerOptions{})
 	callsByClient.Store(client, m)
@@ -47,29 +50,43 @@ func withCallsConfig(t *testing.T, enabled bool, devices []string) {
 	config.WhatsappCallsEnabled, config.WhatsappCallsDevices = enabled, devices
 }
 
-func TestAttachCallsNotListed(t *testing.T) {
+func TestAttachCallsNotAllowedKeepsOff(t *testing.T) {
 	withCallsConfig(t, true, []string{"other"})
-	client := &whatsmeow.Client{}
+	client := &whatsmeow.Client{Store: &store.Device{}}
 	attachCalls("slot-a", client)
+	t.Cleanup(func() { forgetCalls(client) })
 	_, ok := callsByClient.Load(client)
-	assert.False(t, ok)
+	require.True(t, ok, "manager is attached to every client when the flag is on")
+	assert.False(t, hasCallManager(client))
 	inst := NewDeviceInstance("slot-a", client, nil)
 	_, err := CallsFromContext(ContextWithDevice(context.Background(), inst))
 	assert.ErrorIs(t, err, ErrCallsOff)
+	assert.False(t, offerFilter("slot-a", client)(nil))
 }
 
-func TestWarnCallsNeedRestart(t *testing.T) {
+func TestAllowedAfterPairing(t *testing.T) {
 	withCallsConfig(t, true, []string{"5511987654321"})
-	client := &whatsmeow.Client{Store: &store.Device{ID: &types.JID{User: "5511987654321", Server: types.DefaultUserServer}}}
-	assert.True(t, warnCallsNeedRestart("slot-a", client))
+	dev := &store.Device{}
+	client := &whatsmeow.Client{Store: dev}
+	attachCalls("slot-a", client)
+	t.Cleanup(func() { forgetCalls(client) })
+	filter := offerFilter("slot-a", client)
+	assert.False(t, filter(nil))
+	assert.False(t, hasCallManager(client))
 
-	callsByClient.Store(client, newCallManager(&fakeEngine{}, callManagerOptions{}))
-	t.Cleanup(func() { callsByClient.Delete(client) })
-	assert.False(t, warnCallsNeedRestart("slot-a", client))
+	dev.ID = &types.JID{User: "5511987654321", Server: types.DefaultUserServer}
+	assert.True(t, filter(nil))
+	assert.True(t, hasCallManager(client))
+	inst := NewDeviceInstance("slot-a", client, nil)
+	_, err := CallsFromContext(ContextWithDevice(context.Background(), inst))
+	assert.NoError(t, err)
+}
 
-	assert.False(t, warnCallsNeedRestart("slot-a", &whatsmeow.Client{}))
-	withCallsConfig(t, false, nil)
-	assert.False(t, warnCallsNeedRestart("slot-a", &whatsmeow.Client{Store: &store.Device{ID: &types.JID{User: "1", Server: "s.whatsapp.net"}}}))
+func TestCallsAllowedNowNilSafe(t *testing.T) {
+	withCallsConfig(t, true, []string{"x"})
+	assert.False(t, callsAllowedNow("s", nil))
+	assert.False(t, callsAllowedNow("s", &whatsmeow.Client{}))
+	assert.True(t, callsAllowedNow("x", &whatsmeow.Client{}))
 }
 
 func TestMaskingWriter(t *testing.T) {
@@ -110,6 +127,7 @@ func TestCloseAll(t *testing.T) {
 }
 
 func TestHasCallManager(t *testing.T) {
+	withCallsConfig(t, true, nil)
 	client := &whatsmeow.Client{}
 	assert.False(t, hasCallManager(client))
 	assert.False(t, hasCallManager(nil))
@@ -131,4 +149,32 @@ func TestMaskDigits(t *testing.T) {
 	got := MaskDigits("usync 5511987654321@s.whatsapp.net, id 1234567, lid 123456789012345:7@lid")
 	assert.Equal(t, "usync …4321@s.whatsapp.net, id 1234567, lid …2345:7@lid", got)
 	assert.NotRegexp(t, `[0-9]{8,}`, MaskDigits("bare 5511987654321 here"))
+}
+
+func TestEffectiveCodec(t *testing.T) {
+	t.Cleanup(func() { _ = meowcaller.SetCodec("mlow") })
+	codec, missing, err := effectiveCodec("mlow")
+	require.NoError(t, err)
+	assert.Equal(t, "mlow", codec)
+	assert.False(t, missing)
+
+	_, _, err = effectiveCodec("bogus")
+	assert.Error(t, err)
+
+	codec, missing, err = effectiveCodec("opus")
+	require.NoError(t, err)
+	if missing {
+		assert.Equal(t, "mlow", codec) // !cgo build
+	} else {
+		assert.Equal(t, "opus", codec)
+	}
+}
+
+func TestParseCallsLogLevel(t *testing.T) {
+	assert.Equal(t, zerolog.DebugLevel, parseCallsLogLevel("debug"))
+	assert.Equal(t, zerolog.WarnLevel, parseCallsLogLevel(" WARN "))
+	assert.Equal(t, zerolog.ErrorLevel, parseCallsLogLevel("error"))
+	assert.Equal(t, zerolog.InfoLevel, parseCallsLogLevel("info"))
+	assert.Equal(t, zerolog.InfoLevel, parseCallsLogLevel("bogus"))
+	assert.Equal(t, zerolog.InfoLevel, parseCallsLogLevel(""))
 }

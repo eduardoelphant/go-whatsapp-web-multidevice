@@ -137,8 +137,10 @@ history of the work.
   4. Send and receive text messages during a call.
 - **Stage 2a (integration in GOWA).** Code done on branch `spike/meowcaller-calls`; runtime
   checks pending (Task 7). Open items:
-  - (a) The meowcaller fork should gain an offer-filter option, so calls attach to every client
-    and are gated at offer/lookup time. This removes the restart a newly paired device needs.
+  - (a) CLOSED: fork v0.2.0-elphant.1 has `WithOfferFilter`; calls attach to every client and are
+    gated at offer/lookup time, so a newly paired device needs no restart. The GOWA codec log now
+    shows the codec in effect (warns when opus is unavailable). Inbound-audio fix candidates
+    (fork PR #26/#43) are in fork v0.2.0, pending live verification.
   - (b) Deferred minors:
     - Config: `WHATSAPP_CALLS_CODEC` / `MAX_PER_DEVICE` are not validated at config time (fallback and clamp cover it).
     - An expired offer is dropped without Reject; a failed Answer is not followed by Reject.
@@ -148,7 +150,7 @@ history of the work.
     - The WARN repeats on every reconnect; closeAll Hangup path and Record-on-ended are untested.
     - A bare-digit slot alias is not masked in logs (JID context only).
     - Missing tests: ErrCallsOff at usecase level, hangup success and empty-field REST cases, zero StartedAt rendering.
-  - (c) Build: add a `//go:build !cgo` stub to the fork's opus package returning errors, so
+  - (c) DONE in fork v0.2.0 (CGO_ENABLED=0 go build -tags purego . passes): add a `//go:build !cgo` stub to the fork's opus package returning errors, so
     CGO-free (`-tags purego`) builds work when calls are off. Today libopus is required always.
   - (d) REST responses (`/calls/active`, `/call/start`) return a masked peer; the CRM needs the
     full JID. Masking belongs in logs, not API responses; change before stage 2b/CRM.
@@ -161,6 +163,15 @@ history of the work.
   until the owner says the spike is over.
 
 ## Won't do
+
+- **Runtime on the gateway host (2026-10-14, `v9.6.0-elphant.3`, calls on the DDD 11 device only):**
+  - inbound from WhatsApp Web answered through `POST /call/answer`, test audio heard by the caller;
+  - text messages sent and received during a call;
+  - `POST /call/hangup` and `GET /calls/active` behave;
+  - a 64 s call gave a 54 s recording with speech throughout;
+  - CPU: about 10% to 25% of one core during a call against under 1% idle (container on 4 vCPU).
+  - **Open:** in one of two inbound calls the relay never bridged the caller's audio (no "relay is bridging" log, empty recording) while our audio reached the caller. A host and container UDP capture on the next call showed every relay packet reaching the container, so it is not Docker NAT. Likely meowcaller issues #36/#40; investigate in the fork before the CRM beta.
+  - **Open:** the end reason is empty when the peer hangs up; map it to `hangup_peer` for the 2b webhook.
 
 ### D-6 Debian 11 on the gateway host
 

@@ -6,10 +6,11 @@ import "strings"
 // Kept out of settings.go so upstream merges stay clean.
 var (
 	WhatsappCallsEnabled      = false  // answer and place calls on allowed devices
-	WhatsappCallsDevices      []string // device ids, phone numbers or JIDs allowed; empty = all. A device paired after start needs a restart to get calls
+	WhatsappCallsDevices      []string // device ids, phone numbers or JIDs allowed; empty = all. Read at start (changing it needs a restart); a device paired after start gets calls without one
 	WhatsappCallsCodec        = "opus" // "opus" or "mlow"
 	WhatsappCallsMaxPerDevice = 1      // simultaneous calls per device
 	WhatsappCallsTestAudio    = ""     // file played to the peer (stage 2a); empty = silence
+	WhatsappCallsLogLevel     = "info" // call engine log level: debug, info, warn or error
 )
 
 // CallsAllowed reports whether calls are enabled for a device, matching the allow
