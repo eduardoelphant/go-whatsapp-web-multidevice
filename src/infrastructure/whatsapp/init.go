@@ -114,6 +114,7 @@ func InitWaCLI(ctx context.Context, storeContainer, keysStoreContainer *sqlstore
 	}
 	client.EnableAutoReconnect = true
 	client.AutoTrustIdentity = true
+	attachCalls(instanceID, client) // Fork (elphant): voice calls; must precede Connect.
 
 	deviceRepo := newDeviceChatStorage(instanceID, chatStorageRepo)
 	instance := NewDeviceInstance(instanceID, client, deviceRepo)

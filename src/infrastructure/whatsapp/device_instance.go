@@ -129,6 +129,7 @@ func (d *DeviceInstance) SetClient(client *whatsmeow.Client) {
 // slot in place after a logout.
 func (d *DeviceInstance) ResetClient() {
 	d.mu.Lock()
+	forgetCalls(d.client) // Fork (elphant): the call manager belongs to the discarded client.
 	d.client = nil
 	d.jid = ""
 	d.adJID = ""

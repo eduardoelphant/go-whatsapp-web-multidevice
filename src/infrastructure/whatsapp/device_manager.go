@@ -848,6 +848,7 @@ func (m *DeviceManager) EnsureClient(ctx context.Context, deviceID string) (*Dev
 	}
 	client.EnableAutoReconnect = true
 	client.AutoTrustIdentity = true
+	attachCalls(deviceID, client) // Fork (elphant): voice calls; must precede Connect.
 
 	repo := inst.GetChatStorage()
 	if repo == nil {
