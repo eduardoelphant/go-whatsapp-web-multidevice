@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/pprof"
 	"net/url"
 	"os"
 	"os/exec"
@@ -104,6 +105,8 @@ func main() {
 		err = runServe(ctx, *play, *maxDur)
 	case "ctl":
 		err = runCtl(os.Args[2:])
+	case "logout":
+		err = runLogout(ctx)
 	default:
 		usage()
 	}
@@ -131,6 +134,24 @@ func runPair(ctx context.Context) error {
 	}
 	wa.Disconnect()
 	return nil
+}
+
+// runLogout unlinks this device from the account and clears its session.
+func runLogout(ctx context.Context) error {
+	wa, err := openClient(ctx)
+	if err != nil {
+		return err
+	}
+	if wa.Store.ID == nil {
+		return errors.New("not paired")
+	}
+	if err := wa.Connect(); err != nil {
+		return err
+	}
+	if err := waitUntilReady(ctx, wa, 30*time.Second); err != nil {
+		return err
+	}
+	return wa.Logout(ctx)
 }
 
 func runAnswer(ctx context.Context, play string, maxDur time.Duration) error {
@@ -244,6 +265,8 @@ func runServe(ctx context.Context, play string, maxDur time.Duration) error {
 		wireCall(ctx, call, t, play, maxDur)
 		fmt.Fprintln(w, "placed", call.ID())
 	})
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/hangup", func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -507,7 +530,7 @@ func linuxNetBytes() (int64, int64) {
 func round1(f float64) float64 { return float64(int64(f*10)) / 10 }
 
 func openClient(ctx context.Context) (*whatsmeow.Client, error) {
-	store.DeviceProps.Os = proto.String("meowcaller spike")
+	store.DeviceProps.Os = proto.String("Mac OS")
 	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_CHROME.Enum()
 
 	waLogger := *zerolog.Ctx(ctx)
