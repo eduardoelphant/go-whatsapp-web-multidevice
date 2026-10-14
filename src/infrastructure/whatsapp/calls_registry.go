@@ -46,7 +46,7 @@ func attachCalls(slotID string, client *whatsmeow.Client) {
 		RecordDir:  config.PathCalls,
 	})
 	callsByClient.Store(client, m)
-	logrus.Infof("[CALLS] calls enabled for device %s (codec %s)", slotID, config.WhatsappCallsCodec)
+	logrus.Infof("[CALLS] calls enabled for device %s (codec %s)", maskSlot(slotID), config.WhatsappCallsCodec)
 }
 
 // forgetCalls drops the manager of a client that is being discarded and ends its live
@@ -72,7 +72,7 @@ func warnCallsNeedRestart(slotID string, client *whatsmeow.Client) bool {
 	if _, ok := callsByClient.Load(client); ok {
 		return false
 	}
-	logrus.Warnf("[CALLS] calls are allowed for device %s but it was paired after start; restart GOWA to enable calls", slotID)
+	logrus.Warnf("[CALLS] calls are allowed for device %s but it was paired after start; restart GOWA to enable calls", maskSlot(slotID))
 	return true
 }
 

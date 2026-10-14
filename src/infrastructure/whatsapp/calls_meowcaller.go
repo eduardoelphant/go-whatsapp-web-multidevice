@@ -99,16 +99,25 @@ func maskCallJID(j types.JID) string {
 	return u + "@" + j.Server
 }
 
-var longDigits = regexp.MustCompile(`[0-9]{8,}`)
+var jidDigits = regexp.MustCompile(`([0-9]{8,})((?::[0-9]+)?@)`)
+
+// maskSlot masks the phone number in a slot id that is a JID.
+func maskSlot(s string) string { return string(maskJIDDigits([]byte(s))) }
+
+func maskJIDDigits(p []byte) []byte {
+	return jidDigits.ReplaceAllFunc(p, func(b []byte) []byte {
+		m := jidDigits.FindSubmatch(b)
+		out := append([]byte("…"), m[1][len(m[1])-4:]...)
+		return append(out, m[2]...)
+	})
+}
 
 // maskingWriter hides phone numbers in meowcaller's logs: every run of 8 or more
-// digits is cut to an ellipsis plus its last 4 digits.
+// digits in a JID (before "@" or ":device@") is cut to an ellipsis plus its last 4 digits.
 type maskingWriter struct{ w io.Writer }
 
 func (mw maskingWriter) Write(p []byte) (int, error) {
-	masked := longDigits.ReplaceAllFunc(p, func(b []byte) []byte {
-		return append([]byte("…"), b[len(b)-4:]...)
-	})
+	masked := maskJIDDigits(p)
 	if _, err := mw.w.Write(masked); err != nil {
 		return 0, err
 	}

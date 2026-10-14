@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
@@ -78,6 +79,23 @@ func TestMaskingWriter(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, len(in), n)
 	assert.Equal(t, `from …4321@s.whatsapp.net to …2345@lid id 1234567 ok`, buf.String())
+
+	buf.Reset()
+	ssrc := `{"ssrc":3456789012,"msg":"x"}` + "\n"
+	_, _ = maskingWriter{&buf}.Write([]byte(ssrc))
+	assert.Equal(t, ssrc, buf.String())
+
+	buf.Reset()
+	line := `{"peer_lid":"123456789012345@lid","a":"5511987654321:27@s.whatsapp.net","b":"5511987654321@s.whatsapp.net","ssrc":3456789012}`
+	_, _ = maskingWriter{&buf}.Write([]byte(line))
+	assert.Equal(t, `{"peer_lid":"…2345@lid","a":"…4321:27@s.whatsapp.net","b":"…4321@s.whatsapp.net","ssrc":3456789012}`, buf.String())
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+}
+
+func TestMaskSlot(t *testing.T) {
+	assert.Equal(t, "…4321:27@s.whatsapp.net", maskSlot("5511987654321:27@s.whatsapp.net"))
+	assert.Equal(t, "slot-a", maskSlot("slot-a"))
 }
 
 func TestCloseAll(t *testing.T) {
