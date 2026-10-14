@@ -224,6 +224,28 @@ func (m *CallManager) Start(ctx context.Context, target string) (CallInfo, error
 	return info, nil
 }
 
+// closeAll rejects ringing calls and hangs up active ones. It does not hold m.mu while
+// calling handles.
+func (m *CallManager) closeAll() {
+	type item struct {
+		h       callHandle
+		ringing bool
+	}
+	m.mu.Lock()
+	items := make([]item, 0, len(m.calls))
+	for _, tc := range m.calls {
+		items = append(items, item{tc.handle, tc.info.State == "ringing"})
+	}
+	m.mu.Unlock()
+	for _, it := range items {
+		if it.ringing {
+			_ = it.h.Reject()
+		} else {
+			_ = it.h.Hangup()
+		}
+	}
+}
+
 // Hangup ends a ringing or active call.
 func (m *CallManager) Hangup(callID string) error {
 	m.mu.Lock()

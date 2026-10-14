@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	meowcaller "github.com/purpshell/meowcaller"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
@@ -48,11 +49,31 @@ func attachCalls(slotID string, client *whatsmeow.Client) {
 	logrus.Infof("[CALLS] calls enabled for device %s (codec %s)", slotID, config.WhatsappCallsCodec)
 }
 
-// forgetCalls drops the manager of a client that is being discarded.
+// forgetCalls drops the manager of a client that is being discarded and ends its live
+// calls in the background (handle calls may do network I/O, and callers hold locks).
 func forgetCalls(client *whatsmeow.Client) {
-	if client != nil {
-		callsByClient.Delete(client)
+	if client == nil {
+		return
 	}
+	if v, ok := callsByClient.LoadAndDelete(client); ok {
+		safego.Go("calls_close", v.(*CallManager).closeAll)
+	}
+}
+
+// warnCallsNeedRestart warns when calls are allowed for a connected device that has no
+// manager, which happens when it was paired after start. It reports whether it warned.
+func warnCallsNeedRestart(slotID string, client *whatsmeow.Client) bool {
+	if client == nil || client.Store == nil || client.Store.ID == nil {
+		return false
+	}
+	if !config.CallsAllowed(slotID, client.Store.ID.User, client.Store.ID.String()) {
+		return false
+	}
+	if _, ok := callsByClient.Load(client); ok {
+		return false
+	}
+	logrus.Warnf("[CALLS] calls are allowed for device %s but it was paired after start; restart GOWA to enable calls", slotID)
+	return true
 }
 
 // CallsFromContext returns the call manager of the request's device.

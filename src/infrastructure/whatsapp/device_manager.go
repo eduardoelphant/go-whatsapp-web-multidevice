@@ -250,6 +250,9 @@ func (m *DeviceManager) nonADJIDClaimedByOtherSlot(excludeSlotID, nonADJID strin
 func (m *DeviceManager) RemoveDevice(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if inst := m.devices[id]; inst != nil {
+		forgetCalls(inst.GetClient()) // Fork (elphant): drop the call manager with the slot.
+	}
 	delete(m.devices, id)
 
 	if m.storage != nil && strings.TrimSpace(id) != "" {

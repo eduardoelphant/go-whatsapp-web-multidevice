@@ -3,8 +3,10 @@ package whatsapp
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -19,7 +21,7 @@ import (
 type meowEngine struct{ client *meowcaller.Client }
 
 func newMeowEngine(wa *whatsmeow.Client) *meowEngine {
-	log := zerolog.New(os.Stdout).With().Timestamp().Str("component", "calls").Logger().Level(zerolog.InfoLevel)
+	log := zerolog.New(maskingWriter{os.Stdout}).With().Timestamp().Str("component", "calls").Logger().Level(zerolog.InfoLevel)
 	return &meowEngine{client: meowcaller.NewClient(wa, meowcaller.WithLogger(log))}
 }
 
@@ -78,6 +80,9 @@ func (m meowCall) Play(path string) error {
 }
 
 func (m meowCall) Record(path string) error {
+	if m.c.State() == meowcaller.CallPhaseEnded {
+		return fmt.Errorf("call already ended")
+	}
 	sink, err := meowcaller.WAVRecorder(path)
 	if err != nil {
 		return err
@@ -92,4 +97,20 @@ func maskCallJID(j types.JID) string {
 		u = "…" + u[len(u)-4:]
 	}
 	return u + "@" + j.Server
+}
+
+var longDigits = regexp.MustCompile(`[0-9]{8,}`)
+
+// maskingWriter hides phone numbers in meowcaller's logs: every run of 8 or more
+// digits is cut to an ellipsis plus its last 4 digits.
+type maskingWriter struct{ w io.Writer }
+
+func (mw maskingWriter) Write(p []byte) (int, error) {
+	masked := longDigits.ReplaceAllFunc(p, func(b []byte) []byte {
+		return append([]byte("…"), b[len(b)-4:]...)
+	})
+	if _, err := mw.w.Write(masked); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
