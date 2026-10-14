@@ -7,8 +7,9 @@ Opus audio from a test file and a recording of the peer. The feature stays behin
 default, and the whole suite stays green.
 
 **Architecture:**
-- meowcaller (MIT) is copied into `src/third_party/meowcaller` with our patches and wired by a
-  `replace` in `src/go.mod`. It uses a small cgo binding to libopus written in-tree.
+- meowcaller (MIT) comes from our fork `eduardoelphant/meowcaller` (tag `v0.1.0-elphant.1`),
+  wired by a `replace` in `src/go.mod`. The fork carries the patches and a small cgo binding to
+  libopus.
 - Each allowed device's `*whatsmeow.Client` gets one `CallManager`, created right after
   `whatsmeow.NewClient` and before any `Connect`. The manager is kept in a package map keyed by
   client.
@@ -17,7 +18,7 @@ default, and the whole suite stays green.
 - No browser leg yet (stage 2b) and no webhooks yet (stage 2c).
 
 **Tech Stack:** Go 1.26 (`GOTOOLCHAIN=auto`), whatsmeow, meowcaller `27a3c6b` + patches,
-libopus 1.5 through cgo (`pkg-config: opus`), Fiber v3, testify.
+meowcaller fork `v0.1.0-elphant.1`, libopus 1.5 through cgo (`pkg-config: opus`), Fiber v3, testify.
 
 **Spec:** `docs/specs/2026-10-14-gateway-voice-calls-design.md` (decisions D1-D4 and D9 are in
 scope here; read the spec first).
@@ -26,8 +27,7 @@ scope here; read the spec first).
 
 - Work in the worktree `~/Documents/whatsapp-gateway-calls`, branch `spike/meowcaller-calls`.
   Local only: no push, tag, image or PR.
-- Run Go from `src/` with `GOTOOLCHAIN=auto`. For the vendored module, run from
-  `src/third_party/meowcaller`.
+- Run Go from `src/` with `GOTOOLCHAIN=auto`.
 - `WHATSAPP_CALLS_ENABLED` defaults to `false`. With the flag off, behaviour must be identical to
   today, including `call.offer`, `POST /call/reject` and `WHATSAPP_AUTO_REJECT_CALL`.
 - `WHATSAPP_CALLS_DEVICES`: comma-separated device ids or phone numbers. Empty means all devices
@@ -37,9 +37,10 @@ scope here; read the spec first).
 - `WHATSAPP_CALLS_TEST_AUDIO`: path to a `.wav`/`.mp3`/`.opus` played to the peer. Empty means
   silence.
 - Recordings of the peer go to `storages/calls/<call_id>.wav`.
-- Every goroutine GOWA starts must use `pkg/safego`. Code under `src/third_party/` is a dependency
-  and is excluded from that scan.
-- Keep meowcaller's `LICENSE` file. List every local change in `src/third_party/meowcaller/ELPHANT.md`.
+- Every goroutine GOWA starts must use `pkg/safego`. meowcaller is a dependency and is not
+  scanned.
+- meowcaller changes go to the fork (`~/Documents/meowcaller`, branch `elphant`, listed in its
+  `ELPHANT.md`), never into GOWA.
 - Never log full phone numbers or JIDs from call code: mask to the last 4 digits.
 - Code, comments, commits and docs in English, with no attribution line in commits.
 
@@ -61,422 +62,54 @@ scope here; read the spec first).
 
 ---
 
-### Task 1: Vendor meowcaller with Opus through an in-tree libopus binding
+### Task 1: Point GOWA at the meowcaller fork
+
+The fork already exists: `eduardoelphant/meowcaller`, default branch `elphant`, tag
+`v0.1.0-elphant.1`. It holds upstream `27a3c6b` plus the FFT twiddle cache (upstream PR #38), the
+dither fix, Opus mode (`SetCodec`) and the `opus/` libopus binding, with its own CI. See its
+`ELPHANT.md`. A local clone is at `~/Documents/meowcaller`. This task only wires GOWA to it.
 
 **Files:**
-- Create: `src/third_party/meowcaller/` (copy of meowcaller `27a3c6b`, trimmed)
-- Create: `src/third_party/meowcaller/opus/opus.go`, `src/third_party/meowcaller/opus/opus_test.go`
-- Create: `src/third_party/meowcaller/codec_mode.go`, `src/third_party/meowcaller/codec_mode_test.go`
-- Create: `src/third_party/meowcaller/ELPHANT.md`
-- Modify: `src/third_party/meowcaller/engine.go`, `src/third_party/meowcaller/engine_media.go` (patches)
 - Modify: `src/go.mod`, `src/go.sum`
-- Modify: `src/pkg/safego/lint_test.go:71`
 
 **Interfaces:**
-- Produces: `meowcaller.SetCodec(name string) error` (`"opus"` or `"mlow"`, call once before
-  `NewClient`), plus the existing meowcaller API: `NewClient(*whatsmeow.Client, ...Option) *Client`,
+- Produces: `meowcaller.SetCodec(name string) error` (`"opus"` or `"mlow"`, called once before
+  `NewClient`), plus the upstream API: `NewClient(*whatsmeow.Client, ...Option) *Client`,
   `WithLogger(zerolog.Logger)`, `(*Client).OnIncomingCall(func(*Call))`,
   `(*Client).Call(ctx, target string) (*Call, error)`, `(*Call).ID/Peer/Answer/Reject/Hangup/Play/Receive/OnReady/OnEnd`,
   `WAVFile/MP3File/OpusFile(path) (AudioSource, error)`, `WAVRecorder(path) (AudioSink, error)`.
-- Produces: package `github.com/purpshell/meowcaller/opus` with
-  `NewEncoder(sampleRate, bitrate, complexity int, dtx bool) (*Encoder, error)`,
-  `(*Encoder).Encode(pcm []float32) ([]byte, error)`, `NewDecoder(sampleRate int) (*Decoder, error)`,
-  `(*Decoder).Decode(pkt []byte) []float32`.
 
-- [ ] **Step 1: Copy meowcaller at 27a3c6b into the tree**
-
-```bash
-cd ~/Documents/whatsapp-gateway-calls
-TMP=$(mktemp -d) && git clone -q https://github.com/purpshell/meowcaller.git "$TMP/mc" && git -C "$TMP/mc" checkout -q 27a3c6b
-git -C "$TMP/mc" apply ~/Documents/whatsapp-gateway-calls/spikes/meowcaller/patches/0001-pr38-fft-twiddle-cache.patch
-mkdir -p src/third_party
-rsync -a --exclude .git --exclude .github --exclude examples --exclude datasheets --exclude scripts \
-  --exclude docs --exclude 'diag/extension' --exclude 'diag/extension-server' "$TMP/mc/" src/third_party/meowcaller/
-ls src/third_party/meowcaller/LICENSE src/third_party/meowcaller/go.mod
-```
-
-Expected: both files listed. Do not apply `0002` or `0003`: Steps 3 and 4 write their content in
-final form.
-
-- [ ] **Step 2: Write the failing test for the libopus binding**
-
-`src/third_party/meowcaller/opus/opus_test.go`:
-
-```go
-package opus
-
-import "testing"
-
-func TestRoundTripKeepsFrameLength(t *testing.T) {
-	enc, err := NewEncoder(16000, 24000, 5, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dec, err := NewDecoder(16000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pcm := make([]float32, 960)
-	for i := range pcm {
-		pcm[i] = 0.3 * float32((i%40)-20) / 20
-	}
-	pkt, err := enc.Encode(pcm)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pkt) == 0 || len(pkt) > 1275 {
-		t.Fatalf("packet length %d out of range", len(pkt))
-	}
-	if out := dec.Decode(pkt); len(out) != 960 {
-		t.Fatalf("decoded %d samples, want 960", len(out))
-	}
-}
-
-func TestDecodeGarbageReturnsNil(t *testing.T) {
-	dec, err := NewDecoder(16000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out := dec.Decode([]byte{0xff, 0xff, 0xff}); out != nil {
-		t.Fatalf("want nil for an invalid packet, got %d samples", len(out))
-	}
-}
-```
-
-- [ ] **Step 3: Run it to see it fail**
-
-Run: `cd src/third_party/meowcaller && GOTOOLCHAIN=auto go test ./opus/`
-Expected: FAIL to build (`undefined: NewEncoder`).
-
-- [ ] **Step 4: Write the binding**
-
-`src/third_party/meowcaller/opus/opus.go`:
-
-```go
-// Package opus is a minimal cgo binding to libopus for WhatsApp calls: mono float
-// encode and decode at one sample rate. Elphant fork addition, not part of meowcaller.
-package opus
-
-/*
-#cgo pkg-config: opus
-#include <opus.h>
-static int enc_set_bitrate(OpusEncoder *e, opus_int32 v) { return opus_encoder_ctl(e, OPUS_SET_BITRATE(v)); }
-static int enc_set_complexity(OpusEncoder *e, opus_int32 v) { return opus_encoder_ctl(e, OPUS_SET_COMPLEXITY(v)); }
-static int enc_set_dtx(OpusEncoder *e, opus_int32 v) { return opus_encoder_ctl(e, OPUS_SET_DTX(v)); }
-*/
-import "C"
-
-import (
-	"fmt"
-	"runtime"
-	"unsafe"
-)
-
-const maxPacketBytes = 1275
-
-// Encoder encodes mono float32 frames.
-type Encoder struct {
-	enc *C.OpusEncoder
-	out []byte
-}
-
-// NewEncoder creates a VoIP encoder. Frames passed to Encode must be a valid Opus
-// frame size for sampleRate (960 samples is 60 ms at 16 kHz).
-func NewEncoder(sampleRate, bitrate, complexity int, dtx bool) (*Encoder, error) {
-	var cerr C.int
-	enc := C.opus_encoder_create(C.opus_int32(sampleRate), 1, C.OPUS_APPLICATION_VOIP, &cerr)
-	if cerr != C.OPUS_OK || enc == nil {
-		return nil, fmt.Errorf("opus: encoder create: %d", int(cerr))
-	}
-	e := &Encoder{enc: enc, out: make([]byte, maxPacketBytes)}
-	runtime.SetFinalizer(e, func(e *Encoder) { C.opus_encoder_destroy(e.enc) })
-	d := C.opus_int32(0)
-	if dtx {
-		d = 1
-	}
-	if C.enc_set_bitrate(enc, C.opus_int32(bitrate)) != C.OPUS_OK ||
-		C.enc_set_complexity(enc, C.opus_int32(complexity)) != C.OPUS_OK ||
-		C.enc_set_dtx(enc, d) != C.OPUS_OK {
-		return nil, fmt.Errorf("opus: encoder ctl failed")
-	}
-	return e, nil
-}
-
-// Encode encodes one frame and returns a new packet slice.
-func (e *Encoder) Encode(pcm []float32) ([]byte, error) {
-	if len(pcm) == 0 {
-		return nil, fmt.Errorf("opus: empty frame")
-	}
-	n := C.opus_encode_float(e.enc, (*C.float)(unsafe.Pointer(&pcm[0])), C.int(len(pcm)),
-		(*C.uchar)(unsafe.Pointer(&e.out[0])), C.opus_int32(len(e.out)))
-	runtime.KeepAlive(pcm)
-	if n < 0 {
-		return nil, fmt.Errorf("opus: encode: %d", int(n))
-	}
-	return append([]byte(nil), e.out[:n]...), nil
-}
-
-// Decoder decodes packets to mono float32.
-type Decoder struct {
-	dec *C.OpusDecoder
-	buf []float32
-}
-
-// NewDecoder creates a decoder; output holds up to 120 ms per packet.
-func NewDecoder(sampleRate int) (*Decoder, error) {
-	var cerr C.int
-	dec := C.opus_decoder_create(C.opus_int32(sampleRate), 1, &cerr)
-	if cerr != C.OPUS_OK || dec == nil {
-		return nil, fmt.Errorf("opus: decoder create: %d", int(cerr))
-	}
-	d := &Decoder{dec: dec, buf: make([]float32, sampleRate*120/1000)}
-	runtime.SetFinalizer(d, func(d *Decoder) { C.opus_decoder_destroy(d.dec) })
-	return d, nil
-}
-
-// Decode returns the decoded samples, or nil when the packet is empty or invalid.
-func (d *Decoder) Decode(pkt []byte) []float32 {
-	if len(pkt) == 0 {
-		return nil
-	}
-	n := C.opus_decode_float(d.dec, (*C.uchar)(unsafe.Pointer(&pkt[0])), C.opus_int32(len(pkt)),
-		(*C.float)(unsafe.Pointer(&d.buf[0])), C.int(len(d.buf)), 0)
-	runtime.KeepAlive(pkt)
-	if n <= 0 {
-		return nil
-	}
-	return append([]float32(nil), d.buf[:n]...)
-}
-```
-
-- [ ] **Step 5: Run the binding tests**
-
-Run: `cd src/third_party/meowcaller && GOTOOLCHAIN=auto go test ./opus/ -v`
-Expected: PASS for both tests. On macOS, `brew install opus pkg-config` first if `pkg-config --modversion opus` fails.
-
-- [ ] **Step 6: Write the failing test for codec selection**
-
-`src/third_party/meowcaller/codec_mode_test.go`:
-
-```go
-package meowcaller
-
-import (
-	"testing"
-
-	"github.com/purpshell/meowcaller/signaling"
-)
-
-func TestSetCodecTogglesMlowCapability(t *testing.T) {
-	t.Cleanup(func() { _ = SetCodec("mlow") })
-	if err := SetCodec("opus"); err != nil {
-		t.Fatal(err)
-	}
-	for name, blob := range map[string][]byte{
-		"offer": signaling.CapabilityOffer, "video": signaling.CapabilityVideoOffer, "preaccept": signaling.CapabilityPreaccept,
-	} {
-		if blob[5]&0x80 != 0 {
-			t.Fatalf("%s still advertises use_mlow_codec_v1", name)
-		}
-	}
-	if !opusMode {
-		t.Fatal("opus mode not set")
-	}
-	if err := SetCodec("mlow"); err != nil {
-		t.Fatal(err)
-	}
-	if signaling.CapabilityOffer[5]&0x80 == 0 || opusMode {
-		t.Fatal("mlow mode not restored")
-	}
-	if err := SetCodec("speex"); err == nil {
-		t.Fatal("want an error for an unknown codec")
-	}
-}
-```
-
-- [ ] **Step 7: Run it to see it fail**
-
-Run: `cd src/third_party/meowcaller && GOTOOLCHAIN=auto go test -run TestSetCodecTogglesMlowCapability .`
-Expected: FAIL to build (`undefined: SetCodec`).
-
-- [ ] **Step 8: Write codec_mode.go and patch the engine**
-
-`src/third_party/meowcaller/codec_mode.go`:
-
-```go
-package meowcaller
-
-import (
-	"fmt"
-
-	"github.com/purpshell/meowcaller/opus"
-	"github.com/purpshell/meowcaller/signaling"
-)
-
-// Elphant fork: codec selection. In opus mode the client stops advertising capability
-// 31 (use_mlow_codec_v1, bit 0x80 of byte 5) and answers with voip_settings that turn
-// MLow off, so both sides use standard Opus on the same PT120 / 16 kHz / 60 ms RTP
-// profile. Modelled on whatsapp-rust PR #1050 (wacore/src/stanza/call.rs).
-var opusMode bool
-
-var opusVoipSettings = []byte(`{"encode":{"use_mlow_codec_v1":"false"},"options":{"enable_48khz_rtp_clock":"false"}}`)
-
-// SetCodec selects "opus" or "mlow" for every client in the process. Call it once,
-// before NewClient.
-func SetCodec(name string) error {
-	switch name {
-	case "opus":
-		opusMode = true
-	case "mlow":
-		opusMode = false
-	default:
-		return fmt.Errorf("meowcaller: unknown codec %q", name)
-	}
-	for _, blob := range [][]byte{signaling.CapabilityOffer, signaling.CapabilityVideoOffer, signaling.CapabilityPreaccept} {
-		if opusMode {
-			blob[5] &^= 0x80
-		} else {
-			blob[5] |= 0x80
-		}
-	}
-	return nil
-}
-
-type audioEncoder interface {
-	Encode(pcm []float32) ([]byte, error)
-}
-
-func newOpusEncoder() (audioEncoder, error) {
-	return opus.NewEncoder(SampleRate, 24000, 5, true)
-}
-
-func newOpusDecoder() (participantAudioDecoder, error) {
-	return opus.NewDecoder(SampleRate)
-}
-```
-
-Patch `engine.go`, the accept builder in the function that sends the deferred accept (search
-`signaling.BuildAccept(&signaling.AcceptParams{`). Replace the call with:
-
-```go
-	acceptParams := &signaling.AcceptParams{
-		CallID: callID, To: to, CallCreator: creator,
-		AudioRates: []string{"16000"},
-		Metadata:   waBinary.Attrs{"peer_abtest_bucket_id_list": "125208,94276"},
-		Video:      isVideo,
-	}
-	if opusMode {
-		acceptParams.Capability = append([]byte(nil), signaling.CapabilityOffer...)
-		acceptParams.VoipSettings = opusVoipSettings
-	}
-	accept := signaling.BuildAccept(acceptParams)
-```
-
-Patch `engine_media.go`. First, the encoder (`enc := mlow.NewMlowEncoder(mlow.WithLogger(log))`):
-
-```go
-	var enc audioEncoder = mlow.NewMlowEncoder(mlow.WithLogger(log))
-	if opusMode {
-		oe, err := newOpusEncoder()
-		if err != nil {
-			return err
-		}
-		enc = oe
-	}
-```
-
-Second, the decoder factory passed to `newParticipantReceiveRegistry`:
-
-```go
-			func() participantAudioDecoder {
-				if opusMode {
-					if od, err := newOpusDecoder(); err == nil {
-						return od
-					}
-				}
-				return mlow.NewMlowDecoder(mlow.WithLogger(log))
-			},
-```
-
-Third, the dither before encoding in the send loop. In the goroutine that starts with
-`silence := make([]float32, FrameSamples)`, add the following after that line:
-
-```go
-		ditherBuf := make([]float32, FrameSamples*2)
-		ditherSeed := uint32(1)
-```
-
-Then replace `payload, err := enc.Encode(frame)` with:
-
-```go
-			// Dither keeps the MLow encoder's recursive filter state out of the subnormal
-			// float range after speech turns to silence, which is several times slower.
-			dithered := ditherBuf[:len(frame)]
-			for i, v := range frame {
-				ditherSeed = ditherSeed*1664525 + 1013904223
-				dithered[i] = v + (float32(int32(ditherSeed))/2147483648)*3e-5
-			}
-			payload, err := enc.Encode(dithered)
-```
-
-- [ ] **Step 9: Run meowcaller's whole suite**
-
-Run: `cd src/third_party/meowcaller && gofmt -w . ; GOTOOLCHAIN=auto go vet ./... && GOTOOLCHAIN=auto go test ./...`
-Expected: no gofmt output, and every package `ok`.
-
-- [ ] **Step 10: Write ELPHANT.md**
-
-`src/third_party/meowcaller/ELPHANT.md`:
-
-```markdown
-# meowcaller in the Elphant fork
-
-Copy of https://github.com/purpshell/meowcaller at `27a3c6b` (MIT, see `LICENSE`), the last
-commit on the official `go.mau.fi/whatsmeow` before upstream moved to the `hypermeow` fork.
-Removed: `examples/`, `datasheets/`, `scripts/`, `docs/`, `diag/extension*`, `.github/`.
-
-Local changes:
-- `mlow/fft.go`: meowcaller PR #30/#38, FFT twiddle cache.
-- `engine_media.go`: 1-LSB dither before encoding, which keeps the MLow encoder out of the
-  subnormal float range (about 3x faster on silence after speech). Also the Opus encoder and
-  decoder choice.
-- `engine.go`: in Opus mode, the accept carries the capability without MLow plus `voip_settings`
-  that turn MLow off.
-- `codec_mode.go`: `SetCodec("opus"|"mlow")`.
-- `opus/`: a minimal cgo binding to libopus (`pkg-config: opus`).
-
-Spike results: `docs/reference/meowcaller-calls-spike.md`. Re-check upstream on each GOWA sync.
-```
-
-- [ ] **Step 11: Wire it into GOWA and exclude it from the goroutine scan**
+- [ ] **Step 1: Add the replace**
 
 ```bash
 cd ~/Documents/whatsapp-gateway-calls/src
-GOTOOLCHAIN=auto go mod edit -replace github.com/purpshell/meowcaller=./third_party/meowcaller
-GOTOOLCHAIN=auto go get github.com/purpshell/meowcaller@v0.0.0-00010101000000-000000000000
+GOTOOLCHAIN=auto go mod edit -replace github.com/purpshell/meowcaller=github.com/eduardoelphant/meowcaller@v0.1.0-elphant.1
 ```
 
-In `src/pkg/safego/lint_test.go:71`, change the directory skip line to:
+The fork keeps `module github.com/purpshell/meowcaller` in its `go.mod` on purpose, so GOWA
+imports the upstream path and nothing else changes. `go mod tidy` drops the require while nothing
+imports meowcaller. Task 4 adds the import and runs `go mod tidy`, which records the require
+and `go.sum`.
 
-```go
-			case "testdata", "node_modules", "vendor", ".git", "third_party":
-```
-
-Leave the go.mod entry for now: `go mod tidy` would drop the require, because nothing in GOWA
-imports meowcaller until Task 4. Run `go mod tidy` at the end of Task 4.
-
-- [ ] **Step 12: Verify GOWA still builds and passes**
-
-Run: `cd src && GOTOOLCHAIN=auto go build ./... && GOTOOLCHAIN=auto go test ./pkg/safego/`
-Expected: build OK, `ok .../pkg/safego`.
-
-- [ ] **Step 13: Commit**
+- [ ] **Step 2: Check the fork resolves and builds against GOWA's whatsmeow**
 
 ```bash
-cd ~/Documents/whatsapp-gateway-calls
-git add src/third_party src/go.mod src/go.sum src/pkg/safego/lint_test.go
-git commit -m "feat(calls): vendor meowcaller with Opus mode, dither fix and a libopus binding"
+cd ~/Documents/whatsapp-gateway-calls/src
+GOTOOLCHAIN=auto go get github.com/purpshell/meowcaller@v0.0.0-00010101000000-000000000000
+GOTOOLCHAIN=auto go build github.com/purpshell/meowcaller/... && GOTOOLCHAIN=auto go build ./...
 ```
+
+Expected: both builds succeed (needs `libopus` and `pkg-config`; on macOS `brew install opus pkg-config`).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/go.mod src/go.sum
+git commit -m "build(calls): use the eduardoelphant/meowcaller fork through a replace"
+```
+
+Changing meowcaller later: commit on `elphant` in the fork, tag `vX.Y.Z-elphant.N`, push the
+branch and the tag (owner's OK), then bump the tag in the `replace`.
 
 ---
 
@@ -1089,7 +722,7 @@ git commit -m "feat(calls): per-device call manager with a call cap and a ring w
 **Interfaces:**
 - Consumes: `newCallManager`, `callManagerOptions`, `CallManager`, `ErrCallsOff` (Task 3);
   `config.CallsAllowed`, `config.WhatsappCalls*`, `config.PathCalls` (Task 2);
-  `meowcaller.SetCodec`, `meowcaller.NewClient` (Task 1).
+  `meowcaller.SetCodec`, `meowcaller.NewClient` (Task 1, from the fork).
 - Produces: `attachCalls(slotID string, client *whatsmeow.Client)`,
   `forgetCalls(client *whatsmeow.Client)`,
   `CallsFromContext(ctx context.Context) (*CallManager, error)`.
@@ -1337,7 +970,7 @@ Run:
 cd src && GOTOOLCHAIN=auto go mod tidy && gofmt -w infrastructure/whatsapp
 GOTOOLCHAIN=auto go test ./infrastructure/whatsapp/ -race
 ```
-Expected: `go.mod` keeps `github.com/purpshell/meowcaller` with the `replace`. No gofmt output.
+Expected: `go.mod` has `require github.com/purpshell/meowcaller` and the `replace` to the fork. No gofmt output.
 `ok` (including the two new tests and every existing test in the package).
 
 - [ ] **Step 7: Commit**
@@ -1580,7 +1213,7 @@ func (service serviceCall) ActiveCalls(ctx context.Context) ([]domainCall.CallIn
 
 Check before relying on `Start`'s context: meowcaller may tie the whole call to the context passed
 to `Call`. If it does, a 30 s timeout context would end calls after 30 s. Read
-`src/third_party/meowcaller/client.go` (`Call`) and `engine.go` (the outbound path) and see
+`~/Documents/meowcaller/client.go` (`Call`) and `engine.go` (the outbound path) and see
 whether the context is only used for signaling. If the call lives on it, pass
 `context.WithoutCancel(ctx)` instead, and say so in a comment.
 
@@ -1669,13 +1302,7 @@ In both workflows, before the `go vet` step, add:
         run: sudo apt-get update && sudo apt-get install -y libopus-dev pkg-config
 ```
 
-After `go test ./...`, add a step that tests the vendored module:
-
-```yaml
-      - name: Test vendored meowcaller
-        working-directory: src/third_party/meowcaller
-        run: go test ./...
-```
+meowcaller's own tests run in the fork's CI, not here.
 
 - [ ] **Step 3: Docs**
 
@@ -1693,13 +1320,11 @@ cd ~/Documents/whatsapp-gateway-calls/src
 GOTOOLCHAIN=auto go vet ./...
 GOTOOLCHAIN=auto go test ./...
 GOTOOLCHAIN=auto go build -o whatsapp .
-(cd third_party/meowcaller && GOTOOLCHAIN=auto go test ./...)
 docker build -f ../docker/golang.Dockerfile -t gowa-calls-local .. 2>&1 | tail -3
 ```
 
 Expected: vet clean; every package `ok`, including `TestEveryBackgroundGoroutineIsProtected`, the
-durable webhook tests and the watchdog tests; the binary builds; the meowcaller tests pass; and the
-image builds. The image is local only and is never pushed.
+durable webhook tests and the watchdog tests; the binary builds; and the image builds. The image is local only and is never pushed.
 
 - [ ] **Step 5: Commit**
 

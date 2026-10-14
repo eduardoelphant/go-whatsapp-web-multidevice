@@ -53,7 +53,7 @@ customer (WhatsApp) ⇄ Meta relay ⇄ GOWA [meowcaller, Opus] ⇄ WebRTC [pion]
 
 | # | Decision | Alternative rejected |
 |---|---|---|
-| D1 | meowcaller lives in the repository at `src/third_party/meowcaller` (pinned `27a3c6b`, its LICENSE kept, our patches applied and listed in a README), wired with a `replace` in `src/go.mod`. It imports the official `go.mau.fi/whatsmeow`. | A separate fork repository (one more thing to publish and sync). Upstream `main` (it moved to the `hypermeow` fork of whatsmeow). |
+| D1 | meowcaller comes from our fork `eduardoelphant/meowcaller` (branch `elphant` from upstream `27a3c6b`, MIT license kept, our changes listed in its `ELPHANT.md`, tags `vX.Y.Z-elphant.N`), wired with a `replace` in `src/go.mod`. It imports the official `go.mau.fi/whatsmeow`. Owner's decision (2026-10-14): maintained like the GOWA fork. | A copy inside GOWA (no history or versions of its own). Upstream `main` (it moved to the `hypermeow` fork of whatsmeow). |
 | D2 | Opus is the codec: we clear capability 31 (`use_mlow_codec_v1`) and send `voip_settings` that turn MLow off when accepting. MLow, with the dither fix, stays as a fallback behind `WHATSAPP_CALLS_CODEC=mlow`. | MLow by default (about 3x the CPU even after the fix). |
 | D3 | libopus through cgo (`gopkg.in/hraban/opus.v2`, MIT, build tag `nolibopusfile`). The image installs `opus` / `opus-dev` on Alpine. GOWA already builds with cgo. | A pure-Go Opus encoder (young, unproven). |
 | D4 | Off by default: `WHATSAPP_CALLS_ENABLED=false`. `WHATSAPP_CALLS_DEVICES` lists the device ids allowed to use calls (empty means all, when enabled). A device not allowed keeps today's behaviour. | Global on/off only (no way to limit the ban risk to chosen numbers). |
@@ -111,7 +111,7 @@ where known), and a timestamp.
 ## Rollout
 
 1. **Stage 2a: library in GOWA.**
-   - Vendor meowcaller with its patches. Add the flag, answer and start with a file source and a
+   - Use the meowcaller fork through a `replace`. Add the flag, answer and start with a file source and a
      recording, without the browser.
    - Proves cohesion: `go vet ./...` and `go test ./...` green, including
      `TestEveryBackgroundGoroutineIsProtected`, the durable webhook tests and the watchdog tests.
@@ -144,6 +144,6 @@ where known), and a timestamp.
   spike). The CRM will not see those calls.
 - **Agents' networks:** without TURN, an agent behind a strict firewall may get no audio. TURN is
   the fix if it happens.
-- **Library upkeep:** our meowcaller copy diverges from upstream (Opus mode, dither, FFT patch).
+- **Library upkeep:** our meowcaller fork diverges from upstream (Opus mode, dither, FFT patch).
   Re-check upstream on each GOWA sync and send the dither fix upstream.
 - **LGPD:** recording consent and retention in the CRM are legal decisions (D8).
