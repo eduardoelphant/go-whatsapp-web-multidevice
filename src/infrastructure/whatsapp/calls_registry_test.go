@@ -8,6 +8,7 @@ import (
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	meowcaller "github.com/purpshell/meowcaller"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mau.fi/whatsmeow"
@@ -167,4 +168,13 @@ func TestEffectiveCodec(t *testing.T) {
 	} else {
 		assert.Equal(t, "opus", codec)
 	}
+}
+
+func TestParseCallsLogLevel(t *testing.T) {
+	assert.Equal(t, zerolog.DebugLevel, parseCallsLogLevel("debug"))
+	assert.Equal(t, zerolog.WarnLevel, parseCallsLogLevel(" WARN "))
+	assert.Equal(t, zerolog.ErrorLevel, parseCallsLogLevel("error"))
+	assert.Equal(t, zerolog.InfoLevel, parseCallsLogLevel("info"))
+	assert.Equal(t, zerolog.InfoLevel, parseCallsLogLevel("bogus"))
+	assert.Equal(t, zerolog.InfoLevel, parseCallsLogLevel(""))
 }

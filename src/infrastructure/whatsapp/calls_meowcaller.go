@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	meowcaller "github.com/purpshell/meowcaller"
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
@@ -21,8 +22,21 @@ import (
 
 type meowEngine struct{ client *meowcaller.Client }
 
+// parseCallsLogLevel maps the configured level to zerolog; anything else is info.
+func parseCallsLogLevel(s string) zerolog.Level {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return zerolog.DebugLevel
+	case "warn":
+		return zerolog.WarnLevel
+	case "error":
+		return zerolog.ErrorLevel
+	}
+	return zerolog.InfoLevel
+}
+
 func newMeowEngine(wa *whatsmeow.Client, filter func(*events.CallOffer) bool) *meowEngine {
-	log := zerolog.New(maskingWriter{os.Stdout}).With().Timestamp().Str("component", "calls").Logger().Level(zerolog.InfoLevel)
+	log := zerolog.New(maskingWriter{os.Stdout}).With().Timestamp().Str("component", "calls").Logger().Level(parseCallsLogLevel(config.WhatsappCallsLogLevel))
 	return &meowEngine{client: meowcaller.NewClient(wa, meowcaller.WithLogger(log), meowcaller.WithOfferFilter(filter))}
 }
 

@@ -236,6 +236,9 @@ func initEnvConfig() {
 	if env := viper.GetString("whatsapp_calls_test_audio"); env != "" {
 		config.WhatsappCallsTestAudio = env
 	}
+	if env := viper.GetString("whatsapp_calls_log_level"); env != "" {
+		config.WhatsappCallsLogLevel = env
+	}
 	if envPresenceOnConnect := viper.GetString("whatsapp_presence_on_connect"); envPresenceOnConnect != "" {
 		config.WhatsappPresenceOnConnect = envPresenceOnConnect
 	}
@@ -537,6 +540,8 @@ func initFlags() {
 		`simultaneous calls per device --calls-max-per-device <n> | example: --calls-max-per-device=1`)
 	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsTestAudio, "calls-test-audio", "", config.WhatsappCallsTestAudio,
 		`audio file played to the peer --calls-test-audio <path> | example: --calls-test-audio=storages/hello.wav`)
+	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsLogLevel, "calls-log-level", "", config.WhatsappCallsLogLevel,
+		`call engine log level --calls-log-level <debug|info|warn|error> | example: --calls-log-level=debug`)
 	rootCmd.PersistentFlags().StringVarP(
 		&config.WhatsappPresenceOnConnect,
 		"presence-on-connect", "",
