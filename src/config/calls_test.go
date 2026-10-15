@@ -38,3 +38,9 @@ func TestCallsAllowed(t *testing.T) {
 		t.Fatal("a full JID in the list must match")
 	}
 }
+
+func TestCallsStage2bDefaults(t *testing.T) {
+	if WhatsappCallsMaxDurationMinutes != 120 {
+		t.Fatalf("WhatsappCallsMaxDurationMinutes = %d, want 120", WhatsappCallsMaxDurationMinutes)
+	}
+}

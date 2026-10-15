@@ -2,13 +2,12 @@ package whatsapp
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	meowcaller "github.com/purpshell/meowcaller"
@@ -21,7 +20,10 @@ import (
 
 // Fork (elphant): adapter from meowcaller to the callEngine/callHandle seams.
 
-type meowEngine struct{ client *meowcaller.Client }
+type meowEngine struct {
+	client *meowcaller.Client
+	wa     *whatsmeow.Client
+}
 
 // parseCallsLogLevel maps the configured level to zerolog; anything else is info.
 func parseCallsLogLevel(s string) zerolog.Level {
@@ -52,11 +54,13 @@ func parseCallsEarlyMedia(s string) meowcaller.EarlyMediaMode {
 
 func newMeowEngine(wa *whatsmeow.Client, filter func(*events.CallOffer) bool) *meowEngine {
 	log := zerolog.New(maskingWriter{os.Stdout}).With().Timestamp().Str("component", "calls").Logger().Level(parseCallsLogLevel(config.WhatsappCallsLogLevel))
-	return &meowEngine{client: meowcaller.NewClient(wa, meowcaller.WithLogger(log), meowcaller.WithOfferFilter(filter), meowcaller.WithEarlyMedia(parseCallsEarlyMedia(config.WhatsappCallsEarlyMedia)))}
+	return &meowEngine{wa: wa, client: meowcaller.NewClient(wa, meowcaller.WithLogger(log), meowcaller.WithOfferFilter(filter), meowcaller.WithEarlyMedia(parseCallsEarlyMedia(config.WhatsappCallsEarlyMedia)))}
 }
 
 func (e *meowEngine) OnIncomingCall(fn func(callHandle)) {
-	e.client.OnIncomingCall(func(c *meowcaller.Call) { fn(meowCall{c}) })
+	e.client.OnIncomingCall(func(c *meowcaller.Call) {
+		fn(meowCall{c: c, peer: resolvePeer(e.wa, c.Peer(), "")})
+	})
 }
 
 func (e *meowEngine) Call(ctx context.Context, target string) (callHandle, error) {
@@ -64,16 +68,19 @@ func (e *meowEngine) Call(ctx context.Context, target string) (callHandle, error
 	if err != nil {
 		return nil, err
 	}
-	return meowCall{c}, nil
+	return meowCall{c: c, peer: resolvePeer(e.wa, c.Peer(), targetPN(target))}, nil
 }
 
-type meowCall struct{ c *meowcaller.Call }
+type meowCall struct {
+	c    *meowcaller.Call
+	peer CallPeer
+}
 
-func (m meowCall) ID() string         { return m.c.ID() }
-func (m meowCall) PeerMasked() string { return maskCallJID(m.c.Peer()) }
-func (m meowCall) Answer() error      { return m.c.Answer() }
-func (m meowCall) Reject() error      { return m.c.Reject() }
-func (m meowCall) Hangup() error      { return m.c.Hangup() }
+func (m meowCall) ID() string     { return m.c.ID() }
+func (m meowCall) Peer() CallPeer { return m.peer }
+func (m meowCall) Answer() error  { return m.c.Answer() }
+func (m meowCall) Reject() error  { return m.c.Reject() }
+func (m meowCall) Hangup() error  { return m.c.Hangup() }
 
 // OnEnd registers fn. meowcaller does not replay an end to a callback registered
 // after the call ended, so check the phase after registering; the Once guard stops a
@@ -87,46 +94,76 @@ func (m meowCall) OnEnd(fn func(string)) {
 	}
 }
 
-func (m meowCall) Play(path string) error {
-	var src meowcaller.AudioSource
-	var err error
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".wav":
-		src, err = meowcaller.WAVFile(path)
-	case ".mp3":
-		src, err = meowcaller.MP3File(path)
-	case ".opus":
-		src, err = meowcaller.OpusFile(path)
-	default:
-		return fmt.Errorf("unsupported audio file %q", path)
-	}
-	if err != nil {
-		return err
-	}
-	// Not wrapped in OnReady: it is a single slot that may already have fired, and the
-	// send loop only pulls player frames once media runs.
-	m.c.Play(src)
-	return nil
+// OnRinging fires when an outbound call's peer device pre-accepts (the phone rings).
+func (m meowCall) OnRinging(fn func()) {
+	m.c.OnStateChange(func(p meowcaller.CallPhase) {
+		if p == meowcaller.CallPhaseRinging {
+			fn()
+		}
+	})
 }
 
-func (m meowCall) Record(path string) error {
-	if m.c.State() == meowcaller.CallPhaseEnded {
-		return fmt.Errorf("call already ended")
-	}
-	sink, err := meowcaller.WAVRecorder(path)
-	if err != nil {
-		return err
-	}
+func (m meowCall) OnAccept(fn func()) { m.c.OnPeerAccept(fn) }
+func (m meowCall) OnMedia(fn func())  { m.c.OnReady(fn) }
+
+// Bridge attaches the call's audio. sink receives the peer's decoded 16 kHz frames; src is
+// pulled every 60 ms by the send loop once media runs (it is not wrapped in OnReady: that is a
+// single slot that may already have fired).
+func (m meowCall) Bridge(src pcmSource, sink pcmSink) {
 	m.c.Receive(sink)
-	return nil
+	m.c.Play(src)
 }
 
-func maskCallJID(j types.JID) string {
-	u := j.User
-	if len(u) > 4 {
-		u = "…" + u[len(u)-4:]
+// resolvePeer builds the peer's phone-number JID and LID from what the engine knows plus the
+// device's LID store. Either may stay "".
+func resolvePeer(wa *whatsmeow.Client, peer types.JID, pnHint string) CallPeer {
+	var out CallPeer
+	peer = peer.ToNonAD()
+	switch peer.Server {
+	case types.HiddenUserServer:
+		out.LID = peer.String()
+	case types.DefaultUserServer:
+		out.PN = peer.String()
 	}
-	return u + "@" + j.Server
+	if pnHint != "" {
+		out.PN = pnHint
+	}
+	if wa == nil || wa.Store == nil || wa.Store.LIDs == nil {
+		return out
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if out.PN == "" && out.LID != "" {
+		if pn, err := wa.Store.LIDs.GetPNForLID(ctx, peer); err == nil && !pn.IsEmpty() {
+			out.PN = pn.ToNonAD().String()
+		}
+	}
+	if out.LID == "" && out.PN != "" {
+		if pnJID, err := types.ParseJID(out.PN); err == nil {
+			if lid, err := wa.Store.LIDs.GetLIDForPN(ctx, pnJID); err == nil && !lid.IsEmpty() {
+				out.LID = lid.ToNonAD().String()
+			}
+		}
+	}
+	return out
+}
+
+var nonDigits = regexp.MustCompile(`[^0-9]`)
+
+// targetPN is the phone-number JID of a call target given as digits, "+55 ..." or a JID.
+func targetPN(target string) string {
+	if strings.Contains(target, "@") {
+		j, err := types.ParseJID(target)
+		if err != nil || j.Server != types.DefaultUserServer {
+			return ""
+		}
+		return j.ToNonAD().String()
+	}
+	digits := nonDigits.ReplaceAllString(target, "")
+	if digits == "" {
+		return ""
+	}
+	return digits + "@" + types.DefaultUserServer
 }
 
 var jidDigits = regexp.MustCompile(`([0-9]{8,})((?::[0-9]+)?@)`)

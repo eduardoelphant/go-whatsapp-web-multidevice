@@ -143,7 +143,7 @@ func TestSwitchOffEndsLiveCalls(t *testing.T) {
 	t.Cleanup(func() { callsByClient.Delete(client) })
 	in := &fakeCall{id: "IN-1"}
 	eng.incoming(in)
-	require.NoError(t, m.Answer("IN-1"))
+	require.NoError(t, m.Answer("IN-1", ""))
 
 	_, err := SetDeviceCalls("slot-a", false)
 	require.NoError(t, err)

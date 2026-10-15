@@ -33,7 +33,7 @@ func (s *callServiceStub) AnswerCall(ctx context.Context, id string) error {
 }
 func (s *callServiceStub) StartCall(ctx context.Context, phone string) (domainCall.CallInfo, error) {
 	s.started = phone
-	return domainCall.CallInfo{CallID: "OUT-1", Direction: "outbound", State: "active"}, s.err
+	return domainCall.CallInfo{CallID: "OUT-1", Direction: "BUSINESS_INITIATED", State: "ringing"}, s.err
 }
 func (s *callServiceStub) HangupCall(ctx context.Context, id string) error { return s.err }
 func (s *callServiceStub) ActiveCalls(ctx context.Context) ([]domainCall.CallInfo, error) {

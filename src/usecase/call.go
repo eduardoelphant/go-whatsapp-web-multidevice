@@ -52,8 +52,8 @@ func (service serviceCall) RejectCall(ctx context.Context, callerJID string, cal
 
 func toCallInfo(c whatsapp.CallInfo) domainCall.CallInfo {
 	return domainCall.CallInfo{
-		CallID: c.CallID, Direction: c.Direction, Peer: c.Peer, State: c.State,
-		StartedAt: c.StartedAt.UTC().Format(time.RFC3339),
+		CallID: c.CallID, Direction: c.Direction, Peer: domainCall.CallPeer{PN: c.Peer.PN, LID: c.Peer.LID},
+		State: c.State, StartedAt: c.StartedAt.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -78,7 +78,7 @@ func (service serviceCall) AnswerCall(ctx context.Context, callID string) error 
 	if err != nil {
 		return err
 	}
-	return mapCallError(m.Answer(callID), "call operation failed: ")
+	return mapCallError(m.Answer(callID, ""), "call operation failed: ")
 }
 
 func (service serviceCall) StartCall(ctx context.Context, phone string) (domainCall.CallInfo, error) {
@@ -93,7 +93,7 @@ func (service serviceCall) StartCall(ctx context.Context, phone string) (domainC
 	// offer send in engine.go placeCall); the Call does not keep it, so a timeout is safe.
 	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	info, err := m.Start(startCtx, phone)
+	info, _, err := m.Start(startCtx, phone, "")
 	if err != nil {
 		return domainCall.CallInfo{}, mapCallError(err, "could not place the call: ")
 	}

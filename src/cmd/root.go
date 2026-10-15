@@ -233,15 +233,13 @@ func initEnvConfig() {
 	if viper.IsSet("whatsapp_calls_max_per_device") {
 		config.WhatsappCallsMaxPerDevice = viper.GetInt("whatsapp_calls_max_per_device")
 	}
-	if env := viper.GetString("whatsapp_calls_test_audio"); env != "" {
-		config.WhatsappCallsTestAudio = env
-	}
 	if env := viper.GetString("whatsapp_calls_log_level"); env != "" {
 		config.WhatsappCallsLogLevel = env
 	}
 	if env := viper.GetString("whatsapp_calls_early_media"); env != "" {
 		config.WhatsappCallsEarlyMedia = env
 	}
+	initCallsEnv() // Fork (elphant): voice calls stage 2b settings (cmd/calls_flags.go).
 	if envPresenceOnConnect := viper.GetString("whatsapp_presence_on_connect"); envPresenceOnConnect != "" {
 		config.WhatsappPresenceOnConnect = envPresenceOnConnect
 	}
@@ -541,12 +539,11 @@ func initFlags() {
 		`call audio codec --calls-codec <opus|mlow> | example: --calls-codec=opus`)
 	rootCmd.PersistentFlags().IntVarP(&config.WhatsappCallsMaxPerDevice, "calls-max-per-device", "", config.WhatsappCallsMaxPerDevice,
 		`simultaneous calls per device --calls-max-per-device <n> | example: --calls-max-per-device=1`)
-	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsTestAudio, "calls-test-audio", "", config.WhatsappCallsTestAudio,
-		`audio file played to the peer --calls-test-audio <path> | example: --calls-test-audio=storages/hello.wav`)
 	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsLogLevel, "calls-log-level", "", config.WhatsappCallsLogLevel,
 		`call engine log level --calls-log-level <debug|info|warn|error> | example: --calls-log-level=debug`)
 	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsEarlyMedia, "calls-early-media", "", config.WhatsappCallsEarlyMedia,
 		`media while an inbound call rings --calls-early-media <off|listen|full> | example: --calls-early-media=off`)
+	initCallsFlags() // Fork (elphant): voice calls stage 2b flags (cmd/calls_flags.go).
 	rootCmd.PersistentFlags().StringVarP(
 		&config.WhatsappPresenceOnConnect,
 		"presence-on-connect", "",

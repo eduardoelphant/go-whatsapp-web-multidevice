@@ -79,10 +79,9 @@ func attachCalls(slotID string, client *whatsmeow.Client) {
 		effectiveCodecName = codec
 	})
 	m := newCallManager(newMeowEngine(client, offerFilter(slotID, client)), callManagerOptions{
-		MaxCalls:   config.WhatsappCallsMaxPerDevice,
-		RingWindow: time.Minute,
-		TestAudio:  config.WhatsappCallsTestAudio,
-		RecordDir:  config.PathCalls,
+		MaxCalls:    config.WhatsappCallsMaxPerDevice,
+		RingWindow:  time.Minute,
+		MaxDuration: time.Duration(config.WhatsappCallsMaxDurationMinutes) * time.Minute,
 	})
 	m.slotID = slotID
 	callsByClient.Store(client, m)

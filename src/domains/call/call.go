@@ -28,12 +28,17 @@ type StartCallRequest struct {
 	Phone string `json:"phone" form:"phone"`
 }
 
+type CallPeer struct {
+	PN  string `json:"pn"`
+	LID string `json:"lid"`
+}
+
 type CallInfo struct {
-	CallID    string `json:"call_id"`
-	Direction string `json:"direction"`
-	Peer      string `json:"peer"`
-	State     string `json:"state"`
-	StartedAt string `json:"started_at"`
+	CallID    string   `json:"call_id"`
+	Direction string   `json:"direction"`
+	Peer      CallPeer `json:"peer"`
+	State     string   `json:"state"`
+	StartedAt string   `json:"started_at"`
 }
 
 type DeviceCallsRequest struct {
