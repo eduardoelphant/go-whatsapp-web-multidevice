@@ -7,7 +7,6 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/callrec"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/callrtc"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/purpshell/meowcaller/opus"
 	"github.com/sirupsen/logrus"
 )
@@ -39,19 +38,21 @@ func StartCallsServices(ctx context.Context) {
 	if config.WhatsappCallsRTCPublicIP == "" {
 		logrus.Warn("[CALLS] WHATSAPP_CALLS_RTC_PUBLIC_IP is empty: the SDP carries local addresses, reachable only from the same network")
 	}
-	callsMedia = newBridgeFactory(pionEngine{eng})
-	safego.Go("calls_rtc_close", func() {
-		<-ctx.Done()
-		_ = eng.Close()
-	})
+	callsMedia = newBridgeFactory(pionEngine{eng}) // the engine lives as long as the process
 	logrus.Infof("[CALLS] WebRTC on UDP %d", config.WhatsappCallsRTCPort)
 }
 
+// newBridgeFactory runs once, at start. A grace below 1 s would switch B10 off, so it is clamped.
 func newBridgeFactory(rtc rtcEngine) *bridgeFactory {
+	grace := config.WhatsappCallsRTCGraceSeconds
+	if grace < 1 {
+		logrus.Warnf("[CALLS] WHATSAPP_CALLS_RTC_GRACE_SECONDS=%d is below the minimum; using 1", grace)
+		grace = 1
+	}
 	return &bridgeFactory{
 		rtc:       rtc,
 		recordDir: config.PathCalls,
-		grace:     time.Duration(config.WhatsappCallsRTCGraceSeconds) * time.Second,
+		grace:     time.Duration(grace) * time.Second,
 		newRecorder: func(path string) (recorder, error) {
 			r, err := callrec.Create(path)
 			if err != nil {

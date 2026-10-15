@@ -208,3 +208,13 @@ func TestNewBridgeFactoryFromConfig(t *testing.T) {
 	assert.Equal(t, config.PathCalls, f.recordDir)
 	require.NotNil(t, f.newRecorder)
 }
+
+// Fix round 1: a grace below 1 s would disable B10; it is clamped.
+func TestNewBridgeFactoryClampsGrace(t *testing.T) {
+	orig := config.WhatsappCallsRTCGraceSeconds
+	t.Cleanup(func() { config.WhatsappCallsRTCGraceSeconds = orig })
+	for _, v := range []int{0, -5} {
+		config.WhatsappCallsRTCGraceSeconds = v
+		assert.Equal(t, time.Second, newBridgeFactory(&fakeRTC{}).grace)
+	}
+}

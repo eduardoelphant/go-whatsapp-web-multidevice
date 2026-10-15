@@ -60,9 +60,13 @@ func (p pionEngine) NewOutbound(offer string) (rtcLeg, error) {
 }
 
 const (
-	waFrame             = meowcaller.FrameSamples // 60 ms at 16 kHz
-	rtcFrame            = callrtc.FrameSamples    // 20 ms at 48 kHz
-	customerQueueFrames = 4                       // customer frames waiting for the recorder (240 ms)
+	waFrame  = meowcaller.FrameSamples // 60 ms at 16 kHz
+	rtcFrame = callrtc.FrameSamples    // 20 ms at 48 kHz
+	// agentPrefill is the jitter buffer's start level at 16 kHz: one 60 ms pull plus two 20 ms
+	// browser frames (1600 samples), so 40 to 80 ms stay buffered after each pull.
+	agentPrefill = waFrame + 2*rtcFrame/callaudio.Ratio
+	agentMax     = agentPrefill + 2*waFrame
+	customerMax  = 4 * waFrame // customer audio waiting for the recorder (240 ms)
 )
 
 // bridgeFactory makes one callBridge per call; it is the manager's mediaFactory.
@@ -110,33 +114,34 @@ type graceToken struct{ t *time.Timer }
 // up and chunk run on meowcaller's receive goroutine (the sink), down on the browser leg's
 // reader goroutine; agent is the locked hand-off to meowcaller's send loop (the source).
 type callBridge struct {
-	f     *bridgeFactory
-	leg   rtcLeg
-	up    *callaudio.Upsampler
-	chunk *callaudio.Rechunker
-	down  *callaudio.Downsampler
-	agent *callaudio.FIFO
+	f        *bridgeFactory
+	leg      rtcLeg
+	up       *callaudio.Upsampler
+	chunk    *callaudio.Rechunker
+	down     *callaudio.Downsampler
+	agent    *callaudio.FIFO // agent audio (16 kHz) for meowcaller's send loop
+	customer *callaudio.FIFO // customer audio (16 kHz) for the recorder, sample-granular
 
 	closeOnce sync.Once
 
-	mu       sync.Mutex
-	customer [][]float32 // customer frames waiting for the recorder
-	rec      recorder
-	ev       mediaEvents
-	started  bool
-	waReady  bool
-	rtcUp    bool
-	flowing  bool
-	closed   bool
-	grace    *graceToken
-	result   *RecordingInfo
+	mu      sync.Mutex
+	rec     recorder
+	ev      mediaEvents
+	started bool
+	waReady bool
+	rtcUp   bool
+	flowing bool
+	closed  bool
+	grace   *graceToken
+	result  *RecordingInfo
 }
 
 func newCallBridge(f *bridgeFactory, leg rtcLeg) *callBridge {
 	b := &callBridge{
 		f: f, leg: leg,
 		up: callaudio.NewUpsampler(), chunk: callaudio.NewRechunker(rtcFrame),
-		down: callaudio.NewDownsampler(), agent: callaudio.NewFIFO(waFrame, 4*waFrame),
+		down: callaudio.NewDownsampler(), agent: callaudio.NewFIFO(agentPrefill, agentMax),
+		customer: callaudio.NewFIFO(0, customerMax),
 	}
 	// Registered before the answer is applied, so an early "up" is never missed.
 	leg.OnFrame(b.fromBrowser)
@@ -285,17 +290,13 @@ func (s bridgeSource) ReadFrame() ([]float32, error) {
 		b.mu.Unlock()
 		return nil, io.EOF
 	}
-	var customer []float32
-	if len(b.customer) > 0 {
-		customer = b.customer[0]
-		b.customer = b.customer[1:]
-	}
 	var rec recorder
 	if b.waReady { // answered: ringing (early media) is not recorded
 		rec = b.rec
 	}
 	b.mu.Unlock()
 	agent := b.agent.Read(waFrame)
+	customer := b.customer.Read(waFrame) // consumed even before the answer, so it stays current
 	if rec != nil {
 		if err := rec.Write(agent, customer); err != nil {
 			logrus.Debugf("[CALLS] recorder: %v", err)
@@ -318,11 +319,8 @@ func (s bridgeSink) WriteFrame(frame []float32) error {
 		b.mu.Unlock()
 		return nil
 	}
-	b.customer = append(b.customer, pcm)
-	if over := len(b.customer) - customerQueueFrames; over > 0 {
-		b.customer = append([][]float32(nil), b.customer[over:]...)
-	}
 	b.mu.Unlock()
+	b.customer.Write(pcm)
 	for _, f := range b.chunk.Push(b.up.Process(pcm)) {
 		if err := b.leg.WriteFrame(f); err != nil {
 			logrus.Debugf("[CALLS] browser write: %v", err)
@@ -348,8 +346,12 @@ func (b *callBridge) close() {
 	b.closed = true
 	b.stopGraceLocked()
 	rec := b.rec
-	b.rec, b.customer = nil, nil
+	b.rec = nil
 	b.mu.Unlock()
+
+	au, ad := b.agent.Stats()
+	cu, cd := b.customer.Stats()
+	logrus.Debugf("[CALLS] bridge closed: agent jitter buffer %d underruns, %d samples dropped; customer queue %d underruns, %d samples dropped", au, ad, cu, cd)
 
 	_ = b.leg.Close()
 	var result *RecordingInfo

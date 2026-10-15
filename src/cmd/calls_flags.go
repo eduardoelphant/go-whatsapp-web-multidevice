@@ -42,5 +42,5 @@ func initCallsFlags() {
 	flags.StringVarP(&config.WhatsappCallsRTCPublicIP, "calls-rtc-public-ip", "", config.WhatsappCallsRTCPublicIP,
 		`public IPv4 announced to browsers --calls-rtc-public-ip <ip> | example: --calls-rtc-public-ip=203.0.113.7`)
 	flags.IntVarP(&config.WhatsappCallsRTCGraceSeconds, "calls-rtc-grace-seconds", "", config.WhatsappCallsRTCGraceSeconds,
-		`hang up after the browser leg is down this long --calls-rtc-grace-seconds <n> | example: --calls-rtc-grace-seconds=10`)
+		`hang up after the browser leg is down this long (minimum 1) --calls-rtc-grace-seconds <n> | example: --calls-rtc-grace-seconds=10`)
 }

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -185,24 +187,26 @@ func TestBridgeAgentToWhatsAppAndRecorder(t *testing.T) {
 	b, leg, rec, h, _ := startBridge(t, time.Second, "IN-1")
 	b.WhatsAppReady()
 	require.NoError(t, h.sink.WriteFrame(tone(960, 16000, 300))) // customer
-	for i := 0; i < 3; i++ {
-		leg.send(tone(960, 48000, 440)) // 60 ms of agent audio
+	leg.send(tone(960, 48000, 440))
+	silent, err := h.src.ReadFrame()
+	require.NoError(t, err)
+	assert.Zero(t, level(silent), "below the prefill the jitter buffer plays silence")
+
+	for i := 0; i < 4; i++ {
+		leg.send(tone(960, 48000, 440)) // 100 ms of agent audio in all: the prefill
 	}
 	agent, err := h.src.ReadFrame()
 	require.NoError(t, err)
 	assert.Len(t, agent, 960)
 	assert.Greater(t, level(agent), 0.2)
 
-	silent, err := h.src.ReadFrame()
-	require.NoError(t, err)
-	assert.Zero(t, level(silent), "an empty jitter buffer plays silence")
-
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 	require.Len(t, rec.frames, 2)
-	assert.Greater(t, level(rec.frames[0][0]), 0.2, "agent on the left")
+	assert.Zero(t, level(rec.frames[0][0]), "prefill: silence on the left")
 	assert.Greater(t, level(rec.frames[0][1]), 0.2, "customer on the right")
-	assert.Empty(t, rec.frames[1][1], "no customer frame queued: the recorder pads silence")
+	assert.Greater(t, level(rec.frames[1][0]), 0.2, "agent on the left")
+	assert.Zero(t, level(rec.frames[1][1]), "no customer audio queued: silence on the right")
 }
 
 // The recording starts when the WhatsApp leg is answered and carries media: ringing (early
@@ -220,7 +224,7 @@ func TestBridgeRecordsOnlyAfterWhatsAppReady(t *testing.T) {
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 	require.Len(t, rec.frames, 1)
-	assert.Empty(t, rec.frames[0][1], "the customer frame from before the answer was consumed, not kept")
+	assert.Zero(t, level(rec.frames[0][1]), "the customer audio from before the answer was consumed, not kept")
 }
 
 func TestBridgeFlowingNeedsBothLegs(t *testing.T) {
@@ -489,4 +493,80 @@ func TestBridgeRealRecorder(t *testing.T) {
 	fi, err := os.Stat(rec.Path)
 	require.NoError(t, err)
 	assert.Equal(t, fi.Size(), rec.Bytes)
+}
+
+// Fix round 1: the agent's 20 ms browser frames arrive with network jitter against meowcaller's
+// 60 ms pulls; the jitter buffer's cushion must absorb it with no underrun once playing. Two
+// patterns: alternating 0/30 ms delays, and seeded random delays of 0 to 30 ms.
+func TestBridgeAgentJitterNoUnderrun(t *testing.T) {
+	rnd := rand.New(rand.NewSource(7))
+	patterns := map[string]func(i int) int{
+		"alternating": func(i int) int { return 30 * (i % 2) },
+		"random":      func(int) int { return rnd.Intn(31) },
+	}
+	for name, delay := range patterns {
+		t.Run(name, func(t *testing.T) { agentJitter(t, delay) })
+	}
+}
+
+func agentJitter(t *testing.T, delay func(i int) int) {
+	b, leg, _, h, _ := startBridge(t, time.Second, "IN-1")
+	type event struct {
+		at   int // ms
+		pull bool
+	}
+	var evs []event
+	for i := 0; i < 300; i++ { // 6 s of browser audio
+		evs = append(evs, event{at: 20*i + delay(i)})
+	}
+	for k := 0; k < 100; k++ {
+		evs = append(evs, event{at: 60*k + 5, pull: true})
+	}
+	sort.SliceStable(evs, func(i, j int) bool { return evs[i].at < evs[j].at })
+	played := false
+	for _, e := range evs {
+		if !e.pull {
+			leg.send(tone(960, 48000, 440))
+			continue
+		}
+		frame, err := h.src.ReadFrame()
+		require.NoError(t, err)
+		if !played && level(frame) > 0 {
+			played = true
+			under, _ := b.agent.Stats()
+			require.Zero(t, under, "an underrun before the first play is the prefill, not a hole")
+		}
+	}
+	require.True(t, played)
+	under, dropped := b.agent.Stats()
+	assert.Zero(t, under, "no underrun after the first play")
+	assert.Zero(t, dropped)
+}
+
+// Fix round 1: customer frames that are not 960 samples are kept sample by sample, neither
+// truncated nor padded.
+func TestBridgeCustomerVariableFrames(t *testing.T) {
+	b, _, rec, h, _ := startBridge(t, time.Second, "IN-1")
+	b.WhatsAppReady()
+	ramp := func(n int, start float32) []float32 {
+		out := make([]float32, n)
+		for i := range out {
+			out[i] = start + float32(i)/10000
+		}
+		return out
+	}
+	require.NoError(t, h.sink.WriteFrame(ramp(640, 0.1)))
+	require.NoError(t, h.sink.WriteFrame(ramp(640, 0.2)))
+	for i := 0; i < 2; i++ {
+		_, err := h.src.ReadFrame()
+		require.NoError(t, err)
+	}
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	require.Len(t, rec.frames, 2)
+	right := append(append([]float32(nil), rec.frames[0][1]...), rec.frames[1][1]...)
+	require.Equal(t, 1920, len(right))
+	want := append(ramp(640, 0.1), ramp(640, 0.2)...)
+	assert.Equal(t, want, right[:1280], "every customer sample, in order")
+	assert.Zero(t, level(right[1280:]), "then silence")
 }

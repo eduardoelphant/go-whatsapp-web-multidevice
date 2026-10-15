@@ -16,7 +16,7 @@ var (
 	WhatsappCallsRecordingRetentionDays = 7      // stage 2b: recordings older than this are deleted (0: keep)
 	WhatsappCallsRTCPort                = 3478   // stage 2b: one UDP port for every browser leg (ICE UDP mux); publish it in mode: host
 	WhatsappCallsRTCPublicIP            = ""     // stage 2b: the host's public IPv4, put in the SDP's host candidate (1:1 NAT)
-	WhatsappCallsRTCGraceSeconds        = 10     // stage 2b: hang up the WhatsApp leg after the browser leg is down this long
+	WhatsappCallsRTCGraceSeconds        = 10     // stage 2b: hang up the WhatsApp leg after the browser leg is down this long (minimum 1)
 )
 
 // CallsAllowed reports whether calls are enabled for a device, matching the allow
