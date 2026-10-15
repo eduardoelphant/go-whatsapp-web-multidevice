@@ -778,3 +778,21 @@ func (m *CallManager) waiterCount(id string) int {
 	defer m.mu.Unlock()
 	return len(m.waiters[id])
 }
+
+func TestDetailCarriesOfferWhileRinging(t *testing.T) {
+	now := time.Now()
+	m, eng, _ := newTestManager(t, 1, &now, &fakeMediaFactory{})
+	eng.incoming(&fakeCall{id: "IN-1"})
+	info, sdp, err := m.Detail(context.Background(), "IN-1")
+	require.NoError(t, err)
+	assert.Equal(t, "ringing", info.State)
+	assert.Equal(t, "v=0 gowa-offer", sdp)
+
+	require.NoError(t, m.Answer("IN-1", "v=0 browser-answer"))
+	_, sdp, err = m.Detail(context.Background(), "IN-1")
+	require.NoError(t, err)
+	assert.Empty(t, sdp, "no offer once answered")
+
+	_, _, err = m.Detail(context.Background(), "NOPE")
+	assert.ErrorIs(t, err, ErrCallNotFound)
+}

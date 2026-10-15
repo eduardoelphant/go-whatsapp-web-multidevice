@@ -808,3 +808,20 @@ func maskPeer(p CallPeer) string {
 		return "unknown"
 	}
 }
+
+// Detail returns a tracked call and, while an inbound call rings, GOWA's offer SDP (made on
+// first use), so the browser can fetch the offer again (GET /call/:call_id).
+func (m *CallManager) Detail(ctx context.Context, callID string) (CallInfo, string, error) {
+	info, ok := m.Get(callID)
+	if !ok {
+		return CallInfo{}, "", ErrCallNotFound
+	}
+	if info.Direction != DirectionUser || info.State != stateRinging || m.opts.Media == nil {
+		return info, "", nil
+	}
+	sdp, err := m.OfferSDP(ctx, callID)
+	if err != nil {
+		return CallInfo{}, "", err
+	}
+	return info, sdp, nil
+}

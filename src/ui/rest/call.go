@@ -19,6 +19,7 @@ func InitRestCall(app fiber.Router, service domainCall.ICallUsecase) Call {
 	app.Post("/call/start", rest.StartCall)
 	app.Post("/call/hangup", rest.HangupCall)
 	app.Get("/calls/active", rest.ActiveCalls)
+	app.Get("/call/:call_id", rest.GetCall)
 	return rest
 }
 
@@ -45,18 +46,25 @@ func (controller *Call) RejectCall(c fiber.Ctx) error {
 // Fork (elphant): voice calls.
 
 func (controller *Call) AnswerCall(c fiber.Ctx) error {
-	var request domainCall.CallIDRequest
+	var request domainCall.AnswerCallRequest
 	utils.PanicIfNeeded(c.Bind().Body(&request))
-	utils.PanicIfNeeded(controller.Service.AnswerCall(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request.CallID))
-	return c.JSON(utils.ResponseData{Status: 200, Code: "SUCCESS", Message: "Call answered"})
+	res, err := controller.Service.AnswerCall(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+	return c.JSON(utils.ResponseData{Status: 200, Code: "SUCCESS", Message: "Call answered", Results: res})
 }
 
 func (controller *Call) StartCall(c fiber.Ctx) error {
 	var request domainCall.StartCallRequest
 	utils.PanicIfNeeded(c.Bind().Body(&request))
-	info, err := controller.Service.StartCall(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request.Phone)
+	res, err := controller.Service.StartCall(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
 	utils.PanicIfNeeded(err)
-	return c.JSON(utils.ResponseData{Status: 200, Code: "SUCCESS", Message: "Call placed", Results: info})
+	return c.JSON(utils.ResponseData{Status: 200, Code: "SUCCESS", Message: "Call placed", Results: res})
+}
+
+func (controller *Call) GetCall(c fiber.Ctx) error {
+	res, err := controller.Service.GetCall(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), c.Params("call_id"))
+	utils.PanicIfNeeded(err)
+	return c.JSON(utils.ResponseData{Status: 200, Code: "SUCCESS", Message: "Call", Results: res})
 }
 
 func (controller *Call) HangupCall(c fiber.Ctx) error {
