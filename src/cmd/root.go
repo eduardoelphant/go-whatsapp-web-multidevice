@@ -802,6 +802,7 @@ func initApp() {
 	if err := whatsapp.StartDurableWebhooks(ctx); err != nil {
 		logrus.Fatalf("failed to start durable webhooks: %v", err)
 	}
+	whatsapp.StartCallsServices(ctx) // Fork (elphant): voice calls 2b (recording retention, WebRTC port); before the first client.
 
 	whatsappDB := whatsapp.InitWaDB(ctx, config.DBURI)
 	var keysDB *sqlstore.Container

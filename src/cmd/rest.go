@@ -72,6 +72,7 @@ func restServer(_ *cobra.Command, _ []string) {
 		staticsAccounts = accounts
 	}
 	mountStatics(app, config.AppBasePath, "./statics", staticsAccounts, []byte(config.AppStaticsSecret))
+	mountCallRecordings(app, config.AppBasePath, config.PathCalls, accounts, []byte(config.AppStaticsSecret)) // Fork (elphant): signed call recordings (voice calls 2b).
 
 	app.Use(middleware.Recovery())
 	app.Use(middleware.RequestTimeout(middleware.DefaultRequestTimeout))

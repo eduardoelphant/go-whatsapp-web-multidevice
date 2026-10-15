@@ -43,4 +43,7 @@ func TestCallsStage2bDefaults(t *testing.T) {
 	if WhatsappCallsMaxDurationMinutes != 120 {
 		t.Fatalf("WhatsappCallsMaxDurationMinutes = %d, want 120", WhatsappCallsMaxDurationMinutes)
 	}
+	if WhatsappCallsRecordingURLTTLMinutes != 1440 || WhatsappCallsRecordingRetentionDays != 7 {
+		t.Fatalf("recording defaults %d min / %d days, want 1440 / 7", WhatsappCallsRecordingURLTTLMinutes, WhatsappCallsRecordingRetentionDays)
+	}
 }

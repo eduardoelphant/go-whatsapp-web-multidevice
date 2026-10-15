@@ -12,10 +12,20 @@ func initCallsEnv() {
 	if viper.IsSet("whatsapp_calls_max_duration_minutes") {
 		config.WhatsappCallsMaxDurationMinutes = viper.GetInt("whatsapp_calls_max_duration_minutes")
 	}
+	if viper.IsSet("whatsapp_calls_recording_url_ttl_minutes") {
+		config.WhatsappCallsRecordingURLTTLMinutes = viper.GetInt("whatsapp_calls_recording_url_ttl_minutes")
+	}
+	if viper.IsSet("whatsapp_calls_recording_retention_days") {
+		config.WhatsappCallsRecordingRetentionDays = viper.GetInt("whatsapp_calls_recording_retention_days")
+	}
 }
 
 func initCallsFlags() {
 	flags := rootCmd.PersistentFlags()
 	flags.IntVarP(&config.WhatsappCallsMaxDurationMinutes, "calls-max-duration-minutes", "", config.WhatsappCallsMaxDurationMinutes,
 		`hang up a call after this many minutes (0: no limit) --calls-max-duration-minutes <n> | example: --calls-max-duration-minutes=120`)
+	flags.IntVarP(&config.WhatsappCallsRecordingURLTTLMinutes, "calls-recording-url-ttl-minutes", "", config.WhatsappCallsRecordingURLTTLMinutes,
+		`validity of the signed recording link --calls-recording-url-ttl-minutes <n> | example: --calls-recording-url-ttl-minutes=1440`)
+	flags.IntVarP(&config.WhatsappCallsRecordingRetentionDays, "calls-recording-retention-days", "", config.WhatsappCallsRecordingRetentionDays,
+		`delete call recordings older than this (0: keep) --calls-recording-retention-days <n> | example: --calls-recording-retention-days=7`)
 }
