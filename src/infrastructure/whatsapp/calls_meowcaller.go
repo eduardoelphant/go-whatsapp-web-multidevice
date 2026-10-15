@@ -13,6 +13,7 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	meowcaller "github.com/purpshell/meowcaller"
 	"github.com/rs/zerolog"
+	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -35,9 +36,23 @@ func parseCallsLogLevel(s string) zerolog.Level {
 	return zerolog.InfoLevel
 }
 
+// parseCallsEarlyMedia maps the configured mode to meowcaller; anything else is off.
+func parseCallsEarlyMedia(s string) meowcaller.EarlyMediaMode {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "off":
+		return meowcaller.EarlyMediaOff
+	case "listen":
+		return meowcaller.EarlyMediaListen
+	case "full":
+		return meowcaller.EarlyMediaFull
+	}
+	logrus.Warnf("[CALLS] invalid WHATSAPP_CALLS_EARLY_MEDIA %q; using off", s)
+	return meowcaller.EarlyMediaOff
+}
+
 func newMeowEngine(wa *whatsmeow.Client, filter func(*events.CallOffer) bool) *meowEngine {
 	log := zerolog.New(maskingWriter{os.Stdout}).With().Timestamp().Str("component", "calls").Logger().Level(parseCallsLogLevel(config.WhatsappCallsLogLevel))
-	return &meowEngine{client: meowcaller.NewClient(wa, meowcaller.WithLogger(log), meowcaller.WithOfferFilter(filter))}
+	return &meowEngine{client: meowcaller.NewClient(wa, meowcaller.WithLogger(log), meowcaller.WithOfferFilter(filter), meowcaller.WithEarlyMedia(parseCallsEarlyMedia(config.WhatsappCallsEarlyMedia)))}
 }
 
 func (e *meowEngine) OnIncomingCall(fn func(callHandle)) {
