@@ -173,6 +173,16 @@ history of the work.
   - **Open:** in one of two inbound calls the relay never bridged the caller's audio (no "relay is bridging" log, empty recording) while our audio reached the caller. A host and container UDP capture on the next call showed every relay packet reaching the container, so it is not Docker NAT. Likely meowcaller issues #36/#40; investigate in the fork before the CRM beta.
   - **Open:** the end reason is empty when the peer hangs up; map it to `hangup_peer` for the 2b webhook.
 
+- **Live results on the gateway host (2026-10-15, `v9.6.0-elphant.4`..`.6`, calls on the DDD 11 device):**
+  - **Missing inbound audio**: the caller sometimes sent RED audio (payload type 122), which meowcaller dropped. It is fixed in fork `v0.2.0-elphant.3`, which reads both RED layouts. 3/3 inbound calls worked afterwards.
+  - **Early media (PR #43, "Full")**: the caller saw the call as answered at the first ring, and the phone stopped ringing. Fork `v0.2.0-elphant.4` adds `WithEarlyMedia`, and GOWA gets `WHATSAPP_CALLS_EARLY_MEDIA`, `off` by default.
+  - **`listen`**: the phone rang normally and could answer (`accepted_elsewhere`) or reject (`rejected_elsewhere`), with no file descriptors left open. 3/3 calls answered by GOWA 6 s after ringing started had inbound audio from the first packet and recordings of about 20 s with speech. **Use `listen` for the CRM**, where a human answers late.
+  - **Still open**:
+    - Off and Listen do not cover inbound group calls.
+    - The end reason is empty when the peer hangs up.
+    - The "calls enabled" log line also appears for devices that are not allowed, and twice for the default client.
+    - GitHub Actions is refused on the gateway repository ("Actions has been disabled for this repository"), so images `.4`..`.6` were built on the host and are not in ghcr.io.
+
 ### D-6 Debian 11 on the gateway host
 
 Decision of the owner (30/09/2026): the host is **not** upgraded in place. A Debian upgrade only
