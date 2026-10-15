@@ -126,6 +126,13 @@ type mediaEvents struct {
 }
 
 // callMedia is the browser side of one call: its SDP, its audio bridge and its recording.
+//
+// Contract for implementations (Task 7): every method is safe for concurrent use. Close may run
+// concurrently with Accept, Start or WhatsAppReady (a hangup or the peer's end can race an
+// answer); Start or WhatsAppReady called after Close must be a no-op; Close is idempotent and
+// returns the same recording every time. The manager drops the recording of a call it never
+// answered, so Close should not leave an orphan file behind for one (or the file stays until
+// retention deletes it).
 type callMedia interface {
 	LocalSDP() string                   // inbound: GOWA's offer; outbound: GOWA's answer
 	Accept(answerSDP string) error      // inbound: the browser's answer
@@ -145,7 +152,7 @@ type callManagerOptions struct {
 	MaxDuration time.Duration // a tracked call older than this is hung up (0: no limit)
 	OfferWait   time.Duration // how long OfferSDP waits for the engine to report an offer
 	Now         func() time.Time
-	Emit        func(CallEvent) // nil: no events
+	Emit        func(CallEvent) // nil: no events; must not block or call back into the manager
 	Media       mediaFactory    // nil: no browser leg (calls carry no audio)
 }
 
@@ -160,6 +167,9 @@ type trackedCall struct {
 	local     string
 	mediaAt   time.Time // both legs flowing
 	timer     *time.Timer
+	// emitMu orders this call's events: an event decided before the call ended is sent before
+	// call.ended, and none is sent after it. Taken before m.mu, never inside it.
+	emitMu sync.Mutex
 }
 
 // CallManager tracks the ringing and active calls of one device client. All fields of
@@ -173,6 +183,8 @@ type CallManager struct {
 	waiters  map[string][]chan struct{}
 	reserved int    // outbound slots claimed before dialing
 	slotID   string // slot the manager was attached with
+
+	beforeEmit func(CallEvent) // tests only: runs just before an event is sent
 }
 
 func newCallManager(engine callEngine, opts callManagerOptions) *CallManager {
@@ -197,6 +209,9 @@ func newCallManager(engine callEngine, opts callManagerOptions) *CallManager {
 }
 
 func (m *CallManager) emit(ev CallEvent) {
+	if m.beforeEmit != nil {
+		m.beforeEmit(ev)
+	}
 	if m.opts.Emit != nil {
 		m.opts.Emit(ev)
 	}
@@ -315,13 +330,30 @@ func (m *CallManager) waitTracked(ctx context.Context, callID string) (*trackedC
 		select {
 		case <-ch:
 		case <-deadline.C:
-			m.mu.Lock()
-			delete(m.waiters, callID)
-			m.mu.Unlock()
+			m.dropWaiter(callID, ch)
 			return nil, ErrCallNotFound
 		case <-ctx.Done():
+			m.dropWaiter(callID, ch)
 			return nil, ErrCallNotFound
 		}
+	}
+}
+
+// dropWaiter removes one waiter that gave up, leaving the others in place.
+func (m *CallManager) dropWaiter(callID string, ch chan struct{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	list := m.waiters[callID]
+	for i, c := range list {
+		if c == ch {
+			list = append(list[:i:i], list[i+1:]...)
+			break
+		}
+	}
+	if len(list) == 0 {
+		delete(m.waiters, callID)
+	} else {
+		m.waiters[callID] = list
 	}
 }
 
@@ -398,16 +430,32 @@ func (m *CallManager) Answer(callID, answerSDP string) error {
 		if err := media.Accept(answerSDP); err != nil {
 			m.mu.Lock()
 			tc.answering = false
+			ended := tc.ended
 			m.mu.Unlock()
+			if ended {
+				return ErrCallNotFound
+			}
 			return pkgError.ValidationError("invalid sdp: " + err.Error())
 		}
 	}
+	// A hangup or the peer's end may have landed while the browser answer was applied: never
+	// answer or reject a dead call (meowcaller still transmits a reject for one).
+	m.mu.Lock()
+	ended := tc.ended
+	m.mu.Unlock()
+	if ended {
+		return ErrCallNotFound
+	}
 	if err := tc.handle.Answer(); err != nil {
 		m.mu.Lock()
+		ended := tc.ended
 		if tc.local == "" {
 			tc.local = localError
 		}
 		m.mu.Unlock()
+		if ended {
+			return ErrCallNotFound
+		}
 		_ = tc.handle.Reject()
 		m.finish(tc, "")
 		return err
@@ -537,26 +585,39 @@ func (m *CallManager) closeAll() {
 	}
 }
 
-func (m *CallManager) onPeerRinging(tc *trackedCall) {
+// emitFor sends the event decide returns, unless decide (run under m.mu) declines. Holding
+// tc.emitMu across the decision and the send keeps every event of a call before its call.ended.
+func (m *CallManager) emitFor(tc *trackedCall, decide func() (CallEvent, bool)) {
+	tc.emitMu.Lock()
+	defer tc.emitMu.Unlock()
 	m.mu.Lock()
-	skip := tc.ended || tc.answered || tc.info.Direction != DirectionBusiness
-	info := tc.info
+	ev, ok := decide()
 	m.mu.Unlock()
-	if !skip {
-		m.emit(CallEvent{Type: EventCallStatus, Call: info, Status: "RINGING", At: m.opts.Now()})
+	if ok {
+		m.emit(ev)
 	}
 }
 
+func (m *CallManager) onPeerRinging(tc *trackedCall) {
+	m.emitFor(tc, func() (CallEvent, bool) {
+		if tc.ended || tc.answered || tc.info.Direction != DirectionBusiness {
+			return CallEvent{}, false
+		}
+		return CallEvent{Type: EventCallStatus, Call: tc.info, Status: "RINGING", At: m.opts.Now()}, true
+	})
+}
+
 func (m *CallManager) onPeerAccept(tc *trackedCall) {
-	m.mu.Lock()
-	if tc.ended || tc.answered || tc.info.Direction != DirectionBusiness {
-		m.mu.Unlock()
-		return
-	}
-	tc.answered, tc.info.State = true, stateActive
-	info, ready, media := tc.info, tc.waReady, tc.media
-	m.mu.Unlock()
-	m.emit(CallEvent{Type: EventCallStatus, Call: info, Status: "ACCEPTED", At: m.opts.Now()})
+	var ready bool
+	var media callMedia
+	m.emitFor(tc, func() (CallEvent, bool) {
+		if tc.ended || tc.answered || tc.info.Direction != DirectionBusiness {
+			return CallEvent{}, false
+		}
+		tc.answered, tc.info.State = true, stateActive
+		ready, media = tc.waReady, tc.media
+		return CallEvent{Type: EventCallStatus, Call: tc.info, Status: "ACCEPTED", At: m.opts.Now()}, true
+	})
 	if ready {
 		m.whatsAppReady(tc, media)
 	}
@@ -588,16 +649,14 @@ func (m *CallManager) whatsAppReady(tc *trackedCall, media callMedia) {
 
 // markFlowing records that media flows on both legs and sends call.answered (answered_by api).
 func (m *CallManager) markFlowing(tc *trackedCall) {
-	m.mu.Lock()
-	if tc.ended || !tc.mediaAt.IsZero() {
-		m.mu.Unlock()
-		return
-	}
-	tc.mediaAt = m.opts.Now()
-	info := tc.info
-	m.mu.Unlock()
-	logrus.Infof("[CALLS] call %s: media flowing on both legs", info.CallID)
-	m.emit(CallEvent{Type: EventCallAnswered, Call: info, AnsweredBy: "api", At: m.opts.Now()})
+	m.emitFor(tc, func() (CallEvent, bool) {
+		if tc.ended || !tc.mediaAt.IsZero() {
+			return CallEvent{}, false
+		}
+		tc.mediaAt = m.opts.Now()
+		logrus.Infof("[CALLS] call %s: media flowing on both legs", tc.info.CallID)
+		return CallEvent{Type: EventCallAnswered, Call: tc.info, AnsweredBy: "api", At: tc.mediaAt}, true
+	})
 }
 
 func (m *CallManager) mediaEvents(tc *trackedCall) mediaEvents {
@@ -636,12 +695,17 @@ func (m *CallManager) finish(tc *trackedCall, engineReason string) {
 	var rec *RecordingInfo
 	if media != nil {
 		rec = media.Close()
+		if !answered {
+			rec = nil // never answered here (missed, rejected, answered elsewhere): no recording
+		}
 	}
 	status, reason := classifyEnd(endInput{Engine: engineReason, Local: local, Answered: answered, MediaFlowed: !mediaAt.IsZero()})
 	duration := 0
 	if !mediaAt.IsZero() {
 		duration = int(math.Round(now.Sub(mediaAt).Seconds()))
 	}
+	tc.emitMu.Lock() // after tc.ended is set: waits for an event decided before the end
+	defer tc.emitMu.Unlock()
 	if reason == "answered_elsewhere" {
 		m.emit(CallEvent{Type: EventCallAnswered, Call: info, AnsweredBy: "elsewhere", At: now})
 	}

@@ -19,6 +19,7 @@ type fakeCall struct {
 	id                           string
 	peer                         CallPeer
 	answered, rejected, hungUp   bool
+	rejects                      int
 	answerErr                    error
 	silent                       bool
 	syncEnd                      bool
@@ -41,12 +42,16 @@ func (f *fakeCall) Answer() error {
 	if f.answerErr != nil {
 		return f.answerErr
 	}
+	if f.hungUp || f.rejected {
+		return errors.New("call already ended") // meowcaller refuses to answer a dead call
+	}
 	f.answered = true
 	return nil
 }
 func (f *fakeCall) Reject() error {
 	f.mu.Lock()
 	f.rejected = true
+	f.rejects++
 	f.mu.Unlock()
 	f.fireEnd("rejected")
 	return nil
@@ -142,10 +147,20 @@ type fakeMedia struct {
 	waReady   int
 	closed    int
 	rec       *RecordingInfo
+	// acceptEntered and acceptGate, when set, make Accept signal entry and block until released.
+	acceptEntered chan struct{}
+	acceptGate    chan struct{}
 }
 
 func (f *fakeMedia) LocalSDP() string { return f.sdp }
 func (f *fakeMedia) Accept(s string) error {
+	f.mu.Lock()
+	entered, gate := f.acceptEntered, f.acceptGate
+	f.mu.Unlock()
+	if entered != nil {
+		close(entered)
+		<-gate
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.acceptErr != nil {
@@ -652,4 +667,114 @@ func TestStartBadOfferPlacesNoCall(t *testing.T) {
 	assert.Equal(t, []string{"v=0 browser-offer"}, media.offers)
 	assert.True(t, media.last().started)
 	assert.Equal(t, DirectionBusiness, info.Direction)
+}
+
+// Review fix 1: a hangup while Answer is inside media.Accept wins; Answer neither answers nor
+// rejects the dead call.
+func TestHangupDuringAcceptAbortsAnswer(t *testing.T) {
+	now := time.Now()
+	media := &fakeMediaFactory{}
+	m, eng, log := newTestManager(t, 1, &now, media)
+	in := &fakeCall{id: "IN-1"}
+	eng.incoming(in)
+	_, err := m.OfferSDP(context.Background(), "IN-1")
+	require.NoError(t, err)
+	fm := media.last()
+	fm.mu.Lock()
+	fm.acceptEntered, fm.acceptGate = make(chan struct{}), make(chan struct{})
+	entered, gate := fm.acceptEntered, fm.acceptGate
+	fm.mu.Unlock()
+
+	done := make(chan error, 1)
+	go func() { done <- m.Answer("IN-1", "v=0 browser-answer") }()
+	<-entered
+	require.NoError(t, m.Hangup("IN-1"))
+	close(gate)
+	assert.ErrorIs(t, <-done, ErrCallNotFound)
+
+	in.mu.Lock()
+	assert.True(t, in.hungUp)
+	assert.False(t, in.answered, "a dead call is not answered")
+	assert.Equal(t, 0, in.rejects, "a dead call is not rejected")
+	in.mu.Unlock()
+	assert.Empty(t, m.Active())
+	assert.Equal(t, []string{"call.ended:MISSED/hangup_agent"}, log.summary())
+}
+
+// Review fix 2: once call.ended went out, no call.answered or call.status follows for that call.
+func TestNoEventAfterEnded(t *testing.T) {
+	now := time.Now()
+	m, eng, log := newTestManager(t, 1, &now, nil)
+	in := &fakeCall{id: "IN-1"}
+	eng.incoming(in)
+	var armed sync.Once
+	m.beforeEmit = func(ev CallEvent) {
+		if ev.Type != EventCallAnswered {
+			return
+		}
+		armed.Do(func() {
+			// The peer hangs up between the decision to send call.answered and its sending.
+			go in.end("")
+			require.Eventually(t, func() bool { _, ok := m.Get("IN-1"); return !ok }, time.Second, time.Millisecond)
+			time.Sleep(50 * time.Millisecond) // give an unordered finish time to send call.ended
+		})
+	}
+	require.NoError(t, m.Answer("IN-1", ""))
+	in.media()
+	require.Eventually(t, func() bool { _, ok := log.last(EventCallEnded); return ok }, time.Second, time.Millisecond)
+	assert.Equal(t, []string{"call.answered:api", "call.ended:COMPLETED/hangup_peer"}, log.summary())
+}
+
+// Review fix 3: a call never answered here has no recording.
+func TestNoRecordingWithoutAnswer(t *testing.T) {
+	for _, reason := range []string{"", "accepted_elsewhere", "rejected_elsewhere"} {
+		now := time.Now()
+		media := &fakeMediaFactory{}
+		m, eng, log := newTestManager(t, 1, &now, media)
+		in := &fakeCall{id: "IN-1"}
+		eng.incoming(in)
+		_, err := m.OfferSDP(context.Background(), "IN-1")
+		require.NoError(t, err)
+		in.end(reason)
+		ended, ok := log.last(EventCallEnded)
+		require.True(t, ok)
+		assert.Nil(t, ended.Recording, "reason %q", reason)
+		assert.Equal(t, 1, media.last().closed, "the browser leg is still closed")
+	}
+}
+
+// Review fix 4: a waiter that gives up removes only its own channel.
+func TestWaitTrackedWaitersAreIndependent(t *testing.T) {
+	now := time.Now()
+	eng := &fakeEngine{}
+	m := newCallManager(eng, callManagerOptions{MaxCalls: 1, OfferWait: 300 * time.Millisecond, Now: func() time.Time { return now }})
+
+	// A cancelled waiter leaves nothing behind.
+	ctx, cancel := context.WithCancel(context.Background())
+	errA := make(chan error, 1)
+	go func() { _, err := m.waitTracked(ctx, "IN-0"); errA <- err }()
+	require.Eventually(t, func() bool { return m.waiterCount("IN-0") == 1 }, time.Second, time.Millisecond)
+	cancel()
+	assert.ErrorIs(t, <-errA, ErrCallNotFound)
+	assert.Equal(t, 0, m.waiterCount("IN-0"))
+
+	// An expired waiter does not drop a later one.
+	first := make(chan error, 1)
+	go func() { _, err := m.waitTracked(context.Background(), "IN-1"); first <- err }()
+	require.Eventually(t, func() bool { return m.waiterCount("IN-1") == 1 }, time.Second, time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
+	second := make(chan error, 1)
+	go func() { _, err := m.waitTracked(context.Background(), "IN-1"); second <- err }()
+	require.Eventually(t, func() bool { return m.waiterCount("IN-1") == 2 }, time.Second, time.Millisecond)
+	assert.ErrorIs(t, <-first, ErrCallNotFound)
+	assert.Equal(t, 1, m.waiterCount("IN-1"))
+	eng.incoming(&fakeCall{id: "IN-1"})
+	assert.NoError(t, <-second)
+	assert.Equal(t, 0, m.waiterCount("IN-1"))
+}
+
+func (m *CallManager) waiterCount(id string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.waiters[id])
 }
