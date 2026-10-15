@@ -27,6 +27,7 @@ const $ = (id) => document.getElementById(id);
 let pc = null;
 let mic = null;
 let currentId = null;
+let busy = false; // an answer or a call is being set up
 
 function log(msg) {
   $('log').textContent = new Date().toISOString().slice(11, 19) + ' ' + msg + '\n' + $('log').textContent;
@@ -88,10 +89,12 @@ function cleanup() {
   if (mic) mic.getTracks().forEach((t) => t.stop());
   mic = null;
   setCurrent(null);
+  busy = false;
 }
 
 async function answer(callId) {
-  if (pc) { log('a call is already live; hang up first'); return; }
+  if (busy || pc) { log('a call is already live; hang up first'); return; }
+  busy = true;
   try {
     const call = await api('GET', '/call/' + encodeURIComponent(callId));
     if (!call.offer_sdp) throw new Error('the call has no offer_sdp');
@@ -118,7 +121,8 @@ async function reject(call) {
 }
 
 $('call').onclick = async () => {
-  if (pc) { log('a call is already live; hang up first'); return; }
+  if (busy || pc) { log('a call is already live; hang up first'); return; }
+  busy = true;
   try {
     await newPeer();
     await pc.setLocalDescription(await pc.createOffer());

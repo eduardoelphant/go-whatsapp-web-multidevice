@@ -29,7 +29,7 @@ func TestCallPhonePage(t *testing.T) {
 	assert.Contains(t, resp.Header.Get("Content-Type"), "text/html")
 	body, _ := io.ReadAll(resp.Body)
 	for _, want := range []string{"new RTCPeerConnection", "waitIceComplete", `replace(/\r?\n/g, '\r\n')`,
-		"/call/answer", "/call/start", "/call/hangup", "offer_sdp", "sdp_answer", "X-Device-Id"} {
+		"/call/answer", "/call/start", "/call/hangup", "offer_sdp", "sdp_answer", "X-Device-Id", "if (busy || pc)", "busy = false"} {
 		assert.Contains(t, string(body), want)
 	}
 }
