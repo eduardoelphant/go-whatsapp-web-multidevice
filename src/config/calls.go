@@ -11,6 +11,7 @@ var (
 	WhatsappCallsMaxPerDevice = 1      // simultaneous calls per device
 	WhatsappCallsTestAudio    = ""     // file played to the peer (stage 2a); empty = silence
 	WhatsappCallsLogLevel     = "info" // call engine log level: debug, info, warn or error
+	WhatsappCallsEarlyMedia   = "off"  // inbound ringing media: off, listen or full (full shows the call as answered to the caller; do not use)
 )
 
 // CallsAllowed reports whether calls are enabled for a device, matching the allow

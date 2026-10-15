@@ -239,6 +239,9 @@ func initEnvConfig() {
 	if env := viper.GetString("whatsapp_calls_log_level"); env != "" {
 		config.WhatsappCallsLogLevel = env
 	}
+	if env := viper.GetString("whatsapp_calls_early_media"); env != "" {
+		config.WhatsappCallsEarlyMedia = env
+	}
 	if envPresenceOnConnect := viper.GetString("whatsapp_presence_on_connect"); envPresenceOnConnect != "" {
 		config.WhatsappPresenceOnConnect = envPresenceOnConnect
 	}
@@ -542,6 +545,8 @@ func initFlags() {
 		`audio file played to the peer --calls-test-audio <path> | example: --calls-test-audio=storages/hello.wav`)
 	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsLogLevel, "calls-log-level", "", config.WhatsappCallsLogLevel,
 		`call engine log level --calls-log-level <debug|info|warn|error> | example: --calls-log-level=debug`)
+	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsEarlyMedia, "calls-early-media", "", config.WhatsappCallsEarlyMedia,
+		`media while an inbound call rings --calls-early-media <off|listen|full> | example: --calls-early-media=off`)
 	rootCmd.PersistentFlags().StringVarP(
 		&config.WhatsappPresenceOnConnect,
 		"presence-on-connect", "",

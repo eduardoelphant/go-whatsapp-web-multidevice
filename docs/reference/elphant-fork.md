@@ -454,6 +454,9 @@ GOWA can answer and place WhatsApp voice calls through the fork
   handler, no state. REST routes and auto-reject use the same check at request time.
 - `WHATSAPP_CALLS_LOG_LEVEL` (default `info`): `debug`, `info`, `warn` or `error` for the call
   engine log; invalid values fall back to `info`. Logs still go through the phone masking writer.
+- `WHATSAPP_CALLS_EARLY_MEDIA` (default `off`): `off`, `listen` or `full`; what the engine does while
+  an inbound call rings. `full` makes the caller see the call as answered at the first ring; do not
+  use it. Invalid values fall back to `off` with a warning.
 - `WHATSAPP_CALLS_MAX_PER_DEVICE` (default `1`): simultaneous calls per device.
 - `WHATSAPP_CALLS_TEST_AUDIO`: path to a `.wav`, `.mp3` or `.opus` played to the peer. Empty
   means silence.

@@ -80,7 +80,7 @@ func attachCalls(slotID string, client *whatsmeow.Client) {
 	})
 	m.slotID = slotID
 	callsByClient.Store(client, m)
-	logrus.Infof("[CALLS] calls enabled for device %s (codec %s)", maskSlot(slotID), effectiveCodecName)
+	logrus.Infof("[CALLS] calls enabled for device %s (codec %s, early media %s)", maskSlot(slotID), effectiveCodecName, parseCallsEarlyMedia(config.WhatsappCallsEarlyMedia))
 }
 
 // forgetCalls drops the manager of a client that is being discarded and ends its live
