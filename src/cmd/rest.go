@@ -260,6 +260,7 @@ func restServer(_ *cobra.Command, _ []string) {
 		if err := chatwoot.CloseAllSyncServices(); err != nil {
 			logrus.Warnf("Chatwoot sync close: %v", err)
 		}
+		whatsapp.ShutdownCalls(context.Background()) // Fork (elphant): end live calls and drain call webhooks (voice calls 2b).
 		if chatStorageDB != nil {
 			if err := chatStorageDB.Close(); err != nil {
 				logrus.Warnf("Chat storage close: %v", err)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -116,8 +117,17 @@ func TestCallWebhooksKeepOrder(t *testing.T) {
 	for _, typ := range []string{EventCallStatus, EventCallAnswered, EventCallEnded} {
 		send(CallEvent{Type: typ, Call: CallInfo{CallID: "ORDER-1"}, At: time.Now()})
 	}
-	require.Eventually(t, func() bool { return len(sink.got()) == 3 }, 2*time.Second, 5*time.Millisecond)
-	assert.Equal(t, []string{"call.status:ORDER-1", "call.answered:ORDER-1", "call.ended:ORDER-1"}, sink.got())
+	order := func() []string {
+		var out []string
+		for _, e := range sink.got() {
+			if strings.HasSuffix(e, ":ORDER-1") {
+				out = append(out, e)
+			}
+		}
+		return out
+	}
+	require.Eventually(t, func() bool { return len(order()) == 3 }, 2*time.Second, 5*time.Millisecond)
+	assert.Equal(t, []string{"call.status:ORDER-1", "call.answered:ORDER-1", "call.ended:ORDER-1"}, order())
 }
 
 func TestCallWebhookSenderNeverWaitsOnTheEndpoint(t *testing.T) {
@@ -225,4 +235,56 @@ func TestCallOfferFields(t *testing.T) {
 	addCallOfferFields(context.Background(), off, evt, client)
 	assert.Equal(t, false, off["calls_enabled"])
 	assert.NotContains(t, off, "offer_sdp")
+}
+
+func TestShutdownCallsEndsCallsAndDrainsTheQueue(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	sink := &callWebhookSink{}
+	stubCallWebhook(t, func(ctx context.Context, body map[string]any, event string) error {
+		time.Sleep(20 * time.Millisecond) // a slow but working endpoint
+		return sink.forward(ctx, body, event)
+	})
+	client := &whatsmeow.Client{}
+	eng := &fakeEngine{}
+	m := newCallManager(eng, callManagerOptions{MaxCalls: 2, Emit: callEventSender(client)})
+	callsByClient.Store(client, m)
+	t.Cleanup(func() { callsByClient.Delete(client) })
+	eng.incoming(&fakeCall{id: "SHUT-1"})
+	eng.incoming(&fakeCall{id: "SHUT-2"})
+	require.NoError(t, m.Answer("SHUT-2", ""))
+
+	ShutdownCalls(context.Background())
+	assert.NotNil(t, sink.payloadOf(EventCallEnded, "SHUT-1"), "call.ended forwarded before ShutdownCalls returns")
+	assert.NotNil(t, sink.payloadOf(EventCallEnded, "SHUT-2"))
+}
+
+func TestShutdownCallsIsBoundedWhenTheEndpointHangs(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	orig := callsShutdownWait
+	callsShutdownWait = 200 * time.Millisecond
+	t.Cleanup(func() { callsShutdownWait = orig })
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	stubCallWebhook(t, func(context.Context, map[string]any, string) error { <-release; return nil })
+
+	callEventSender(nil)(CallEvent{Type: EventCallEnded, Call: CallInfo{CallID: "HANG-1"}, At: time.Now()})
+	start := time.Now()
+	ShutdownCalls(context.Background())
+	assert.Less(t, time.Since(start), 2*time.Second)
+}
+
+func TestShutdownCallsNoOpWhenCallsOff(t *testing.T) {
+	withCallsConfig(t, false, nil)
+	client := &whatsmeow.Client{}
+	eng := &fakeEngine{}
+	m := newCallManager(eng, callManagerOptions{MaxCalls: 1})
+	callsByClient.Store(client, m)
+	t.Cleanup(func() { callsByClient.Delete(client) })
+	ringing := &fakeCall{id: "OFF-1"}
+	eng.incoming(ringing)
+
+	ShutdownCalls(context.Background())
+	ringing.mu.Lock()
+	defer ringing.mu.Unlock()
+	assert.False(t, ringing.rejected)
 }

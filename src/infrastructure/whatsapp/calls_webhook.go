@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
@@ -30,8 +31,9 @@ type callWebhookJob struct {
 }
 
 var (
-	callWebhookQueue = make(chan callWebhookJob, 1024)
-	callWebhookOnce  sync.Once
+	callWebhookQueue   = make(chan callWebhookJob, 1024)
+	callWebhookOnce    sync.Once
+	callWebhookPending atomic.Int64 // queued or in delivery
 )
 
 // callEventSender is a call manager's Emit. The manager calls it on engine goroutines while it
@@ -41,9 +43,11 @@ var (
 func callEventSender(client *whatsmeow.Client) func(CallEvent) {
 	return func(ev CallEvent) {
 		callWebhookOnce.Do(func() { safego.Loop("calls_webhooks", runCallWebhooks) })
+		callWebhookPending.Add(1)
 		select {
 		case callWebhookQueue <- callWebhookJob{deviceID: deviceJIDOf(client), ev: ev}:
 		default:
+			callWebhookPending.Add(-1)
 			logrus.Errorf("[CALLS] webhook queue full; dropped %s of call %s", ev.Type, ev.Call.CallID)
 		}
 	}
@@ -56,6 +60,7 @@ func runCallWebhooks() {
 }
 
 func deliverCallWebhook(job callWebhookJob) {
+	defer callWebhookPending.Add(-1)
 	callWebhookMu.Lock()
 	forward := forwardCallWebhook
 	callWebhookMu.Unlock()
@@ -142,4 +147,48 @@ func addCallOfferFields(ctx context.Context, payload map[string]any, evt *events
 		return
 	}
 	payload["offer_sdp"] = sdp
+}
+
+// callsShutdownWait bounds ShutdownCalls; tests shorten it.
+var callsShutdownWait = 5 * time.Second
+
+// ShutdownCalls runs on process stop, before the chat storage closes: it ends every live call
+// of every manager (so each sends call.ended) and waits for the call webhook queue to drain,
+// at most callsShutdownWait or until ctx ends. A no-op with calls off.
+func ShutdownCalls(ctx context.Context) {
+	if !config.WhatsappCallsEnabled {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, callsShutdownWait)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	callsByClient.Range(func(_, v any) bool {
+		m := v.(*CallManager)
+		wg.Add(1)
+		safego.Go("calls_shutdown", func() {
+			defer wg.Done()
+			m.closeAll()
+		})
+		return true
+	})
+	closed := make(chan struct{})
+	safego.Go("calls_shutdown_wait", func() { wg.Wait(); close(closed) })
+	select {
+	case <-closed:
+	case <-ctx.Done():
+		logrus.Warn("[CALLS] shutdown: live calls did not end in time")
+		return
+	}
+
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for callWebhookPending.Load() > 0 {
+		select {
+		case <-tick.C:
+		case <-ctx.Done():
+			logrus.Warnf("[CALLS] shutdown: %d call webhook(s) not delivered", callWebhookPending.Load())
+			return
+		}
+	}
 }

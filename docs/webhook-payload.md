@@ -1074,8 +1074,12 @@ offer again while the call rings. Group calls have `calls_enabled: false` and ri
   the durable retry can still fetch the file. Files are deleted after
   `WHATSAPP_CALLS_RECORDING_RETENTION_DAYS` (default 7); the route then answers 410.
 - A call's events arrive in order (status, answered, ended). `call.offer` leaves from its own
-  path: for a call refused by the cap, `call.ended` can arrive before `call.offer`. Match by
-  `call_id`.
+  path and is not ordered with the other call events (for example a call refused by the cap or
+  cancelled at once); match events by `call_id`.
+- Call events leave through one ordered worker. With direct (non-durable) delivery a slow
+  endpoint delays every call event behind it; `WHATSAPP_WEBHOOK_DELIVERY=durable` is
+  recommended for calls. On shutdown GOWA ends live calls and waits up to 5 s for their
+  `call.ended` to be delivered (or queued, in durable mode).
 - `POST /call/reject` on a call GOWA tracks also sends `call.ended` (`REJECTED`, `rejected`).
   Switching calls off for a device ends its live calls the same way: a ringing call ends
   `REJECTED`/`rejected`, any other with `end_reason` `hangup_agent`.
