@@ -226,10 +226,17 @@ func TestOutboundOfferWithoutOpusIsRefused(t *testing.T) {
 	_, err := eng.NewOutbound(pcmu)
 	assert.ErrorIs(t, err, errNoOpus)
 	_, err = eng.NewOutbound("not an sdp")
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrBadOffer)
 	videoOnly := "v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\nm=video 9 UDP/TLS/RTP/SAVPF 111\r\na=rtpmap:111 opus/48000/2\r\n"
 	_, err = eng.NewOutbound(videoOnly)
 	assert.ErrorIs(t, err, errNoOpus, "Opus outside an m=audio section does not count")
+}
+
+// A refused offer is the client's fault: every reason wraps ErrBadOffer (no libopus needed).
+func TestBadOffersWrapErrBadOffer(t *testing.T) {
+	pcmu := "v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 0\r\na=rtpmap:0 PCMU/8000\r\n"
+	assert.ErrorIs(t, requireOpusAudio(pcmu), ErrBadOffer)
+	assert.ErrorIs(t, requireOpusAudio("not an sdp"), ErrBadOffer)
 }
 
 func TestPublicIPReplacesHostCandidates(t *testing.T) {

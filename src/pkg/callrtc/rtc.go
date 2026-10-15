@@ -24,7 +24,11 @@ const (
 	gatherTimeout = 5 * time.Second
 )
 
-var errNoOpus = errors.New("callrtc: the offer has no Opus 48 kHz audio")
+// ErrBadOffer is wrapped by every refusal of the browser's SDP offer: the client's fault, not
+// the server's.
+var ErrBadOffer = errors.New("callrtc: bad browser offer")
+
+var errNoOpus = fmt.Errorf("%w: no Opus 48 kHz audio", ErrBadOffer)
 
 var opusCapability = webrtc.RTPCodecCapability{
 	MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1",
@@ -174,7 +178,7 @@ func (e *Engine) NewOutbound(remoteOffer string) (*Leg, error) {
 	}
 	if err := l.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: sdp}); err != nil {
 		_ = l.Close()
-		return nil, fmt.Errorf("callrtc: browser offer: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrBadOffer, err)
 	}
 	sender, err := l.pc.AddTrack(l.track)
 	if err != nil {

@@ -22,7 +22,7 @@ func NormalizeSDP(s string) string {
 func requireOpusAudio(s string) error {
 	var desc sdp.SessionDescription
 	if err := desc.UnmarshalString(s); err != nil {
-		return fmt.Errorf("callrtc: browser offer: %w", err)
+		return fmt.Errorf("%w: %w", ErrBadOffer, err)
 	}
 	for _, m := range desc.MediaDescriptions {
 		if m.MediaName.Media != "audio" {
