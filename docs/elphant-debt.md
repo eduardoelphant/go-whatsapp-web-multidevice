@@ -242,6 +242,8 @@ history of the work.
     WhatsApp does not stop the callee's other devices. Fix in the fork: on a peer reject, either send a
     terminate (call ends REJECTED everywhere) or keep ringing until every device rejects or one accepts;
     the second matches what the phone did, but a real decline then rings until the timeout.
+    FIXED in fork `v0.2.0-elphant.6` (GOWA `v9.6.0-elphant.8`): a peer reject on an outgoing call
+    now sends a terminate, so the call ends REJECTED on every device.
   - Idle CPU after the calls: under 0.1%; per-call CPU not measured yet.
   - **Open:** the DDD 11 device has no webhook configured, so the `call.*` webhooks were queued for 0
     targets and not checked end to end; check them when the CRM driver points a webhook at the device.
