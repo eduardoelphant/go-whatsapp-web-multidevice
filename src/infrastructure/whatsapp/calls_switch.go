@@ -16,7 +16,8 @@ import (
 
 var ErrCallsMasterOff = pkgError.ValidationError("calls are disabled on this gateway (WHATSAPP_CALLS_ENABLED=false)")
 
-type deviceCallsStore interface {
+// DeviceCallsStore is the device registry part that keeps the per-device calls switch.
+type DeviceCallsStore interface {
 	SetDeviceCallsEnabled(deviceID string, enabled bool) error
 	GetDeviceCallsEnabled(deviceID string) (enabled, found bool, err error)
 	// SeedDeviceCallsEnabled stores a first value without overwriting an existing one.
@@ -28,12 +29,12 @@ type deviceCallsStore interface {
 var deviceCallsMu sync.Mutex
 
 // callsStoreFn returns the registry that keeps the switch, or nil (tests, no chat storage).
-var callsStoreFn = func() deviceCallsStore {
+var callsStoreFn = func() DeviceCallsStore {
 	dm := GetDeviceManager()
 	if dm == nil || dm.storage == nil {
 		return nil
 	}
-	reg, _ := dm.storage.(deviceCallsStore)
+	reg, _ := dm.storage.(DeviceCallsStore)
 	return reg
 }
 
@@ -102,7 +103,7 @@ func SetDeviceCalls(deviceID string, enabled bool) (bool, error) {
 	if !config.WhatsappCallsEnabled {
 		return false, ErrCallsMasterOff
 	}
-	slotID, _, err := resolveCallsSlot(deviceID)
+	slotID, client, err := resolveCallsSlot(deviceID)
 	if err != nil {
 		return false, err
 	}
@@ -120,7 +121,7 @@ func SetDeviceCalls(deviceID string, enabled bool) (bool, error) {
 		return false, err
 	}
 	if !enabled {
-		endCallsOfSlot(slotID)
+		endCallsOfSlot(slotID, client)
 	}
 	logrus.Infof("[CALLS] calls switched %s for device %s", onOff(enabled), maskSlot(slotID))
 	return enabled, nil
@@ -135,9 +136,13 @@ func DeviceCalls(deviceID string) (bool, error) {
 	return callsAllowedNow(slotID, client), nil
 }
 
-func endCallsOfSlot(slotID string) {
-	callsByClient.Range(func(_, v any) bool {
-		if m := v.(*CallManager); m.slotID == slotID {
+// endCallsOfSlot ends the live calls of the slot's client. A manager is matched by that
+// client, or by the slot it currently resolves to (the startup client was attached under its
+// AD JID and later moved to a registry slot).
+func endCallsOfSlot(slotID string, client *whatsmeow.Client) {
+	callsByClient.Range(func(k, v any) bool {
+		c := k.(*whatsmeow.Client)
+		if m := v.(*CallManager); (client != nil && c == client) || callsSlotOf(c, m.slotID) == slotID {
 			safego.Go("calls_switch_off", m.closeAll)
 		}
 		return true

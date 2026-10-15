@@ -40,12 +40,24 @@ var (
 // holds the call's emit lock, so it only enqueues: it never blocks and never calls back into the
 // manager. Events join one ordered queue and leave from one worker, so a call's status, answered
 // and ended arrive in that order and a slow endpoint never holds up the call engine.
+//
+// The device JID is remembered from attach time and from every emit: whatsmeow clears
+// Store.ID on logout before the client is reset and its calls end, so call.ended would
+// otherwise lose device_id.
 func callEventSender(client *whatsmeow.Client) func(CallEvent) {
+	var lastJID atomic.Value // string
+	lastJID.Store(deviceJIDOf(client))
 	return func(ev CallEvent) {
+		deviceID := deviceJIDOf(client)
+		if deviceID != "" {
+			lastJID.Store(deviceID)
+		} else {
+			deviceID = lastJID.Load().(string)
+		}
 		callWebhookOnce.Do(func() { safego.Loop("calls_webhooks", runCallWebhooks) })
 		callWebhookPending.Add(1)
 		select {
-		case callWebhookQueue <- callWebhookJob{deviceID: deviceJIDOf(client), ev: ev}:
+		case callWebhookQueue <- callWebhookJob{deviceID: deviceID, ev: ev}:
 		default:
 			callWebhookPending.Add(-1)
 			logrus.Errorf("[CALLS] webhook queue full; dropped %s of call %s", ev.Type, ev.Call.CallID)

@@ -88,6 +88,30 @@ func (m *DeviceManager) getDeviceByJID(jid string) (*DeviceInstance, bool) {
 	return nil, false
 }
 
+// slotIDOfClient returns the id of the slot whose client is client, or "". A registry slot
+// (id without "@") wins over a transient AD-JID-keyed instance holding the same client.
+// Fork (elphant): voice calls resolve their per-device switch through it.
+func (m *DeviceManager) slotIDOfClient(client *whatsmeow.Client) string {
+	if m == nil || client == nil {
+		return ""
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	found := ""
+	for id, inst := range m.devices {
+		if inst == nil || inst.GetClient() != client {
+			continue
+		}
+		if !strings.Contains(id, "@") {
+			return id
+		}
+		if found == "" || id < found {
+			found = id
+		}
+	}
+	return found
+}
+
 // storeIdentity returns the most precise store identity a slot knows: the full AD JID
 // once the companion suffix is known, otherwise the bare-number JID.
 func storeIdentity(inst *DeviceInstance) string {
@@ -253,6 +277,7 @@ func (m *DeviceManager) RemoveDevice(id string) {
 	if inst := m.devices[id]; inst != nil {
 		forgetCalls(inst.GetClient()) // Fork (elphant): drop the call manager with the slot.
 	}
+	deviceCallsCache.Delete(id) // Fork (elphant): the slot's calls switch goes with it.
 	delete(m.devices, id)
 
 	if m.storage != nil && strings.TrimSpace(id) != "" {

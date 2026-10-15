@@ -28,11 +28,28 @@ var (
 // number and JID are read from the store at call time, so a device paired after start
 // is covered without a restart.
 func callsAllowedNow(slotID string, client *whatsmeow.Client) bool {
+	slotID = callsSlotOf(client, slotID)
 	user, jid := "", ""
 	if client != nil && client.Store != nil && client.Store.ID != nil {
 		user, jid = client.Store.ID.User, client.Store.ID.String()
 	}
 	return deviceCallsEnabled(slotID, user, jid) // Fork (elphant): per-device switch (stage 2b)
+}
+
+// callsSlotOf returns the registry slot that holds client now, or fallback when no slot holds
+// it. The slot is resolved at use time because the startup client is attached under its AD JID
+// and then moved to its registry slot by loadFromRegistry; the per-device switch is keyed by
+// that registry slot.
+func callsSlotOf(client *whatsmeow.Client, fallback string) string {
+	if client == nil {
+		return fallback
+	}
+	if dm := GetDeviceManager(); dm != nil {
+		if id := dm.slotIDOfClient(client); id != "" {
+			return id
+		}
+	}
+	return fallback
 }
 
 // offerFilter gates inbound offers in the call engine: a false return makes it ignore the

@@ -53,7 +53,7 @@ func withCallsConfig(t *testing.T, enabled bool, devices []string) {
 		resetDeviceCallsCache()
 	})
 	config.WhatsappCallsEnabled, config.WhatsappCallsDevices = enabled, devices
-	callsStoreFn = func() deviceCallsStore { return nil }
+	callsStoreFn = func() DeviceCallsStore { return nil }
 }
 
 func TestAttachCallsNotAllowedKeepsOff(t *testing.T) {

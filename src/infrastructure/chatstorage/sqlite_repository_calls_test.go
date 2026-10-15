@@ -1,6 +1,13 @@
 package chatstorage
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
+)
+
+// The device registry keeps the per-device calls switch of the whatsapp package.
+var _ whatsapp.DeviceCallsStore = (*SQLiteRepository)(nil)
 
 func TestDeviceCallsEnabledRoundTrip(t *testing.T) {
 	repo := newTestSQLiteRepository(t)

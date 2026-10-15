@@ -55,9 +55,9 @@ func (s *fakeCallsStore) snapshot() map[string]bool {
 }
 
 // withCallsStore must run after withCallsConfig (cleanups run in reverse order).
-func withCallsStore(t *testing.T, reg deviceCallsStore) {
+func withCallsStore(t *testing.T, reg DeviceCallsStore) {
 	orig := callsStoreFn
-	callsStoreFn = func() deviceCallsStore { return reg }
+	callsStoreFn = func() DeviceCallsStore { return reg }
 	resetDeviceCallsCache()
 	t.Cleanup(func() { callsStoreFn = orig; resetDeviceCallsCache() })
 }
