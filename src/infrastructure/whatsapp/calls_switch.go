@@ -19,7 +19,13 @@ var ErrCallsMasterOff = pkgError.ValidationError("calls are disabled on this gat
 type deviceCallsStore interface {
 	SetDeviceCallsEnabled(deviceID string, enabled bool) error
 	GetDeviceCallsEnabled(deviceID string) (enabled, found bool, err error)
+	// SeedDeviceCallsEnabled stores a first value without overwriting an existing one.
+	SeedDeviceCallsEnabled(deviceID string, enabled bool) error
 }
+
+// deviceCallsMu serializes the cache-miss path and SetDeviceCalls, so a lookup cannot write
+// back a stale value over a concurrent PUT.
+var deviceCallsMu sync.Mutex
 
 // callsStoreFn returns the registry that keeps the switch, or nil (tests, no chat storage).
 var callsStoreFn = func() deviceCallsStore {
@@ -59,6 +65,11 @@ func deviceCallsEnabled(slotID, jidUser, jidString string) bool {
 	if v, ok := deviceCallsCache.Load(slotID); ok {
 		return v.(bool)
 	}
+	deviceCallsMu.Lock()
+	defer deviceCallsMu.Unlock()
+	if v, ok := deviceCallsCache.Load(slotID); ok {
+		return v.(bool)
+	}
 	seed := config.CallsAllowed(slotID, jidUser, jidString)
 	reg := callsStoreFn()
 	if reg == nil {
@@ -73,10 +84,12 @@ func deviceCallsEnabled(slotID, jidUser, jidString string) bool {
 		if !seed && jidUser == "" && len(config.WhatsappCallsDevices) > 0 {
 			return false
 		}
-		enabled = seed
-		if err := reg.SetDeviceCallsEnabled(slotID, enabled); err != nil {
+		if err := reg.SeedDeviceCallsEnabled(slotID, seed); err != nil {
 			logrus.Warnf("[CALLS] seed the calls switch of %s: %v", maskSlot(slotID), err)
-			return enabled
+			return seed
+		}
+		if enabled, found, err = reg.GetDeviceCallsEnabled(slotID); err != nil || !found {
+			return seed
 		}
 	}
 	deviceCallsCache.Store(slotID, enabled)
@@ -97,10 +110,15 @@ func SetDeviceCalls(deviceID string, enabled bool) (bool, error) {
 	if reg == nil {
 		return false, pkgError.InternalServerError("device registry unavailable")
 	}
-	if err := reg.SetDeviceCallsEnabled(slotID, enabled); err != nil {
+	deviceCallsMu.Lock()
+	err = reg.SetDeviceCallsEnabled(slotID, enabled)
+	if err == nil {
+		deviceCallsCache.Store(slotID, enabled)
+	}
+	deviceCallsMu.Unlock()
+	if err != nil {
 		return false, err
 	}
-	deviceCallsCache.Store(slotID, enabled)
 	if !enabled {
 		endCallsOfSlot(slotID)
 	}

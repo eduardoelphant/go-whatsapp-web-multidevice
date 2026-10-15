@@ -25,3 +25,22 @@ func TestDeviceCallsEnabledRoundTrip(t *testing.T) {
 		t.Fatal("a blank device id must fail")
 	}
 }
+
+func TestSeedDeviceCallsEnabledNeverOverwrites(t *testing.T) {
+	repo := newTestSQLiteRepository(t)
+	if err := repo.SeedDeviceCallsEnabled("slot-a", true); err != nil {
+		t.Fatal(err)
+	}
+	if on, found, _ := repo.GetDeviceCallsEnabled("slot-a"); !found || !on {
+		t.Fatal("seed must store the first value")
+	}
+	if err := repo.SetDeviceCallsEnabled("slot-a", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SeedDeviceCallsEnabled("slot-a", true); err != nil {
+		t.Fatal(err)
+	}
+	if on, found, _ := repo.GetDeviceCallsEnabled("slot-a"); !found || on {
+		t.Fatal("seed overwrote a stored value")
+	}
+}

@@ -35,6 +35,15 @@ func (s *fakeCallsStore) GetDeviceCallsEnabled(id string) (bool, bool, error) {
 	return on, ok, nil
 }
 
+func (s *fakeCallsStore) SeedDeviceCallsEnabled(id string, on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.rows[id]; !ok {
+		s.rows[id] = on
+	}
+	return nil
+}
+
 func (s *fakeCallsStore) snapshot() map[string]bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -152,4 +161,30 @@ func TestOfferFilterLeavesGroupCalls(t *testing.T) {
 	group := &events.CallOffer{}
 	group.GroupJID = types.NewJID("120363000000000000", types.GroupServer)
 	assert.False(t, filter(group))
+}
+
+func TestSwitchOffRacesLookups(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	reg := newFakeCallsStore()
+	withCallsStore(t, reg)
+	withResolvedSlot(t, "slot-a", &whatsmeow.Client{})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				deviceCallsEnabled("slot-a", "", "")
+			}
+		}()
+	}
+	_, err := SetDeviceCalls("slot-a", false)
+	require.NoError(t, err)
+	wg.Wait()
+
+	v, ok := deviceCallsCache.Load("slot-a")
+	require.True(t, ok)
+	assert.Equal(t, false, v)
+	assert.Equal(t, map[string]bool{"slot-a": false}, reg.snapshot())
 }

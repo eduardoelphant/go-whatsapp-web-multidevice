@@ -25,14 +25,21 @@ func (r *SQLiteRepository) SetDeviceCallsEnabled(deviceID string, enabled bool) 
 	if _, err := r.db.Exec(createDeviceCallsTable); err != nil {
 		return err
 	}
-	now := time.Now()
-	res, err := r.db.Exec(`UPDATE elphant_device_calls SET enabled = ?, updated_at = ? WHERE device_id = ?`, enabled, now, deviceID)
-	if err != nil {
+	_, err := r.db.Exec(`INSERT INTO elphant_device_calls (device_id, enabled, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(device_id) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at`, deviceID, enabled, time.Now())
+	return err
+}
+
+// SeedDeviceCallsEnabled stores a slot's first value; it never overwrites an existing one.
+func (r *SQLiteRepository) SeedDeviceCallsEnabled(deviceID string, enabled bool) error {
+	if strings.TrimSpace(deviceID) == "" {
+		return fmt.Errorf("device id is required")
+	}
+	if _, err := r.db.Exec(createDeviceCallsTable); err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		_, err = r.db.Exec(`INSERT INTO elphant_device_calls (device_id, enabled, updated_at) VALUES (?, ?, ?)`, deviceID, enabled, now)
-	}
+	_, err := r.db.Exec(`INSERT INTO elphant_device_calls (device_id, enabled, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(device_id) DO NOTHING`, deviceID, enabled, time.Now())
 	return err
 }
 
