@@ -462,7 +462,7 @@ Settings:
   recommended for the CRM, where a human answers late; never use `full`, the caller sees the call
   answered at the first ring), `WHATSAPP_CALLS_MAX_PER_DEVICE` (`1`; above it the offer is
   rejected and `call.ended` is `MISSED`), `WHATSAPP_CALLS_MAX_DURATION_MINUTES` (`120`; then GOWA
-  hangs up and reports `FAILED`).
+  hangs up and reports `FAILED`; `0`: no limit).
 - Browser leg (pion, ICE-lite, DTLS server, Opus 48 kHz, non-trickle SDP): `WHATSAPP_CALLS_RTC_PORT`
   (`3478`, one UDP port for every call), `WHATSAPP_CALLS_RTC_PUBLIC_IP` (the host's public IPv4),
   `WHATSAPP_CALLS_RTC_GRACE_SECONDS` (`10`, minimum `1`: a browser leg down that long hangs up the

@@ -181,12 +181,18 @@ history of the work.
       alias test, a loose FIFO overflow test, `Rechunker(0)` loops and prefill above max never plays.
     - Recording: pion's `oggwriter` fixed pre-skip trims about 73 ms at the start; a failed
       `oggwriter.New` leaves an empty file (retention cleans it); a close error with zero frames is dropped.
+      The recording link opens as a download (`Content-Disposition: attachment`), by design.
     - Call manager: every media factory error maps to 400 (a typed SDP error would be better); the
       ring-window prune is lazy; an already-ended `OnEnd` reason `ended` maps to `hangup_peer`; no test
       that the max-duration timer stops on a normal end; a failed `handle.Answer` racing a `Hangup` can
       send a Reject on a dead call; customer FIFO underrun stats are noisy (Debug only); the
       `legError` non-opus branch is unreachable.
-    - Switch and webhooks: a stale `elphant_device_calls` row stays after a device is deleted; an
+    - CLOSED in 2b: the switch of the startup client was keyed by its AD JID while `PUT
+      /devices/:id/calls` wrote the registry slot (toggle and switch-off had no effect); the slot is
+      now resolved from the client at use time. `call.ended` after a logout kept no `device_id`; the
+      device JID is now remembered from the call's earlier events.
+    - Switch and webhooks: a stale `elphant_device_calls` row stays after a device is deleted (the
+      cached value is dropped); an
       offer in flight during switch-off rings until the ring window ends; the browser leg is
       allocated for `call.offer` even with no webhook configured (closed at call end); a call ending
       at the same instant as SIGTERM may enqueue `call.ended` after the drain sees 0.
@@ -207,7 +213,6 @@ history of the work.
   - a 64 s call gave a 54 s recording with speech throughout;
   - CPU: about 10% to 25% of one core during a call against under 1% idle (container on 4 vCPU).
   - **Open:** in one of two inbound calls the relay never bridged the caller's audio (no "relay is bridging" log, empty recording) while our audio reached the caller. A host and container UDP capture on the next call showed every relay packet reaching the container, so it is not Docker NAT. Likely meowcaller issues #36/#40; investigate in the fork before the CRM beta.
-  - Mapped to `hangup_peer` in 2b: the end reason is empty when the peer hangs up.
 
 - **Live results on the gateway host (2026-10-15, `v9.6.0-elphant.4`..`.6`, calls on the DDD 11 device):**
   - **Missing inbound audio**: the caller sometimes sent RED audio (payload type 122), which meowcaller dropped. It is fixed in fork `v0.2.0-elphant.3`, which reads both RED layouts. 3/3 inbound calls worked afterwards.
