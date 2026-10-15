@@ -94,13 +94,21 @@ func (m meowCall) OnEnd(fn func(string)) {
 	}
 }
 
-// OnRinging fires when an outbound call's peer device pre-accepts (the phone rings).
+// OnRinging fires when an outbound call's peer device pre-accepts (the phone rings). The
+// preaccept often arrives within a second of the offer, before Start registers this
+// callback, and meowcaller does not replay it; check the phase after registering, as
+// OnEnd does, with a Once guard against a concurrent state change.
 func (m meowCall) OnRinging(fn func()) {
+	var once sync.Once
+	wrapped := func() { once.Do(fn) }
 	m.c.OnStateChange(func(p meowcaller.CallPhase) {
 		if p == meowcaller.CallPhaseRinging {
-			fn()
+			wrapped()
 		}
 	})
+	if m.c.State() == meowcaller.CallPhaseRinging {
+		wrapped()
+	}
 }
 
 func (m meowCall) OnAccept(fn func()) { m.c.OnPeerAccept(fn) }
