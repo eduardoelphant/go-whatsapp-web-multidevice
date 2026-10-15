@@ -36,6 +36,9 @@ func TestRecordingSignedURLOpensWithoutCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := io.ReadAll(resp.Body)
+	if resp.Header.Get("Cache-Control") != "private, no-store" || resp.Header.Get("Content-Disposition") != `attachment; filename="ABC123.ogg"` {
+		t.Fatalf("headers: %q / %q", resp.Header.Get("Cache-Control"), resp.Header.Get("Content-Disposition"))
+	}
 	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "audio/ogg" || string(body) != "OggS-bytes" {
 		t.Fatalf("status %d, type %q, body %q", resp.StatusCode, resp.Header.Get("Content-Type"), body)
 	}

@@ -39,6 +39,8 @@ func mountCallRecordings(app *fiber.App, basePath, dir string, accounts map[stri
 			return c.Status(fiber.StatusGone).SendString("recording expired or not found")
 		}
 		c.Set(fiber.HeaderContentType, "audio/ogg")
+		c.Set(fiber.HeaderCacheControl, "private, no-store")
+		c.Set(fiber.HeaderContentDisposition, `attachment; filename="`+c.Params("call_id")+`.ogg"`)
 		return c.SendStream(f, int(fi.Size()))
 	})
 }

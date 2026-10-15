@@ -24,18 +24,35 @@ func Cleanup(dir string, maxAge time.Duration, now time.Time) (int, error) {
 		return 0, err
 	}
 	removed := 0
+	var failed int
+	var firstFail string
+	fail := func(name string) {
+		if failed == 0 {
+			firstFail = name
+		}
+		failed++
+	}
 	for _, e := range entries {
 		ext := strings.ToLower(filepath.Ext(e.Name()))
 		if e.IsDir() || (ext != ".ogg" && ext != ".wav") {
 			continue
 		}
 		fi, err := e.Info()
-		if err != nil || now.Sub(fi.ModTime()) <= maxAge {
+		if err != nil {
+			fail(e.Name())
+			continue
+		}
+		if now.Sub(fi.ModTime()) <= maxAge {
 			continue
 		}
 		if err := os.Remove(filepath.Join(dir, e.Name())); err == nil {
 			removed++
+		} else {
+			fail(e.Name())
 		}
+	}
+	if failed > 0 {
+		logrus.Warnf("[CALLS] recording retention: %d file(s) could not be inspected or removed (first: %s)", failed, firstFail)
 	}
 	return removed, nil
 }
