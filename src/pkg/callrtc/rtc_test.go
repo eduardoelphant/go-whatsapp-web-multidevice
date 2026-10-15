@@ -227,6 +227,9 @@ func TestOutboundOfferWithoutOpusIsRefused(t *testing.T) {
 	assert.ErrorIs(t, err, errNoOpus)
 	_, err = eng.NewOutbound("not an sdp")
 	assert.Error(t, err)
+	videoOnly := "v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\nm=video 9 UDP/TLS/RTP/SAVPF 111\r\na=rtpmap:111 opus/48000/2\r\n"
+	_, err = eng.NewOutbound(videoOnly)
+	assert.ErrorIs(t, err, errNoOpus, "Opus outside an m=audio section does not count")
 }
 
 func TestPublicIPReplacesHostCandidates(t *testing.T) {
@@ -251,4 +254,74 @@ func TestNormalizeSDP(t *testing.T) {
 	assert.Equal(t, "v=0\r\na=x\r\n", NormalizeSDP("v=0\r\na=x\r\n"))
 	assert.Equal(t, "v=0\r\na=x\r\n", NormalizeSDP("v=0\r\na=x\n\n"))
 	assert.Equal(t, "", NormalizeSDP(""))
+}
+
+// connectInbound runs the incoming-call flow against a new browser and waits for the leg to be up.
+func connectInbound(t *testing.T, eng *Engine) (*Leg, *browser) {
+	t.Helper()
+	leg, err := eng.NewInbound()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = leg.Close() })
+	b := newBrowser(t)
+	require.NoError(t, b.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: leg.LocalSDP()}))
+	answer, err := b.pc.CreateAnswer(nil)
+	require.NoError(t, err)
+	require.NoError(t, leg.SetAnswer(gather(t, b.pc, answer)))
+	waitUp(t, leg)
+	return leg, b
+}
+
+// Two calls share the engine's one port; closing one leaves the other carrying audio.
+func TestTwoLegsShareOneEngine(t *testing.T) {
+	requireOpus(t)
+	eng := newTestEngine(t, "127.0.0.1")
+	first, _ := connectInbound(t, eng)
+	second, b2 := connectInbound(t, eng)
+	require.NoError(t, first.Close())
+	exchangeAudio(t, second, b2)
+}
+
+// ICE alone is not "up": with a browser fingerprint that does not match, DTLS fails and the leg
+// is never reported connected.
+func TestLegIsNotUpWithoutDTLS(t *testing.T) {
+	requireOpus(t)
+	eng := newTestEngine(t, "127.0.0.1")
+	leg, err := eng.NewInbound()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = leg.Close() })
+	var ups atomic.Int64
+	leg.OnConnected(func(ok bool) {
+		if ok {
+			ups.Add(1)
+		}
+	})
+
+	b := newBrowser(t)
+	require.NoError(t, b.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: leg.LocalSDP()}))
+	answer, err := b.pc.CreateAnswer(nil)
+	require.NoError(t, err)
+	answerSDP := gather(t, b.pc, answer)
+	const prefix = "a=fingerprint:sha-256 "
+	i := strings.Index(answerSDP, prefix)
+	require.GreaterOrEqual(t, i, 0)
+	at := i + len(prefix)
+	flipped := "00"
+	if answerSDP[at:at+2] == "00" {
+		flipped = "11"
+	}
+	// The leg itself watches the peer-connection state, so the ICE hook is free for the test.
+	var iceUp atomic.Bool
+	leg.pc.OnICEConnectionStateChange(func(s webrtc.ICEConnectionState) {
+		if s == webrtc.ICEConnectionStateConnected {
+			iceUp.Store(true)
+		}
+	})
+	require.NoError(t, leg.SetAnswer(answerSDP[:at]+flipped+answerSDP[at+2:]))
+
+	require.Eventually(t, func() bool {
+		s := leg.pc.ConnectionState()
+		return s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed
+	}, 10*time.Second, 10*time.Millisecond, "DTLS fails on the fingerprint")
+	assert.True(t, iceUp.Load(), "ICE itself connected")
+	assert.Zero(t, ups.Load(), "a leg without DTLS is not up")
 }

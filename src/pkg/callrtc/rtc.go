@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -106,6 +105,9 @@ type Leg struct {
 	dec   *opus.Decoder
 	local string
 
+	reading sync.Once // only the first audio track is decoded: the decoder is not shared
+
+	deliverMu   sync.Mutex // serialises OnConnected deliveries, replay included
 	mu          sync.Mutex
 	onFrame     func([]float32)
 	onConnected func(bool)
@@ -132,7 +134,7 @@ func (e *Engine) newLeg() (*Leg, error) {
 		return nil, err
 	}
 	l := &Leg{pc: pc, track: track, enc: enc, dec: dec}
-	pc.OnICEConnectionStateChange(l.onICEState)
+	pc.OnConnectionStateChange(l.onPCState)
 	pc.OnTrack(l.onTrack)
 	return l, nil
 }
@@ -163,8 +165,8 @@ func (e *Engine) NewInbound() (*Leg, error) {
 // NewOutbound makes a leg that answers the browser's offer (the outbound-call flow, B4).
 func (e *Engine) NewOutbound(remoteOffer string) (*Leg, error) {
 	sdp := NormalizeSDP(remoteOffer)
-	if !strings.Contains(strings.ToLower(sdp), "opus/48000") {
-		return nil, errNoOpus
+	if err := requireOpusAudio(sdp); err != nil {
+		return nil, err
 	}
 	l, err := e.newLeg()
 	if err != nil {
@@ -213,7 +215,9 @@ func (l *Leg) SetAnswer(answer string) error {
 	return l.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: NormalizeSDP(answer)})
 }
 
-// WriteFrame encodes one 20 ms frame and sends it to the browser.
+// WriteFrame encodes one 20 ms frame and sends it to the browser. The frame must be
+// FrameSamples of 48 kHz mono. Not safe for concurrent use: call it from one goroutine (shared
+// encoder and output buffer).
 func (l *Leg) WriteFrame(pcm []float32) error {
 	pkt, err := l.enc.Encode(pcm)
 	if err != nil {
@@ -222,14 +226,21 @@ func (l *Leg) WriteFrame(pcm []float32) error {
 	return l.track.WriteSample(media.Sample{Data: pkt, Duration: time.Duration(len(pcm)) * time.Second / SampleRate})
 }
 
+// OnFrame registers fn for the browser's decoded audio: 48 kHz mono, one call per RTP packet, so
+// the length follows the packet duration (960 samples for the browsers' default 20 ms, not always).
+// fn runs on the leg's single reader goroutine.
 func (l *Leg) OnFrame(fn func([]float32)) {
 	l.mu.Lock()
 	l.onFrame = fn
 	l.mu.Unlock()
 }
 
-// OnConnected registers fn for ICE up/down changes and replays "up" when already connected.
+// OnConnected registers fn for up/down changes of the peer connection (ICE and DTLS) and replays
+// "up" when the leg is already connected. Deliveries are serialised, the replay included, so the
+// last state fn sees is the leg's state. fn must not call OnConnected.
 func (l *Leg) OnConnected(fn func(bool)) {
+	l.deliverMu.Lock()
+	defer l.deliverMu.Unlock()
 	l.mu.Lock()
 	l.onConnected = fn
 	up := l.connected
@@ -239,12 +250,16 @@ func (l *Leg) OnConnected(fn func(bool)) {
 	}
 }
 
-func (l *Leg) onICEState(s webrtc.ICEConnectionState) {
+// onPCState runs on goroutines pion starts per change, so their order is not guaranteed: it reads
+// the current state under the delivery lock instead of trusting the argument.
+func (l *Leg) onPCState(webrtc.PeerConnectionState) {
+	l.deliverMu.Lock()
+	defer l.deliverMu.Unlock()
 	var up bool
-	switch s {
-	case webrtc.ICEConnectionStateConnected, webrtc.ICEConnectionStateCompleted:
+	switch l.pc.ConnectionState() {
+	case webrtc.PeerConnectionStateConnected:
 		up = true
-	case webrtc.ICEConnectionStateDisconnected, webrtc.ICEConnectionStateFailed, webrtc.ICEConnectionStateClosed:
+	case webrtc.PeerConnectionStateDisconnected, webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed:
 		up = false
 	default:
 		return
@@ -266,6 +281,10 @@ func (l *Leg) onTrack(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 	if track.Kind() != webrtc.RTPCodecTypeAudio {
 		return
 	}
+	l.reading.Do(func() { l.readTrack(track) })
+}
+
+func (l *Leg) readTrack(track *webrtc.TrackRemote) {
 	safego.Go("calls_rtc_read", func() {
 		for {
 			pkt, _, err := track.ReadRTP()
