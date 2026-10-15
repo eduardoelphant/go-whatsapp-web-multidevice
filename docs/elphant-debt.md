@@ -235,7 +235,13 @@ history of the work.
     recording. The rejection came from another linked device of the called number (device 15), not from
     GOWA: that number's GOWA device saw the offer, the offer filter ignored it (switch off), and GOWA's
     auto-reject is off. Likely another integration linked to that number rejects calls automatically;
-    check the called number's linked devices. Not a 2b defect.
+    check the called number's linked devices. A repeat at 13:32 showed the same reject from device 15
+    (GOWA's device for that number is 17 in the whatsmeow store), and it showed a defect on our side: the called phone kept
+    ringing, the owner answered, the phone showed "reconnecting" and dropped about 25 s later. meowcaller's
+    `onReject` ends an outgoing call on the first device's reject without sending a terminate, while
+    WhatsApp does not stop the callee's other devices. Fix in the fork: on a peer reject, either send a
+    terminate (call ends REJECTED everywhere) or keep ringing until every device rejects or one accepts;
+    the second matches what the phone did, but a real decline then rings until the timeout.
   - Idle CPU after the calls: under 0.1%; per-call CPU not measured yet.
   - **Open:** the DDD 11 device has no webhook configured, so the `call.*` webhooks were queued for 0
     targets and not checked end to end; check them when the CRM driver points a webhook at the device.
