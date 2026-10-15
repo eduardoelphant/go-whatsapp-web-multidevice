@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sort"
 	"strings"
@@ -502,6 +503,10 @@ func (m *CallManager) Start(ctx context.Context, target, offerSDP string) (CallI
 		var err error
 		if media, err = m.opts.Media.Outbound(offerSDP); err != nil {
 			release()
+			var typed pkgError.GenericError
+			if errors.As(err, &typed) {
+				return CallInfo{}, "", err // the factory chose the status (an engine failure is a 500)
+			}
 			return CallInfo{}, "", pkgError.ValidationError("invalid sdp: " + err.Error())
 		}
 	}

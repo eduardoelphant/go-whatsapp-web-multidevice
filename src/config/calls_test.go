@@ -46,4 +46,7 @@ func TestCallsStage2bDefaults(t *testing.T) {
 	if WhatsappCallsRecordingURLTTLMinutes != 1440 || WhatsappCallsRecordingRetentionDays != 7 {
 		t.Fatalf("recording defaults %d min / %d days, want 1440 / 7", WhatsappCallsRecordingURLTTLMinutes, WhatsappCallsRecordingRetentionDays)
 	}
+	if WhatsappCallsRTCPort != 3478 || WhatsappCallsRTCPublicIP != "" || WhatsappCallsRTCGraceSeconds != 10 {
+		t.Fatalf("RTC defaults %d %q %d, want 3478 \"\" 10", WhatsappCallsRTCPort, WhatsappCallsRTCPublicIP, WhatsappCallsRTCGraceSeconds)
+	}
 }

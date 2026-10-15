@@ -14,6 +14,9 @@ var (
 	WhatsappCallsMaxDurationMinutes     = 120    // stage 2b: hang up a call after this many minutes and report it FAILED (0: no limit)
 	WhatsappCallsRecordingURLTTLMinutes = 1440   // stage 2b: validity of the signed recording link in call.ended
 	WhatsappCallsRecordingRetentionDays = 7      // stage 2b: recordings older than this are deleted (0: keep)
+	WhatsappCallsRTCPort                = 3478   // stage 2b: one UDP port for every browser leg (ICE UDP mux); publish it in mode: host
+	WhatsappCallsRTCPublicIP            = ""     // stage 2b: the host's public IPv4, put in the SDP's host candidate (1:1 NAT)
+	WhatsappCallsRTCGraceSeconds        = 10     // stage 2b: hang up the WhatsApp leg after the browser leg is down this long
 )
 
 // CallsAllowed reports whether calls are enabled for a device, matching the allow
