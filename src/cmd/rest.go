@@ -72,6 +72,7 @@ func restServer(_ *cobra.Command, _ []string) {
 		staticsAccounts = accounts
 	}
 	mountStatics(app, config.AppBasePath, "./statics", staticsAccounts, []byte(config.AppStaticsSecret))
+	mountCallRecordings(app, config.AppBasePath, config.PathCalls, accounts, []byte(config.AppStaticsSecret)) // Fork (elphant): signed call recordings (voice calls 2b).
 
 	app.Use(middleware.Recovery())
 	app.Use(middleware.RequestTimeout(middleware.DefaultRequestTimeout))
@@ -154,6 +155,8 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	// Device management routes (no device_id required)
 	rest.InitRestDevice(apiGroup, deviceUsecase)
+	rest.InitRestDeviceCalls(apiGroup, callUsecase) // Fork (elphant): per-device voice calls switch (stage 2b).
+	rest.InitRestCallPhone(apiGroup)                // Fork (elphant): test softphone for voice calls (stage 2b); 404 unless calls are on.
 
 	// App info (version, limits) for standalone UIs; no device required
 	rest.InitRestAppInfo(apiGroup)
@@ -258,6 +261,7 @@ func restServer(_ *cobra.Command, _ []string) {
 		if err := chatwoot.CloseAllSyncServices(); err != nil {
 			logrus.Warnf("Chatwoot sync close: %v", err)
 		}
+		whatsapp.ShutdownCalls(context.Background()) // Fork (elphant): end live calls and drain call webhooks (voice calls 2b).
 		if chatStorageDB != nil {
 			if err := chatStorageDB.Close(); err != nil {
 				logrus.Warnf("Chat storage close: %v", err)

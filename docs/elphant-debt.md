@@ -143,21 +143,63 @@ history of the work.
     (fork PR #26/#43) are in fork v0.2.0, pending live verification.
   - (b) Deferred minors:
     - Config: `WHATSAPP_CALLS_CODEC` / `MAX_PER_DEVICE` are not validated at config time (fallback and clamp cover it).
-    - An expired offer is dropped without Reject; a failed Answer is not followed by Reject.
+    - CLOSED in 2b: An expired offer is dropped without Reject; a failed Answer is not followed by Reject.
     - Comment on ringing calls is not counted in the cap.
-    - Start returns State "active" even if the call ended during setup.
+    - CLOSED in 2b: Start returns State "active" even if the call ended during setup.
     - Concurrent EnsureClient on one slot can leave the losing client's manager in the map (pre-existing race).
     - The WARN repeats on every reconnect; closeAll Hangup path and Record-on-ended are untested.
     - A bare-digit slot alias is not masked in logs (JID context only).
     - Missing tests: ErrCallsOff at usecase level, hangup success and empty-field REST cases, zero StartedAt rendering.
   - (c) DONE in fork v0.2.0 (CGO_ENABLED=0 go build -tags purego . passes): add a `//go:build !cgo` stub to the fork's opus package returning errors, so
     CGO-free (`-tags purego`) builds work when calls are off. Today libopus is required always.
-  - (d) REST responses (`/calls/active`, `/call/start`) return a masked peer; the CRM needs the
+  - (d) CLOSED in 2b: REST and webhooks carry the full `pn`/`lid`; logs stay masked. Was: REST responses (`/calls/active`, `/call/start`) return a masked peer; the CRM needs the
     full JID. Masking belongs in logs, not API responses; change before stage 2b/CRM.
-  - (e) A stale call can hold the cap if OnEnd never fires (media death or a terminate lost
+  - (e) CLOSED in 2b: `WHATSAPP_CALLS_MAX_DURATION_MINUTES` finishes a call even when the engine never reports its end. Was: a stale call can hold the cap if OnEnd never fires (media death or a terminate lost
     during reconnect). Add a max call duration and a media-ended to finish path.
-  - (f) Recordings in `storages/calls` have no retention yet (personal data); retention lands
+  - (f) CLOSED in 2b: retention deletes recordings (and 2a's `.wav` files). Was: recordings in `storages/calls` have no retention yet (personal data); retention lands
     with the recording stage (spec D7).
+- **Stage 2b (incl. the former 2c), implemented, pending the Task 12 runtime check.** Open after the code:
+  - Runtime checks on the gateway host (plan 2026-10-15, Task 12) need the owner's OK: real
+    Chrome via the test page (ICE-lite, mux, public IP candidate, `jitterBufferDelay` in
+    `chrome://webrtc-internals`), the WhatsApp relay with the bumped pion deps, `APP_BASIC_AUTH`
+    set on the stack before recordings go live, `stop_grace_period: 30s`.
+  - Group calls stay out (offer filter): meowcaller's group mixer calls `sink.WriteFrame` outside
+    `audioPlayoutMu`. A group offer on a call-enabled device is neither handled nor auto-rejected.
+  - For a call refused by the cap, `call.ended` can reach the webhook before `call.offer`
+    (different paths); consumers match by `call_id`.
+  - The bridge sends the three 20 ms browser packets of each 60 ms WhatsApp frame at once; pace
+    them if a browser reports jitter.
+  - No TURN; RTP from the browser is not reordered before decoding.
+  - pion adds no `a=ptime:20`; GOWA sends 20 ms frames anyway.
+  - Policy rulings: outbound grace starts while the phone rings (a browser that never connects
+    hangs up a ringing outbound call after 10 s); grace `<= 0` is clamped to 1 s; agent-to-customer
+    FIFO prefill of 1600 samples costs about 40 ms extra latency.
+  - Deferred minors, grouped:
+    - Fork/audio: `ELPHANT.md` Versions lacks `.2`-`.4`; the stereo test does not prove channel
+      separation and the bad-input test misses `channels=0`; `callaudio` Upsampler, Downsampler and
+      Rechunker lack a "not safe for concurrent use" note, and have filter droop above 6 kHz, no 9 kHz
+      alias test, a loose FIFO overflow test, `Rechunker(0)` loops and prefill above max never plays.
+    - Recording: pion's `oggwriter` fixed pre-skip trims about 73 ms at the start; a failed
+      `oggwriter.New` leaves an empty file (retention cleans it); a close error with zero frames is dropped.
+      The recording link opens as a download (`Content-Disposition: attachment`), by design.
+    - Call manager: every media factory error maps to 400 (a typed SDP error would be better); the
+      ring-window prune is lazy; an already-ended `OnEnd` reason `ended` maps to `hangup_peer`; no test
+      that the max-duration timer stops on a normal end; a failed `handle.Answer` racing a `Hangup` can
+      send a Reject on a dead call; customer FIFO underrun stats are noisy (Debug only); the
+      `legError` non-opus branch is unreachable.
+    - CLOSED in 2b: the switch of the startup client was keyed by its AD JID while `PUT
+      /devices/:id/calls` wrote the registry slot (toggle and switch-off had no effect); the slot is
+      now resolved from the client at use time. `call.ended` after a logout kept no `device_id`; the
+      device JID is now remembered from the call's earlier events.
+    - Switch and webhooks: a stale `elphant_device_calls` row stays after a device is deleted (the
+      cached value is dropped); an
+      offer in flight during switch-off rings until the ring window ends; the browser leg is
+      allocated for `call.offer` even with no webhook configured (closed at call end); a call ending
+      at the same instant as SIGTERM may enqueue `call.ended` after the drain sees 0.
+    - REST/OpenAPI: the 409 uses the BadRequest schema; the 400 of `GET /devices/:id/calls` is
+      undocumented; a raw `handle.Answer` failure maps to 400, not 500; a malformed JSON body gives 500
+      (pre-existing).
+    - Test page: the page test checks substrings only; Hang up is unavailable during setup.
 - **Cleanup.** The prototype's linked device on the test number (paired 2026-10-13) and
   `/root/meowcaller-spike/` on the gateway host (binary, scripts, session backup and logs) stay
   until the owner says the spike is over.
@@ -171,7 +213,16 @@ history of the work.
   - a 64 s call gave a 54 s recording with speech throughout;
   - CPU: about 10% to 25% of one core during a call against under 1% idle (container on 4 vCPU).
   - **Open:** in one of two inbound calls the relay never bridged the caller's audio (no "relay is bridging" log, empty recording) while our audio reached the caller. A host and container UDP capture on the next call showed every relay packet reaching the container, so it is not Docker NAT. Likely meowcaller issues #36/#40; investigate in the fork before the CRM beta.
-  - **Open:** the end reason is empty when the peer hangs up; map it to `hangup_peer` for the 2b webhook.
+
+- **Live results on the gateway host (2026-10-15, `v9.6.0-elphant.4`..`.6`, calls on the DDD 11 device):**
+  - **Missing inbound audio**: the caller sometimes sent RED audio (payload type 122), which meowcaller dropped. It is fixed in fork `v0.2.0-elphant.3`, which reads both RED layouts. 3/3 inbound calls worked afterwards.
+  - **Early media (PR #43, "Full")**: the caller saw the call as answered at the first ring, and the phone stopped ringing. Fork `v0.2.0-elphant.4` adds `WithEarlyMedia`, and GOWA gets `WHATSAPP_CALLS_EARLY_MEDIA`, `off` by default.
+  - **`listen`**: the phone rang normally and could answer (`accepted_elsewhere`) or reject (`rejected_elsewhere`), with no file descriptors left open. 3/3 calls answered by GOWA 6 s after ringing started had inbound audio from the first packet and recordings of about 20 s with speech. **Use `listen` for the CRM**, where a human answers late.
+  - **Still open**:
+    - Off and Listen do not cover inbound group calls.
+    - Mapped to `hangup_peer` in 2b: the end reason is empty when the peer hangs up.
+    - The "calls enabled" log line also appears for devices that are not allowed, and twice for the default client.
+    - GitHub Actions is refused on the gateway repository ("Actions has been disabled for this repository"), so images `.4`..`.6` were built on the host and are not in ghcr.io.
 
 ### D-6 Debian 11 on the gateway host
 

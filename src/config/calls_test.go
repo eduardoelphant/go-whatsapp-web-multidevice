@@ -38,3 +38,15 @@ func TestCallsAllowed(t *testing.T) {
 		t.Fatal("a full JID in the list must match")
 	}
 }
+
+func TestCallsStage2bDefaults(t *testing.T) {
+	if WhatsappCallsMaxDurationMinutes != 120 {
+		t.Fatalf("WhatsappCallsMaxDurationMinutes = %d, want 120", WhatsappCallsMaxDurationMinutes)
+	}
+	if WhatsappCallsRecordingURLTTLMinutes != 1440 || WhatsappCallsRecordingRetentionDays != 7 {
+		t.Fatalf("recording defaults %d min / %d days, want 1440 / 7", WhatsappCallsRecordingURLTTLMinutes, WhatsappCallsRecordingRetentionDays)
+	}
+	if WhatsappCallsRTCPort != 3478 || WhatsappCallsRTCPublicIP != "" || WhatsappCallsRTCGraceSeconds != 10 {
+		t.Fatalf("RTC defaults %d %q %d, want 3478 \"\" 10", WhatsappCallsRTCPort, WhatsappCallsRTCPublicIP, WhatsappCallsRTCGraceSeconds)
+	}
+}

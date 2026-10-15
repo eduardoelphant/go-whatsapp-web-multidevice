@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	meowcaller "github.com/purpshell/meowcaller"
@@ -45,9 +46,14 @@ func TestForgetCallsOnReset(t *testing.T) {
 }
 
 func withCallsConfig(t *testing.T, enabled bool, devices []string) {
-	oe, od := config.WhatsappCallsEnabled, config.WhatsappCallsDevices
-	t.Cleanup(func() { config.WhatsappCallsEnabled, config.WhatsappCallsDevices = oe, od })
+	oe, od, of := config.WhatsappCallsEnabled, config.WhatsappCallsDevices, callsStoreFn
+	resetDeviceCallsCache()
+	t.Cleanup(func() {
+		config.WhatsappCallsEnabled, config.WhatsappCallsDevices, callsStoreFn = oe, od, of
+		resetDeviceCallsCache()
+	})
 	config.WhatsappCallsEnabled, config.WhatsappCallsDevices = enabled, devices
+	callsStoreFn = func() DeviceCallsStore { return nil }
 }
 
 func TestAttachCallsNotAllowedKeepsOff(t *testing.T) {
@@ -177,4 +183,38 @@ func TestParseCallsLogLevel(t *testing.T) {
 	assert.Equal(t, zerolog.InfoLevel, parseCallsLogLevel("info"))
 	assert.Equal(t, zerolog.InfoLevel, parseCallsLogLevel("bogus"))
 	assert.Equal(t, zerolog.InfoLevel, parseCallsLogLevel(""))
+}
+
+func TestAttachCallsUsesCallsMedia(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	orig := callsMedia
+	t.Cleanup(func() { callsMedia = orig })
+	callsMedia = &fakeMediaFactory{}
+
+	client := &whatsmeow.Client{Store: &store.Device{}}
+	attachCalls("slot-a", client)
+	t.Cleanup(func() { forgetCalls(client) })
+	v, ok := callsByClient.Load(client)
+	require.True(t, ok)
+	assert.Same(t, callsMedia, v.(*CallManager).opts.Media)
+}
+
+func TestNewBridgeFactoryFromConfig(t *testing.T) {
+	orig := config.WhatsappCallsRTCGraceSeconds
+	t.Cleanup(func() { config.WhatsappCallsRTCGraceSeconds = orig })
+	config.WhatsappCallsRTCGraceSeconds = 7
+	f := newBridgeFactory(&fakeRTC{})
+	assert.Equal(t, 7*time.Second, f.grace)
+	assert.Equal(t, config.PathCalls, f.recordDir)
+	require.NotNil(t, f.newRecorder)
+}
+
+// Fix round 1: a grace below 1 s would disable B10; it is clamped.
+func TestNewBridgeFactoryClampsGrace(t *testing.T) {
+	orig := config.WhatsappCallsRTCGraceSeconds
+	t.Cleanup(func() { config.WhatsappCallsRTCGraceSeconds = orig })
+	for _, v := range []int{0, -5} {
+		config.WhatsappCallsRTCGraceSeconds = v
+		assert.Equal(t, time.Second, newBridgeFactory(&fakeRTC{}).grace)
+	}
 }

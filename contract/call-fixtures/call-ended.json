@@ -1,0 +1,21 @@
+{
+  "event": "call.ended",
+  "timestamp": "2026-10-15T12:00:00Z",
+  "device_id": "5511900000000@s.whatsapp.net",
+  "payload": {
+    "call_id": "A1B2C3D4E5F60718293A4B5C6D7E8F90",
+    "peer": { "pn": "5511900000001@s.whatsapp.net", "lid": "123456789012345@lid" },
+    "direction": "USER_INITIATED",
+    "status": "COMPLETED",
+    "end_reason": "hangup_peer",
+    "duration": 64,
+    "recording": {
+      "url": "/call/A1B2C3D4E5F60718293A4B5C6D7E8F90/recording?exp=1792152000&sig=0d3139625594f1833be6825b4a939f2eda423a8d6cdcc90057838b9d4e913fbf",
+      "expires_at": "2026-10-16T12:00:00Z",
+      "bytes": 190464,
+      "duration": 64,
+      "format": "ogg_opus_stereo",
+      "channels": { "left": "agent", "right": "customer" }
+    }
+  }
+}

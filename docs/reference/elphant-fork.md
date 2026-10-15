@@ -438,39 +438,70 @@ that exact path opens that one file without credentials; anything else still nee
 `path` fields of webhook payloads stay relative and unsigned. Changing the secret invalidates
 every link already handed out.
 
-## Voice calls (stage 2a, off by default)
+## Voice calls (stages 2a and 2b, off by default)
 
-GOWA can answer and place WhatsApp voice calls through the fork
-[eduardoelphant/meowcaller](https://github.com/eduardoelphant/meowcaller) (`v0.2.0-elphant.1`). Design:
-[2026-10-14-gateway-voice-calls-design.md](../specs/2026-10-14-gateway-voice-calls-design.md).
+GOWA carries WhatsApp voice calls through the fork
+[eduardoelphant/meowcaller](https://github.com/eduardoelphant/meowcaller) (`v0.2.0-elphant.5`),
+in the shape of Meta's Cloud Calling: the gateway offers SDP on an incoming call and the
+browser answers; the browser offers on an outbound call and the gateway answers. Designs:
+[2a](../specs/2026-10-14-gateway-voice-calls-design.md),
+[2b](../specs/2026-10-14-gateway-voice-calls-2b-design.md).
 
-- `WHATSAPP_CALLS_ENABLED` (default `false`). Off means no change: `call.offer`,
-  `POST /call/reject` and `WHATSAPP_AUTO_REJECT_CALL` behave as before.
-- `WHATSAPP_CALLS_DEVICES`: comma-separated phone numbers or JIDs. Empty means all devices.
-  The list is read at start (changing it needs a restart; a runtime per-device switch comes in 2b). A device paired after start gets calls without a restart.
-- `WHATSAPP_CALLS_CODEC`: `opus` (default) or `mlow`.
-  With the flag on, a call manager is attached to every client and the engine's offer filter
-  (`meowcaller.WithOfferFilter`) drops offers for devices that are not allowed: no preaccept, no
-  handler, no state. REST routes and auto-reject use the same check at request time.
-- `WHATSAPP_CALLS_LOG_LEVEL` (default `info`): `debug`, `info`, `warn` or `error` for the call
-  engine log; invalid values fall back to `info`. Logs still go through the phone masking writer.
-- `WHATSAPP_CALLS_EARLY_MEDIA` (default `off`): `off`, `listen` or `full`; what the engine does while
-  an inbound call rings. `full` makes the caller see the call as answered at the first ring; do not
-  use it. Invalid values fall back to `off` with a warning.
-- `WHATSAPP_CALLS_MAX_PER_DEVICE` (default `1`): simultaneous calls per device.
-- `WHATSAPP_CALLS_TEST_AUDIO`: path to a `.wav`, `.mp3` or `.opus` played to the peer. Empty
-  means silence.
-- Routes: `POST /call/answer` `{call_id}`, `POST /call/start` `{phone}`,
-  `POST /call/hangup` `{call_id}`, `GET /calls/active`.
-- The peer's audio is recorded to `storages/calls/<call_id>.wav`.
-- Build: meowcaller's `opus/` package uses cgo, so every build needs libopus headers and
-  `pkg-config` (`libopus-dev pkg-config` on Debian/Ubuntu, `opus-dev pkgconf` on Alpine). The
-  Dockerfile and `elphant-ci.yml` / `elphant-image.yml` install them. The upstream release
-  workflow (goreleaser cross-builds with CGO) is disabled in this fork; if it is ever
-  re-enabled it needs libopus too. Local `go vet` and `go test` also need libopus and
-  `pkg-config`. The CGO-free `-tags purego` build works with fork v0.2.0 (the opus stub returns `ErrOpusUnavailable`, calls stay on mlow).
-- On call-enabled devices `WHATSAPP_AUTO_REJECT_CALL` is ignored: calls are answered or
-  rejected through the API.
+Settings:
+
+- `WHATSAPP_CALLS_ENABLED` (default `false`) is the master switch. Off means no change: `call.offer`,
+  `POST /call/reject` and `WHATSAPP_AUTO_REJECT_CALL` behave as upstream. On call-enabled devices
+  `WHATSAPP_AUTO_REJECT_CALL` is ignored.
+- Per device: `PUT /devices/:device_id/calls {"enabled": true|false}` and
+  `GET /devices/:device_id/calls`, stored in the chat storage database (table
+  `elphant_device_calls`) and applied at once: off ends the device's live calls and leaves its
+  next offers to the phone (`meowcaller.WithOfferFilter`). `WHATSAPP_CALLS_DEVICES` only seeds a
+  device that has no stored value yet. Calls carry a ban risk for the number.
+- `WHATSAPP_CALLS_CODEC` (`opus`), `WHATSAPP_CALLS_LOG_LEVEL` (`info`; `debug`, `info`, `warn`,
+  `error`), `WHATSAPP_CALLS_EARLY_MEDIA` (`off`; `off`, `listen` or `full`; `listen` is
+  recommended for the CRM, where a human answers late; never use `full`, the caller sees the call
+  answered at the first ring), `WHATSAPP_CALLS_MAX_PER_DEVICE` (`1`; above it the offer is
+  rejected and `call.ended` is `MISSED`), `WHATSAPP_CALLS_MAX_DURATION_MINUTES` (`120`; then GOWA
+  hangs up and reports `FAILED`; `0`: no limit).
+- Browser leg (pion, ICE-lite, DTLS server, Opus 48 kHz, non-trickle SDP): `WHATSAPP_CALLS_RTC_PORT`
+  (`3478`, one UDP port for every call), `WHATSAPP_CALLS_RTC_PUBLIC_IP` (the host's public IPv4),
+  `WHATSAPP_CALLS_RTC_GRACE_SECONDS` (`10`, minimum `1`: a browser leg down that long hangs up the
+  call).
+- Recording: every answered call, stereo Ogg Opus (agent left, customer right, 24 kbps a
+  channel) in `storages/calls/<call_id>.ogg`, written as the call runs. The link in `call.ended`
+  is signed with `APP_STATICS_SECRET` for `WHATSAPP_CALLS_RECORDING_URL_TTL_MINUTES` (`1440`) and
+  also opens with Basic Auth. Files are deleted after `WHATSAPP_CALLS_RECORDING_RETENTION_DAYS`
+  (`7`; the route then returns 410). Recordings are personal data: keep them behind Basic Auth or
+  signed links and do not copy them out of `storages/calls`.
+
+Routes: `GET /call/:call_id` (with `offer_sdp` while it rings), `POST /call/answer {call_id, sdp}`
+(409 when already answered), `POST /call/start {phone, sdp}` (`{call_id, sdp_answer}`),
+`POST /call/hangup`, `POST /call/reject`, `GET /calls/active`, `GET /call/:call_id/recording`.
+Webhooks: `call.offer` (extended), `call.status`, `call.answered`, `call.ended`; see
+[webhook-payload.md](../webhook-payload.md) and `contract/call.schema.json`. Durable webhook
+delivery is recommended, so a late `call.ended` with the recording link is not lost.
+
+Test page: `GET /calls/phone` (Basic Auth, 404 with calls off) answers and places calls from a
+browser with the same WebRTC steps as the CRM. `getUserMedia` needs HTTPS or `localhost`.
+
+Infrastructure (gateway host, owner's OK each time):
+
+- Publish UDP `3478` in `mode: host` in the Swarm stack (`ports: - target: 3478, published: 3478,
+  protocol: udp, mode: host`) and open it in the host firewall. Traefik does not carry it.
+- Set `WHATSAPP_CALLS_RTC_PUBLIC_IP` to the host's public IPv4 and `APP_STATICS_SECRET`.
+- Set `stop_grace_period: 30s` on the service: shutdown can take about 20 s (HTTP 15 s plus
+  calls 5 s) and Swarm's default is 10 s.
+- Outbound UDP from the container to Meta's relays (already working in 2a).
+- No TURN: an agent behind a network that blocks UDP to the host gets no audio; add coturn only
+  if that happens.
+- CPU: 2a measured 10% to 25% of a core per call with one leg; the bridge adds a 48 kHz encode,
+  a decode and resampling. Measure before raising `WHATSAPP_CALLS_MAX_PER_DEVICE`.
+
+Build: meowcaller's `opus/` uses cgo (libopus and `pkg-config`; `libopus-dev pkg-config` on
+Debian/Ubuntu, `opus-dev pkgconf` on Alpine, already in the Dockerfile and CI). pion is pure Go.
+The upstream release workflow (goreleaser cross-builds with CGO) is disabled in this fork; if it
+is re-enabled it needs libopus too. `CGO_ENABLED=0 -tags purego` builds still compile; there
+calls stay on MLow and the browser leg reports itself unavailable.
 
 ## Specs and plans
 

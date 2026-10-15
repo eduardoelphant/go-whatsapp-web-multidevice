@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	domainCall "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/call"
@@ -22,6 +23,9 @@ func NewCallService() domainCall.ICallUsecase {
 
 func (service serviceCall) RejectCall(ctx context.Context, callerJID string, callID string) error {
 	if err := validations.ValidateRejectCall(ctx, callerJID, callID); err != nil {
+		return err
+	}
+	if handled, err := rejectTrackedCall(ctx, callID); handled { // Fork (elphant): a call GOWA tracks is rejected through its manager (call.ended REJECTED).
 		return err
 	}
 
@@ -52,8 +56,8 @@ func (service serviceCall) RejectCall(ctx context.Context, callerJID string, cal
 
 func toCallInfo(c whatsapp.CallInfo) domainCall.CallInfo {
 	return domainCall.CallInfo{
-		CallID: c.CallID, Direction: c.Direction, Peer: c.Peer, State: c.State,
-		StartedAt: c.StartedAt.UTC().Format(time.RFC3339),
+		CallID: c.CallID, Direction: c.Direction, Peer: domainCall.CallPeer{PN: c.Peer.PN, LID: c.Peer.LID},
+		State: c.State, StartedAt: c.StartedAt.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -70,34 +74,74 @@ func mapCallError(err error, prefix string) error {
 	return pkgError.ValidationError(prefix + whatsapp.MaskDigits(err.Error()))
 }
 
-func (service serviceCall) AnswerCall(ctx context.Context, callID string) error {
-	if callID == "" {
-		return pkgError.ValidationError("call_id is required")
-	}
+// rejectTrackedCall rejects a call the device's call manager tracks; handled is false when
+// calls are off for the device or the manager does not know the call (whatsmeow rejects it).
+func rejectTrackedCall(ctx context.Context, callID string) (handled bool, err error) {
 	m, err := whatsapp.CallsFromContext(ctx)
 	if err != nil {
-		return err
+		return false, nil
 	}
-	return mapCallError(m.Answer(callID), "call operation failed: ")
+	if _, ok := m.Get(callID); !ok {
+		return false, nil
+	}
+	return true, mapCallError(m.Reject(callID), "call operation failed: ")
 }
 
-func (service serviceCall) StartCall(ctx context.Context, phone string) (domainCall.CallInfo, error) {
-	if phone == "" {
-		return domainCall.CallInfo{}, pkgError.ValidationError("phone is required")
+func (service serviceCall) AnswerCall(ctx context.Context, request domainCall.AnswerCallRequest) (domainCall.AnswerCallResponse, error) {
+	if request.CallID == "" {
+		return domainCall.AnswerCallResponse{}, pkgError.ValidationError("call_id is required")
+	}
+	if strings.TrimSpace(request.SDP) == "" {
+		return domainCall.AnswerCallResponse{}, pkgError.ValidationError("sdp is required (the browser's answer to offer_sdp)")
 	}
 	m, err := whatsapp.CallsFromContext(ctx)
 	if err != nil {
-		return domainCall.CallInfo{}, err
+		return domainCall.AnswerCallResponse{}, err
+	}
+	if err := m.Answer(request.CallID, request.SDP); err != nil {
+		return domainCall.AnswerCallResponse{}, mapCallError(err, "call operation failed: ")
+	}
+	return domainCall.AnswerCallResponse{CallID: request.CallID}, nil
+}
+
+func (service serviceCall) StartCall(ctx context.Context, request domainCall.StartCallRequest) (domainCall.StartCallResponse, error) {
+	if request.Phone == "" {
+		return domainCall.StartCallResponse{}, pkgError.ValidationError("phone is required")
+	}
+	if strings.TrimSpace(request.SDP) == "" {
+		return domainCall.StartCallResponse{}, pkgError.ValidationError("sdp is required (the browser's offer)")
+	}
+	m, err := whatsapp.CallsFromContext(ctx)
+	if err != nil {
+		return domainCall.StartCallResponse{}, err
 	}
 	// meowcaller uses this ctx only for signaling (peer resolution, device discovery,
 	// offer send in engine.go placeCall); the Call does not keep it, so a timeout is safe.
 	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	info, err := m.Start(startCtx, phone)
+	info, answer, err := m.Start(startCtx, request.Phone, request.SDP)
 	if err != nil {
-		return domainCall.CallInfo{}, mapCallError(err, "could not place the call: ")
+		return domainCall.StartCallResponse{}, mapCallError(err, "could not place the call: ")
 	}
-	return toCallInfo(info), nil
+	return domainCall.StartCallResponse{CallID: info.CallID, SDPAnswer: answer}, nil
+}
+
+func (service serviceCall) GetCall(ctx context.Context, callID string) (domainCall.CallDetail, error) {
+	if callID == "" {
+		return domainCall.CallDetail{}, pkgError.ValidationError("call_id is required")
+	}
+	m, err := whatsapp.CallsFromContext(ctx)
+	if err != nil {
+		return domainCall.CallDetail{}, err
+	}
+	info, offer, err := m.Detail(ctx, callID)
+	if err != nil {
+		return domainCall.CallDetail{}, mapCallError(err, "call operation failed: ")
+	}
+	return domainCall.CallDetail{
+		CallID: info.CallID, State: info.State, Direction: info.Direction,
+		Peer: domainCall.CallPeer{PN: info.Peer.PN, LID: info.Peer.LID}, OfferSDP: offer,
+	}, nil
 }
 
 func (service serviceCall) HangupCall(ctx context.Context, callID string) error {
@@ -122,4 +166,20 @@ func (service serviceCall) ActiveCalls(ctx context.Context) ([]domainCall.CallIn
 		out = append(out, toCallInfo(c))
 	}
 	return out, nil
+}
+
+func (service serviceCall) SetDeviceCalls(_ context.Context, deviceID string, enabled bool) (domainCall.DeviceCallsResponse, error) {
+	on, err := whatsapp.SetDeviceCalls(deviceID, enabled)
+	if err != nil {
+		return domainCall.DeviceCallsResponse{}, err
+	}
+	return domainCall.DeviceCallsResponse{Enabled: on}, nil
+}
+
+func (service serviceCall) GetDeviceCalls(_ context.Context, deviceID string) (domainCall.DeviceCallsResponse, error) {
+	on, err := whatsapp.DeviceCalls(deviceID)
+	if err != nil {
+		return domainCall.DeviceCallsResponse{}, err
+	}
+	return domainCall.DeviceCallsResponse{Enabled: on}, nil
 }

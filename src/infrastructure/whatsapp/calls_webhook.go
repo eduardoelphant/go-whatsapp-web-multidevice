@@ -1,0 +1,206 @@
+package whatsapp
+
+import (
+	"context"
+	"math"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/callrec"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
+	"github.com/sirupsen/logrus"
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types/events"
+)
+
+// Fork (elphant): call webhooks of voice calls stage 2b. Contract: contract/call.schema.json;
+// docs/webhook-payload.md. Delivery is forwardPayloadToConfiguredWebhooks, so the durable mode
+// (G3) applies.
+
+// forwardCallWebhook is the delivery function; tests replace it under callWebhookMu.
+var (
+	callWebhookMu      sync.Mutex
+	forwardCallWebhook = forwardPayloadToConfiguredWebhooks
+)
+
+type callWebhookJob struct {
+	deviceID string
+	ev       CallEvent
+}
+
+var (
+	callWebhookQueue   = make(chan callWebhookJob, 1024)
+	callWebhookOnce    sync.Once
+	callWebhookPending atomic.Int64 // queued or in delivery
+)
+
+// callEventSender is a call manager's Emit. The manager calls it on engine goroutines while it
+// holds the call's emit lock, so it only enqueues: it never blocks and never calls back into the
+// manager. Events join one ordered queue and leave from one worker, so a call's status, answered
+// and ended arrive in that order and a slow endpoint never holds up the call engine.
+//
+// The device JID is remembered from attach time and from every emit: whatsmeow clears
+// Store.ID on logout before the client is reset and its calls end, so call.ended would
+// otherwise lose device_id.
+func callEventSender(client *whatsmeow.Client) func(CallEvent) {
+	var lastJID atomic.Value // string
+	lastJID.Store(deviceJIDOf(client))
+	return func(ev CallEvent) {
+		deviceID := deviceJIDOf(client)
+		if deviceID != "" {
+			lastJID.Store(deviceID)
+		} else {
+			deviceID = lastJID.Load().(string)
+		}
+		callWebhookOnce.Do(func() { safego.Loop("calls_webhooks", runCallWebhooks) })
+		callWebhookPending.Add(1)
+		select {
+		case callWebhookQueue <- callWebhookJob{deviceID: deviceID, ev: ev}:
+		default:
+			callWebhookPending.Add(-1)
+			logrus.Errorf("[CALLS] webhook queue full; dropped %s of call %s", ev.Type, ev.Call.CallID)
+		}
+	}
+}
+
+func runCallWebhooks() {
+	for job := range callWebhookQueue {
+		deliverCallWebhook(job)
+	}
+}
+
+func deliverCallWebhook(job callWebhookJob) {
+	defer callWebhookPending.Add(-1)
+	callWebhookMu.Lock()
+	forward := forwardCallWebhook
+	callWebhookMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := forward(ctx, callEventBody(job.deviceID, job.ev), job.ev.Type); err != nil {
+		logrus.Errorf("[CALLS] webhook %s of call %s: %v", job.ev.Type, job.ev.Call.CallID, MaskDigits(err.Error()))
+	}
+}
+
+func deviceJIDOf(client *whatsmeow.Client) string {
+	if client == nil || client.Store == nil || client.Store.ID == nil {
+		return ""
+	}
+	return client.Store.ID.ToNonAD().String()
+}
+
+func peerPayload(p CallPeer) map[string]any { return map[string]any{"pn": p.PN, "lid": p.LID} }
+
+// callEventBody builds the webhook body of a call.status, call.answered or call.ended event.
+func callEventBody(deviceID string, ev CallEvent) map[string]any {
+	payload := map[string]any{
+		"call_id":   ev.Call.CallID,
+		"peer":      peerPayload(ev.Call.Peer),
+		"direction": ev.Call.Direction,
+	}
+	switch ev.Type {
+	case EventCallStatus:
+		payload["status"] = ev.Status
+	case EventCallAnswered:
+		payload["answered_by"] = ev.AnsweredBy
+	case EventCallEnded:
+		payload["status"] = ev.Status
+		payload["end_reason"] = ev.EndReason
+		payload["duration"] = ev.Duration
+		if ev.Recording != nil && ev.Recording.Bytes > 0 {
+			payload["recording"] = recordingPayload(ev.Call.CallID, ev.Recording, ev.At)
+		}
+	}
+	body := map[string]any{"event": ev.Type, "timestamp": ev.At.UTC().Format(time.RFC3339), "payload": payload}
+	if deviceID != "" {
+		body["device_id"] = deviceID
+	}
+	return body
+}
+
+// recordingPayload is call.ended's recording object (B6). The URL is relative to the server
+// root, like stable.media.url.
+func recordingPayload(callID string, rec *RecordingInfo, now time.Time) map[string]any {
+	expires := now.Add(time.Duration(max(1, config.WhatsappCallsRecordingURLTTLMinutes)) * time.Minute)
+	return map[string]any{
+		"url":        callrec.URLPath(config.AppBasePath, callID, []byte(config.AppStaticsSecret), expires),
+		"expires_at": expires.UTC().Format(time.RFC3339),
+		"bytes":      rec.Bytes,
+		"duration":   int(math.Round(rec.Duration.Seconds())),
+		"format":     callrec.Format,
+		"channels":   map[string]any{"left": "agent", "right": "customer"},
+	}
+}
+
+// addCallOfferFields adds stage 2b's fields to call.offer: calls_enabled, direction, peer and,
+// for a device with calls on, offer_sdp (GOWA's SDP offer, B3). With the master switch off the
+// payload stays as upstream builds it. Group calls are left to the phone.
+func addCallOfferFields(ctx context.Context, payload map[string]any, evt *events.CallOffer, client *whatsmeow.Client) {
+	if !config.WhatsappCallsEnabled || evt == nil {
+		return
+	}
+	var m *CallManager
+	if client != nil {
+		if v, ok := callsByClient.Load(client); ok {
+			m = v.(*CallManager)
+		}
+	}
+	enabled := m != nil && hasCallManager(client) && evt.GroupJID.IsEmpty()
+	payload["calls_enabled"] = enabled
+	payload["direction"] = DirectionUser
+	payload["peer"] = peerPayload(resolvePeer(client, evt.CallCreator, ""))
+	if !enabled {
+		return
+	}
+	sdp, err := m.OfferSDP(ctx, evt.CallID)
+	if err != nil {
+		logrus.Warnf("[CALLS] call.offer %s without offer_sdp: %v", evt.CallID, MaskDigits(err.Error()))
+		return
+	}
+	payload["offer_sdp"] = sdp
+}
+
+// callsShutdownWait bounds ShutdownCalls; tests shorten it.
+var callsShutdownWait = 5 * time.Second
+
+// ShutdownCalls runs on process stop, before the chat storage closes: it ends every live call
+// of every manager (so each sends call.ended) and waits for the call webhook queue to drain,
+// at most callsShutdownWait or until ctx ends. A no-op with calls off.
+func ShutdownCalls(ctx context.Context) {
+	if !config.WhatsappCallsEnabled {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, callsShutdownWait)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	callsByClient.Range(func(_, v any) bool {
+		m := v.(*CallManager)
+		wg.Add(1)
+		safego.Go("calls_shutdown", func() {
+			defer wg.Done()
+			m.closeAll()
+		})
+		return true
+	})
+	closed := make(chan struct{})
+	safego.Go("calls_shutdown_wait", func() { wg.Wait(); close(closed) })
+	select {
+	case <-closed:
+	case <-ctx.Done():
+		logrus.Warn("[CALLS] shutdown: live calls did not end in time")
+		return
+	}
+
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for callWebhookPending.Load() > 0 {
+		select {
+		case <-tick.C:
+		case <-ctx.Done():
+			logrus.Warnf("[CALLS] shutdown: %d call webhook(s) not delivered", callWebhookPending.Load())
+			return
+		}
+	}
+}

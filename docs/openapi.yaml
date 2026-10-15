@@ -2710,6 +2710,8 @@ paths:
         **Required fields from webhook:**
         - `caller_jid`: Use `payload.from` from the `call.offer` webhook event
         - `call_id`: Use `payload.call_id` from the `call.offer` webhook event
+
+        For a call GOWA tracks (calls on for the device) it also sends call.ended with status REJECTED.
       parameters:
         - $ref: '#/components/parameters/DeviceIdHeader'
       requestBody:
@@ -2755,10 +2757,11 @@ paths:
       operationId: answerCall
       tags:
         - call
-      summary: Answer an incoming call
+      summary: Answer an incoming call with the browser's SDP
       description: |
-        Answer a ringing call and start the audio session. The peer audio is recorded to `storages/calls/<call_id>.wav`.
-        Requires `WHATSAPP_CALLS_ENABLED=true`.
+        Answer a ringing call. `sdp` is the browser's answer to the call's `offer_sdp` (from the
+        `call.offer` webhook or `GET /call/{call_id}`). GOWA answers on WhatsApp and bridges the
+        audio. `results` has `call_id`. Requires calls on for the device.
       parameters:
         - $ref: '#/components/parameters/DeviceIdHeader'
       requestBody:
@@ -2769,10 +2772,14 @@ paths:
               type: object
               required:
                 - call_id
+                - sdp
               properties:
                 call_id:
                   type: string
                   description: Call id from the `call.offer` webhook (`payload.call_id`)
+                sdp:
+                  type: string
+                  description: The browser's SDP answer (non-trickle, CRLF line endings)
       responses:
         '200':
           description: Call answered
@@ -2782,6 +2789,12 @@ paths:
                 $ref: '#/components/schemas/GenericResponse'
         '400':
           description: Bad Request (missing or invalid fields, calls not enabled for this device, unknown call, or an engine error with phone numbers masked)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBadRequest'
+        '409':
+          description: The call was already answered
           content:
             application/json:
               schema:
@@ -2798,10 +2811,10 @@ paths:
       operationId: startCall
       tags:
         - call
-      summary: Place an outgoing call
+      summary: Place an outgoing call with the browser's SDP offer
       description: |
-        Place a voice call to a phone number. `results` has `call_id`, `direction`, `peer`, `state` and `started_at`.
-        Requires `WHATSAPP_CALLS_ENABLED=true`.
+        Place a voice call. `sdp` is the browser's offer; `results` has `call_id` and
+        `sdp_answer` (GOWA's answer, apply it at once). Progress arrives as `call.status` webhooks.
       parameters:
         - $ref: '#/components/parameters/DeviceIdHeader'
       requestBody:
@@ -2812,10 +2825,14 @@ paths:
               type: object
               required:
                 - phone
+                - sdp
               properties:
                 phone:
                   type: string
                   description: Phone number in international format, e.g. +5511999999999, or digits only
+                sdp:
+                  type: string
+                  description: The browser's SDP offer (non-trickle, CRLF line endings)
       responses:
         '200':
           description: Call placed
@@ -2909,6 +2926,133 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorInternalServer'
+
+  /call/{call_id}:
+    get:
+      operationId: getCall
+      tags:
+        - call
+      summary: Get a call and its offer
+      description: |
+        `results` has `call_id`, `state`, `direction`, `peer` (`pn`, `lid`) and, while an incoming
+        call rings, `offer_sdp`, so the browser can fetch the offer again.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - name: call_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The call
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+        '400':
+          description: Bad Request (calls not enabled for this device, or unknown or ended call)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBadRequest'
+
+  /call/{call_id}/recording:
+    get:
+      operationId: getCallRecording
+      tags:
+        - call
+      summary: Download a call recording
+      description: |
+        The stereo Ogg Opus recording (agent left, customer right). The signed link from
+        `call.ended` (`exp`, `sig`) opens it without credentials; Basic Auth also works.
+      parameters:
+        - name: call_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: exp
+          in: query
+          schema:
+            type: string
+        - name: sig
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The recording
+          content:
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid call id
+        '401':
+          description: Neither a valid signature nor Basic Auth
+        '410':
+          description: Deleted by retention, or never recorded
+
+  /devices/{device_id}/calls:
+    get:
+      operationId: getDeviceCalls
+      tags:
+        - call
+      summary: Whether calls are on for a device
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: '`results.enabled`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+    put:
+      operationId: setDeviceCalls
+      tags:
+        - call
+      summary: Switch calls on or off for a device
+      description: |
+        Stored in the device registry and applied at once: off ends the device's live calls and
+        leaves its next offers to the phone. Needs `WHATSAPP_CALLS_ENABLED=true` (400 otherwise).
+        Calls carry a ban risk for the number.
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enabled
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: '`results.enabled`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+        '400':
+          description: Bad Request (missing `enabled`, unknown device, or calls off on the gateway)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBadRequest'
 
   /chats:
     get:

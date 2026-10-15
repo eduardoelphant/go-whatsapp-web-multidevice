@@ -69,6 +69,7 @@ func createCallOfferPayload(ctx context.Context, evt *events.CallOffer, deviceID
 	payload["from"] = normalizedSenderJID.ToNonAD().String()
 	addSenderDisplayName(ctx, client, payload, false, "")
 	payload["auto_rejected"] = autoRejected
+	addCallOfferFields(ctx, payload, evt, client) // Fork (elphant): calls_enabled, direction, peer and offer_sdp (voice calls 2b).
 
 	// Add caller platform info if available
 	if evt.RemotePlatform != "" {

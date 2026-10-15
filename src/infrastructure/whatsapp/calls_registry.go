@@ -28,17 +28,40 @@ var (
 // number and JID are read from the store at call time, so a device paired after start
 // is covered without a restart.
 func callsAllowedNow(slotID string, client *whatsmeow.Client) bool {
+	slotID = callsSlotOf(client, slotID)
 	user, jid := "", ""
 	if client != nil && client.Store != nil && client.Store.ID != nil {
 		user, jid = client.Store.ID.User, client.Store.ID.String()
 	}
-	return config.CallsAllowed(slotID, user, jid)
+	return deviceCallsEnabled(slotID, user, jid) // Fork (elphant): per-device switch (stage 2b)
 }
 
-// offerFilter gates inbound offers in the call engine: a false return makes it ignore
-// the offer completely.
+// callsSlotOf returns the registry slot that holds client now, or fallback when no slot holds
+// it. The slot is resolved at use time because the startup client is attached under its AD JID
+// and then moved to its registry slot by loadFromRegistry; the per-device switch is keyed by
+// that registry slot.
+func callsSlotOf(client *whatsmeow.Client, fallback string) string {
+	if client == nil {
+		return fallback
+	}
+	if dm := GetDeviceManager(); dm != nil {
+		if id := dm.slotIDOfClient(client); id != "" {
+			return id
+		}
+	}
+	return fallback
+}
+
+// offerFilter gates inbound offers in the call engine: a false return makes it ignore the
+// offer completely, so the phone rings as usual. Group calls are out of scope and always left
+// to the phone.
 func offerFilter(slotID string, client *whatsmeow.Client) func(*events.CallOffer) bool {
-	return func(*events.CallOffer) bool { return callsAllowedNow(slotID, client) }
+	return func(evt *events.CallOffer) bool {
+		if evt != nil && !evt.GroupJID.IsEmpty() {
+			return false
+		}
+		return callsAllowedNow(slotID, client)
+	}
 }
 
 // effectiveCodec applies the configured codec and returns the one in effect and whether
@@ -73,10 +96,11 @@ func attachCalls(slotID string, client *whatsmeow.Client) {
 		effectiveCodecName = codec
 	})
 	m := newCallManager(newMeowEngine(client, offerFilter(slotID, client)), callManagerOptions{
-		MaxCalls:   config.WhatsappCallsMaxPerDevice,
-		RingWindow: time.Minute,
-		TestAudio:  config.WhatsappCallsTestAudio,
-		RecordDir:  config.PathCalls,
+		MaxCalls:    config.WhatsappCallsMaxPerDevice,
+		RingWindow:  time.Minute,
+		MaxDuration: time.Duration(config.WhatsappCallsMaxDurationMinutes) * time.Minute,
+		Media:       callsMedia,
+		Emit:        callEventSender(client),
 	})
 	m.slotID = slotID
 	callsByClient.Store(client, m)
