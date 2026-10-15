@@ -30,6 +30,9 @@ The following events can be received via webhook:
 | `newsletter.message` | New message(s) posted in a newsletter                   |
 | `newsletter.mute`    | Newsletter mute setting changed                         |
 | `call.offer`         | Incoming call received                                  |
+| `call.status`        | Outbound call progress (fork, voice calls; `WHATSAPP_CALLS_ENABLED=true`) |
+| `call.answered`      | Media flows on both legs of a call (fork, voice calls)  |
+| `call.ended`         | A call is over, with its recording (fork, voice calls)  |
 
 ## Event Filtering
 
@@ -189,7 +192,7 @@ All webhook payloads follow a consistent top-level structure:
 
 | **Field**    | **Type** | **Description**                                                                                                     |
 |--------------|----------|---------------------------------------------------------------------------------------------------------------------|
-| `event`      | string   | Event type: `message`, `message.reaction`, `message.revoked`, `message.edited`, `message.ack`, `message.deleted`, `chat_presence`, `group.participants`, `group.joined`, `label.edit`, `label.association`, `newsletter.joined`, `newsletter.left`, `newsletter.message`, `newsletter.mute`, `call.offer` |
+| `event`      | string   | Event type: `message`, `message.reaction`, `message.revoked`, `message.edited`, `message.ack`, `message.deleted`, `chat_presence`, `group.participants`, `group.joined`, `label.edit`, `label.association`, `newsletter.joined`, `newsletter.left`, `newsletter.message`, `newsletter.mute`, `call.offer`, `call.status`, `call.answered`, `call.ended` |
 | `device_id`  | string   | JID of the device that received this event (e.g., `628123456789@s.whatsapp.net`)                                    |
 | `session_id` | string   | Session ID registered via `POST /devices` (e.g., `org_2`), for correlating the event back to a tenant. Omitted when the JID can't be mapped to a session. |
 | `payload`    | object   | Event-specific payload data                                                                                         |
@@ -1010,6 +1013,72 @@ app.post('/webhook', async (req, res) => {
 3. When a `call.offer` event arrives, apply your business logic
 4. If the call should be rejected, call `POST /call/reject` with the values from the webhook payload
 5. The call is rejected on WhatsApp, and the caller sees a "declined" status
+
+### Voice call events (fork, stage 2b)
+
+With `WHATSAPP_CALLS_ENABLED=true` (and calls on for the device, `PUT /devices/:device_id/calls`)
+GOWA carries calls itself, in the shape of Meta's Cloud Calling. The contract is
+`contract/call.schema.json` (fixtures in `contract/call-fixtures/`). Every call event has
+`device_id`, `timestamp`, and in `payload`: `call_id`, `peer` (`pn` and `lid`, full JIDs, `""`
+when unknown) and `direction` (`USER_INITIATED` for an incoming call, `BUSINESS_INITIATED` for an
+outbound one). They use the durable delivery when `WHATSAPP_WEBHOOK_DELIVERY=durable`.
+
+**`call.offer`** keeps its fields and gains, with the master switch on: `calls_enabled`,
+`direction`, `peer`, and `offer_sdp` when calls are on for the device. `offer_sdp` is GOWA's SDP
+offer: non-trickle, CRLF lines, ICE-lite, DTLS `actpass`, Opus 48 kHz. The browser answers it
+and sends the answer with `POST /call/answer {call_id, sdp}`. `GET /call/{call_id}` returns the
+offer again while the call rings. Group calls have `calls_enabled: false` and ring on the phone.
+
+**`call.status`** (outbound only): `status` is `RINGING` (the peer's phone rings), `ACCEPTED` or
+`REJECTED`.
+
+**`call.answered`**: media flows on both legs. `answered_by` is `api` (answered through GOWA) or
+`elsewhere` (the number's phone or another linked device took the call; GOWA carries no audio).
+
+**`call.ended`**:
+
+| Field | Values |
+|---|---|
+| `status` | `COMPLETED` (media flowed on both legs, or answered elsewhere), `FAILED`, `MISSED` (rang out, cancelled, or refused by `WHATSAPP_CALLS_MAX_PER_DEVICE`), `REJECTED` |
+| `end_reason` | `hangup_agent`, `hangup_peer`, `rejected`, `timeout` (ring window or `WHATSAPP_CALLS_MAX_DURATION_MINUTES`), `answered_elsewhere`, `error` (the browser leg was lost for `WHATSAPP_CALLS_RTC_GRACE_SECONDS`, or a signalling error) |
+| `duration` | Seconds of media on both legs (0 when none) |
+| `recording` | Present when audio was recorded: `url`, `expires_at`, `bytes`, `duration`, `format` (`ogg_opus_stereo`), `channels` (`left: agent`, `right: customer`) |
+
+```json
+{
+  "event": "call.ended",
+  "timestamp": "2026-10-15T12:00:00Z",
+  "device_id": "5511900000000@s.whatsapp.net",
+  "payload": {
+    "call_id": "A1B2C3D4E5F60718293A4B5C6D7E8F90",
+    "peer": { "pn": "5511900000001@s.whatsapp.net", "lid": "123456789012345@lid" },
+    "direction": "USER_INITIATED",
+    "status": "COMPLETED",
+    "end_reason": "hangup_peer",
+    "duration": 64,
+    "recording": {
+      "url": "/call/A1B2C3D4E5F60718293A4B5C6D7E8F90/recording?exp=1792152000&sig=0d31…",
+      "expires_at": "2026-10-16T12:00:00Z",
+      "bytes": 190464,
+      "duration": 64,
+      "format": "ogg_opus_stereo",
+      "channels": { "left": "agent", "right": "customer" }
+    }
+  }
+}
+```
+
+- `recording.url` is relative to the server root (`APP_BASE_PATH` included), signed with
+  `APP_STATICS_SECRET` and valid `WHATSAPP_CALLS_RECORDING_URL_TTL_MINUTES` (default 1440). Without
+  a secret it is the bare path. The route also accepts Basic Auth, so a webhook delivered late by
+  the durable retry can still fetch the file. Files are deleted after
+  `WHATSAPP_CALLS_RECORDING_RETENTION_DAYS` (default 7); the route then answers 410.
+- A call's events arrive in order (status, answered, ended). `call.offer` leaves from its own
+  path: for a call refused by the cap, `call.ended` can arrive before `call.offer`. Match by
+  `call_id`.
+- `POST /call/reject` on a call GOWA tracks also sends `call.ended` (`REJECTED`, `rejected`).
+  Switching calls off for a device ends its live calls the same way: a ringing call ends
+  `REJECTED`/`rejected`, any other with `end_reason` `hangup_agent`.
 
 ## Media Messages
 

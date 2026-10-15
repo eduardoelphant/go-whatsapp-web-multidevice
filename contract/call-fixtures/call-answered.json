@@ -1,0 +1,11 @@
+{
+  "event": "call.answered",
+  "timestamp": "2026-10-15T12:00:00Z",
+  "device_id": "5511900000000@s.whatsapp.net",
+  "payload": {
+    "call_id": "A1B2C3D4E5F60718293A4B5C6D7E8F90",
+    "peer": { "pn": "5511900000001@s.whatsapp.net", "lid": "123456789012345@lid" },
+    "direction": "USER_INITIATED",
+    "answered_by": "api"
+  }
+}

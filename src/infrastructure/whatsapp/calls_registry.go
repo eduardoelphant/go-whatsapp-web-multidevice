@@ -83,6 +83,7 @@ func attachCalls(slotID string, client *whatsmeow.Client) {
 		RingWindow:  time.Minute,
 		MaxDuration: time.Duration(config.WhatsappCallsMaxDurationMinutes) * time.Minute,
 		Media:       callsMedia,
+		Emit:        callEventSender(client),
 	})
 	m.slotID = slotID
 	callsByClient.Store(client, m)

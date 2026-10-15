@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GOWA fork call webhooks, schema 1 (voice calls stage 2b)",
+  "type": "object",
+  "required": ["event", "timestamp", "device_id", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "event": { "enum": ["call.offer", "call.status", "call.answered", "call.ended"] },
+    "timestamp": { "type": "string" },
+    "device_id": { "type": "string" },
+    "session_id": { "type": "string" },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    { "if": { "properties": { "event": { "const": "call.offer" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/offer" } } } },
+    { "if": { "properties": { "event": { "const": "call.status" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/status" } } } },
+    { "if": { "properties": { "event": { "const": "call.answered" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/answered" } } } },
+    { "if": { "properties": { "event": { "const": "call.ended" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/ended" } } } }
+  ],
+  "$defs": {
+    "peer": {
+      "type": "object",
+      "required": ["pn", "lid"],
+      "additionalProperties": false,
+      "properties": {
+        "pn": { "type": "string", "pattern": "^$|^[0-9]+@s\\.whatsapp\\.net$" },
+        "lid": { "type": "string", "pattern": "^$|^[0-9]+@lid$" }
+      }
+    },
+    "common": {
+      "required": ["call_id", "peer", "direction"],
+      "properties": {
+        "call_id": { "type": "string", "minLength": 1 },
+        "peer": { "$ref": "#/$defs/peer" },
+        "direction": { "enum": ["USER_INITIATED", "BUSINESS_INITIATED"] }
+      }
+    },
+    "offer": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "required": ["calls_enabled"],
+      "properties": {
+        "calls_enabled": { "type": "boolean" },
+        "direction": { "const": "USER_INITIATED" },
+        "offer_sdp": { "type": "string", "pattern": "^v=0\\r\\n" }
+      }
+    },
+    "status": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "required": ["status"],
+      "properties": { "status": { "enum": ["RINGING", "ACCEPTED", "REJECTED"] } },
+      "unevaluatedProperties": false
+    },
+    "answered": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "required": ["answered_by"],
+      "properties": { "answered_by": { "enum": ["api", "elsewhere"] } },
+      "unevaluatedProperties": false
+    },
+    "ended": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "required": ["status", "end_reason", "duration"],
+      "properties": {
+        "status": { "enum": ["COMPLETED", "FAILED", "MISSED", "REJECTED"] },
+        "end_reason": { "enum": ["hangup_agent", "hangup_peer", "rejected", "timeout", "answered_elsewhere", "error"] },
+        "duration": { "type": "integer", "minimum": 0 },
+        "recording": { "$ref": "#/$defs/recording" }
+      },
+      "unevaluatedProperties": false
+    },
+    "recording": {
+      "type": "object",
+      "required": ["url", "expires_at", "bytes", "duration", "format", "channels"],
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string", "pattern": "^(/[^?]*)?/call/[A-Za-z0-9_-]+/recording(\\?exp=[0-9]+&sig=[0-9a-f]{64})?$" },
+        "expires_at": { "type": "string" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "duration": { "type": "integer", "minimum": 0 },
+        "format": { "const": "ogg_opus_stereo" },
+        "channels": {
+          "type": "object",
+          "required": ["left", "right"],
+          "additionalProperties": false,
+          "properties": { "left": { "const": "agent" }, "right": { "const": "customer" } }
+        }
+      }
+    }
+  }
+}

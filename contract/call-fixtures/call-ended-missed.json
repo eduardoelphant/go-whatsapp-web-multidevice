@@ -1,0 +1,13 @@
+{
+  "event": "call.ended",
+  "timestamp": "2026-10-15T12:00:00Z",
+  "device_id": "5511900000000@s.whatsapp.net",
+  "payload": {
+    "call_id": "A1B2C3D4E5F60718293A4B5C6D7E8F90",
+    "peer": { "pn": "", "lid": "123456789012345@lid" },
+    "direction": "USER_INITIATED",
+    "status": "MISSED",
+    "end_reason": "timeout",
+    "duration": 0
+  }
+}
