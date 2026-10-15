@@ -158,11 +158,9 @@ history of the work.
     during reconnect). Add a max call duration and a media-ended to finish path.
   - (f) CLOSED in 2b: retention deletes recordings (and 2a's `.wav` files). Was: recordings in `storages/calls` have no retention yet (personal data); retention lands
     with the recording stage (spec D7).
-- **Stage 2b (incl. the former 2c), implemented, pending the Task 12 runtime check.** Open after the code:
-  - Runtime checks on the gateway host (plan 2026-10-15, Task 12) need the owner's OK: real
-    Chrome via the test page (ICE-lite, mux, public IP candidate, `jitterBufferDelay` in
-    `chrome://webrtc-internals`), the WhatsApp relay with the bumped pion deps, `APP_BASIC_AUTH`
-    set on the stack before recordings go live, `stop_grace_period: 30s`.
+- **Stage 2b (incl. the former 2c), live as `v9.6.0-elphant.7` since 2026-10-15.** Open after the code:
+  - Runtime: first live calls passed (see "Stage 2b runtime" below); still open are the webhooks
+    end to end, outbound from the page, per-call CPU and Chrome `jitterBufferDelay`.
   - Group calls stay out (offer filter): meowcaller's group mixer calls `sink.WriteFrame` outside
     `audioPlayoutMu`. A group offer on a call-enabled device is neither handled nor auto-rejected.
   - For a call refused by the cap, `call.ended` can reach the webhook before `call.offer`
@@ -223,6 +221,22 @@ history of the work.
     - Mapped to `hangup_peer` in 2b: the end reason is empty when the peer hangs up.
     - The "calls enabled" log line also appears for devices that are not allowed, and twice for the default client.
     - GitHub Actions is refused on the gateway repository ("Actions has been disabled for this repository"), so images `.4`..`.6` were built on the host and are not in ghcr.io.
+
+- **Stage 2b runtime on the gateway host (2026-10-15, `v9.6.0-elphant.7`, calls on the DDD 11 device only):**
+  - Stack: UDP 3478 published in `mode: host`, `WHATSAPP_CALLS_RTC_PUBLIC_IP` set, `APP_STATICS_SECRET`
+    added as a Portainer stack variable, `stop_grace_period: 30s`, `WHATSAPP_CALLS_TEST_AUDIO` removed.
+    The host firewall accepts all input; no provider firewall blocked the port.
+  - Per-device switch after startup: DDD 11 (registry slot) on, the other device off.
+  - Three calls through `/calls/phone`: one rejected (no recording, as expected); two answered with the
+    browser leg connected through the public IP and "media flowing on both legs", ended
+    `hangup_agent` (12 s) and `hangup_peer` (18 s), both `COMPLETED`. Each produced a 2-channel Ogg
+    Opus recording whose size matches the length.
+  - Idle CPU after the calls: under 0.1%; per-call CPU not measured yet.
+  - **Open:** the DDD 11 device has no webhook configured, so the `call.*` webhooks were queued for 0
+    targets and not checked end to end; check them when the CRM driver points a webhook at the device.
+    Outbound calls from the page and Chrome `jitterBufferDelay` still to confirm.
+    The "calls enabled" log line names every device when calls are on globally; the per-device switch
+    decides handling.
 
 ### D-6 Debian 11 on the gateway host
 
