@@ -160,7 +160,7 @@ history of the work.
     with the recording stage (spec D7).
 - **Stage 2b (incl. the former 2c), live as `v9.6.0-elphant.7` since 2026-10-15.** Open after the code:
   - Runtime: first live calls passed (see "Stage 2b runtime" below); still open are the webhooks
-    end to end, outbound from the page, per-call CPU and Chrome `jitterBufferDelay`.
+    end to end, inbound answered in the page, per-call CPU and Chrome `jitterBufferDelay`.
   - Group calls stay out (offer filter): meowcaller's group mixer calls `sink.WriteFrame` outside
     `audioPlayoutMu`. A group offer on a call-enabled device is neither handled nor auto-rejected.
   - For a call refused by the cap, `call.ended` can reach the webhook before `call.offer`
@@ -227,14 +227,20 @@ history of the work.
     added as a Portainer stack variable, `stop_grace_period: 30s`, `WHATSAPP_CALLS_TEST_AUDIO` removed.
     The host firewall accepts all input; no provider firewall blocked the port.
   - Per-device switch after startup: DDD 11 (registry slot) on, the other device off.
-  - Three calls through `/calls/phone`: one rejected (no recording, as expected); two answered with the
+  - Three outbound calls from `/calls/phone`. Two to another person's phone were answered with the
     browser leg connected through the public IP and "media flowing on both legs", ended
-    `hangup_agent` (12 s) and `hangup_peer` (18 s), both `COMPLETED`. Each produced a 2-channel Ogg
-    Opus recording whose size matches the length.
+    `hangup_agent` (12 s) and `hangup_peer` (18 s), both `COMPLETED`; the owner heard and was heard
+    clearly both ways. Each produced a 2-channel Ogg Opus recording whose size matches the length.
+  - The first call, to the owner's own second number, ended `REJECTED` in under a second, with no
+    recording. The rejection came from another linked device of the called number (device 15), not from
+    GOWA: that number's GOWA device saw the offer, the offer filter ignored it (switch off), and GOWA's
+    auto-reject is off. Likely another integration linked to that number rejects calls automatically;
+    check the called number's linked devices. Not a 2b defect.
   - Idle CPU after the calls: under 0.1%; per-call CPU not measured yet.
   - **Open:** the DDD 11 device has no webhook configured, so the `call.*` webhooks were queued for 0
     targets and not checked end to end; check them when the CRM driver points a webhook at the device.
-    Outbound calls from the page and Chrome `jitterBufferDelay` still to confirm.
+    Inbound calls answered in the page (2a's flow is now the page's) and Chrome `jitterBufferDelay`
+    still to confirm.
     The "calls enabled" log line names every device when calls are on globally; the per-device switch
     decides handling.
 
