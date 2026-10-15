@@ -158,7 +158,7 @@ history of the work.
     during reconnect). Add a max call duration and a media-ended to finish path.
   - (f) CLOSED in 2b: retention deletes recordings (and 2a's `.wav` files). Was: recordings in `storages/calls` have no retention yet (personal data); retention lands
     with the recording stage (spec D7).
-- **Stage 2b (incl. the former 2c), live as `v9.6.0-elphant.7` since 2026-10-15.** Open after the code:
+- **Stage 2b (incl. the former 2c), live since 2026-10-15 (`v9.6.0-elphant.10` now).** Open after the code:
   - Runtime: first live calls passed (see "Stage 2b runtime" below); still open are the webhooks
     end to end, inbound answered in the page, per-call CPU and Chrome `jitterBufferDelay`.
   - Group calls stay out (offer filter): meowcaller's group mixer calls `sink.WriteFrame` outside
@@ -267,8 +267,13 @@ history of the work.
     replayed) in GOWA `v9.6.0-elphant.10`.
   - The device 15 reject did not recur: device 15 is the owner's WhatsApp Web, which placed the inbound
     test call. The `.8` terminate-after-reject path is covered by the fork's unit test only.
-  - **Open:** RINGING to confirm live on `.10`; remove the sink and its three env lines afterwards;
-    Chrome `jitterBufferDelay` and per-call CPU still unmeasured.
+  - RINGING confirmed live on `v9.6.0-elphant.10` (outbound from the page to the owner's second number:
+    `call.status` RINGING, then ACCEPTED, `call.answered`, `call.ended` `COMPLETED` with `recording`).
+  - The sink service and its three env lines were removed afterwards; both devices back `logged_in`.
+  - **Open:** the terminate-after-reject path (`.8`) is unit-tested only, since the auto-rejecting
+    device did not reject again; Chrome `jitterBufferDelay` and per-call CPU still unmeasured; the
+    CRM's device webhook must add `call.offer,call.status,call.answered,call.ended` to its event list
+    when the CRM driver ships.
 
 ### D-6 Debian 11 on the gateway host
 
