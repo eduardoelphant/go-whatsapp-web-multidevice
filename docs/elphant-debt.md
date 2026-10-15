@@ -198,9 +198,11 @@ history of the work.
       undocumented; a raw `handle.Answer` failure maps to 400, not 500; a malformed JSON body gives 500
       (pre-existing).
     - Test page: the page test checks substrings only; Hang up is unavailable during setup.
-- **Cleanup.** The prototype's linked device on the test number (paired 2026-10-13) and
-  `/root/meowcaller-spike/` on the gateway host (binary, scripts, session backup and logs) stay
-  until the owner says the spike is over.
+- **Cleanup: DONE 2026-10-15.** The prototype's linked device was logged out on 2026-10-14. The spike
+  worktree and branch `spike/meowcaller-calls` (fully merged into `elphant`) were removed, and so was the spike
+  folder on the gateway host. Logs, CPU profile, packet captures, scripts and test recordings were archived
+  on the owner's machine first; the old session database copies were deleted on purpose (obsolete credentials;
+  the nightly backup covers recovery).
 
 ## Won't do
 
