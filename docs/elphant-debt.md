@@ -270,6 +270,9 @@ history of the work.
   - RINGING confirmed live on `v9.6.0-elphant.10` (outbound from the page to the owner's second number:
     `call.status` RINGING, then ACCEPTED, `call.answered`, `call.ended` `COMPLETED` with `recording`).
   - The sink service and its three env lines were removed afterwards; both devices back `logged_in`.
+  - Owner decisions (2026-10-15): the nightly backup keeps `storages/calls` (recordings stay in R2 for
+    its 30 days, beyond the 7-day retention on the host); the CRM's webhook must answer 2xx to `call.*`
+    events, or the durable outbox retries them for up to 72 h.
   - **Open:** the terminate-after-reject path (`.8`) is unit-tested only, since the auto-rejecting
     device did not reject again; Chrome `jitterBufferDelay` and per-call CPU still unmeasured; the
     CRM's device webhook must add `call.offer,call.status,call.answered,call.ended` to its event list
