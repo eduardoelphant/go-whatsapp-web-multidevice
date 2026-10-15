@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOWA test phone</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  fieldset { margin-bottom: 1rem; }
+  input { padding: .3rem; }
+  button { margin: .25rem 0; }
+  #log { font-family: monospace; font-size: 12px; white-space: pre-wrap; background: #f4f4f4; padding: .5rem; max-height: 240px; overflow: auto; }
+</style>
+</head>
+<body>
+<h1>GOWA test phone</h1>
+<p>Voice calls stage 2b test page. Same WebRTC steps as the CRM: non-trickle SDP with CRLF lines; the gateway is ICE-lite and the DTLS server.</p>
+<fieldset><legend>Device</legend><label>X-Device-Id <input id="device" placeholder="device id"></label></fieldset>
+<fieldset><legend>Incoming</legend><div id="ringing">No calls.</div></fieldset>
+<fieldset><legend>Outgoing</legend><input id="phone" placeholder="+5511999999999"> <button id="call">Call</button></fieldset>
+<fieldset><legend>Current call</legend><span id="current">none</span> <button id="hangup" disabled>Hang up</button> <label><input type="checkbox" id="mute"> mute</label></fieldset>
+<audio id="remote" autoplay></audio>
+<div id="log"></div>
+<script>
+const base = location.pathname.replace(/\/calls\/phone\/?$/, '');
+const $ = (id) => document.getElementById(id);
+let pc = null;
+let mic = null;
+let currentId = null;
+
+function log(msg) {
+  $('log').textContent = new Date().toISOString().slice(11, 19) + ' ' + msg + '\n' + $('log').textContent;
+}
+
+// The gateway and Meta use CRLF line endings; some browsers hand back LF.
+function normalizeSdp(sdp) {
+  const s = sdp.replace(/\r?\n/g, '\r\n');
+  return s.endsWith('\r\n') ? s : s + '\r\n';
+}
+
+async function api(method, path, body) {
+  const res = await fetch(base + path, {
+    method,
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-Device-Id': $('device').value.trim() },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(res.status + ' ' + (data.message || res.statusText));
+  return data.results;
+}
+
+// Non-trickle: wait until ICE gathering completes (or 5 s), then read the whole SDP.
+function waitIceComplete(peer) {
+  if (peer.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      peer.removeEventListener('icegatheringstatechange', check);
+      resolve();
+    };
+    const check = () => { if (peer.iceGatheringState === 'complete') finish(); };
+    peer.addEventListener('icegatheringstatechange', check);
+    setTimeout(finish, 5000);
+  });
+}
+
+async function newPeer() {
+  mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+  pc = new RTCPeerConnection({ iceServers: [] });
+  mic.getTracks().forEach((t) => pc.addTrack(t, mic));
+  pc.ontrack = (e) => { $('remote').srcObject = e.streams[0] || new MediaStream([e.track]); };
+  pc.oniceconnectionstatechange = () => log('ICE ' + pc.iceConnectionState);
+  pc.onconnectionstatechange = () => log('connection ' + pc.connectionState);
+}
+
+function setCurrent(id) {
+  currentId = id;
+  $('current').textContent = id || 'none';
+  $('hangup').disabled = !id;
+}
+
+function cleanup() {
+  if (pc) pc.close();
+  pc = null;
+  if (mic) mic.getTracks().forEach((t) => t.stop());
+  mic = null;
+  setCurrent(null);
+}
+
+async function answer(callId) {
+  try {
+    const call = await api('GET', '/call/' + encodeURIComponent(callId));
+    if (!call.offer_sdp) throw new Error('the call has no offer_sdp');
+    await newPeer();
+    await pc.setRemoteDescription({ type: 'offer', sdp: normalizeSdp(call.offer_sdp) });
+    await pc.setLocalDescription(await pc.createAnswer());
+    await waitIceComplete(pc);
+    await api('POST', '/call/answer', { call_id: callId, sdp: normalizeSdp(pc.localDescription.sdp) });
+    setCurrent(callId);
+    log('answered ' + callId);
+  } catch (err) {
+    log('answer failed: ' + err.message);
+    cleanup();
+  }
+}
+
+async function reject(call) {
+  try {
+    await api('POST', '/call/reject', { call_id: call.call_id, caller_jid: call.peer.lid || call.peer.pn });
+    log('rejected ' + call.call_id);
+  } catch (err) {
+    log('reject failed: ' + err.message);
+  }
+}
+
+$('call').onclick = async () => {
+  try {
+    await newPeer();
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitIceComplete(pc);
+    const res = await api('POST', '/call/start', { phone: $('phone').value.trim(), sdp: normalizeSdp(pc.localDescription.sdp) });
+    await pc.setRemoteDescription({ type: 'answer', sdp: normalizeSdp(res.sdp_answer) });
+    setCurrent(res.call_id);
+    log('calling ' + res.call_id);
+  } catch (err) {
+    log('call failed: ' + err.message);
+    cleanup();
+  }
+};
+
+$('hangup').onclick = async () => {
+  const id = currentId;
+  try {
+    await api('POST', '/call/hangup', { call_id: id });
+    log('hung up ' + id);
+  } catch (err) {
+    log('hangup: ' + err.message);
+  }
+  cleanup();
+};
+
+$('mute').onchange = () => {
+  if (mic) mic.getAudioTracks().forEach((t) => { t.enabled = !$('mute').checked; });
+};
+
+async function poll() {
+  if ($('device').value.trim()) {
+    try {
+      const calls = (await api('GET', '/calls/active')) || [];
+      const box = $('ringing');
+      box.textContent = '';
+      calls.forEach((c) => {
+        if (c.direction !== 'USER_INITIATED' || c.state !== 'ringing' || c.call_id === currentId) return;
+        const row = document.createElement('div');
+        row.textContent = (c.peer.pn || c.peer.lid) + ' ';
+        const a = document.createElement('button');
+        a.textContent = 'Answer';
+        a.onclick = () => answer(c.call_id);
+        const r = document.createElement('button');
+        r.textContent = 'Reject';
+        r.onclick = () => reject(c);
+        row.append(a, ' ', r);
+        box.append(row);
+      });
+      if (!box.childElementCount) box.textContent = 'No calls.';
+      if (currentId && !calls.some((c) => c.call_id === currentId)) {
+        log('call ' + currentId + ' ended');
+        cleanup();
+      }
+    } catch (err) {
+      $('ringing').textContent = err.message;
+    }
+  }
+  setTimeout(poll, 2000);
+}
+
+try { $('device').value = localStorage.getItem('gowa-phone-device') || ''; } catch (e) { /* storage blocked */ }
+$('device').onchange = () => { try { localStorage.setItem('gowa-phone-device', $('device').value.trim()); } catch (e) { /* ignore */ } };
+poll();
+</script>
+</body>
+</html>
