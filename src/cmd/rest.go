@@ -154,6 +154,7 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	// Device management routes (no device_id required)
 	rest.InitRestDevice(apiGroup, deviceUsecase)
+	rest.InitRestDeviceCalls(apiGroup, callUsecase) // Fork (elphant): per-device voice calls switch (stage 2b).
 
 	// App info (version, limits) for standalone UIs; no device required
 	rest.InitRestAppInfo(apiGroup)

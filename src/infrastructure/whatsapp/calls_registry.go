@@ -32,13 +32,19 @@ func callsAllowedNow(slotID string, client *whatsmeow.Client) bool {
 	if client != nil && client.Store != nil && client.Store.ID != nil {
 		user, jid = client.Store.ID.User, client.Store.ID.String()
 	}
-	return config.CallsAllowed(slotID, user, jid)
+	return deviceCallsEnabled(slotID, user, jid) // Fork (elphant): per-device switch (stage 2b)
 }
 
-// offerFilter gates inbound offers in the call engine: a false return makes it ignore
-// the offer completely.
+// offerFilter gates inbound offers in the call engine: a false return makes it ignore the
+// offer completely, so the phone rings as usual. Group calls are out of scope and always left
+// to the phone.
 func offerFilter(slotID string, client *whatsmeow.Client) func(*events.CallOffer) bool {
-	return func(*events.CallOffer) bool { return callsAllowedNow(slotID, client) }
+	return func(evt *events.CallOffer) bool {
+		if evt != nil && !evt.GroupJID.IsEmpty() {
+			return false
+		}
+		return callsAllowedNow(slotID, client)
+	}
 }
 
 // effectiveCodec applies the configured codec and returns the one in effect and whether

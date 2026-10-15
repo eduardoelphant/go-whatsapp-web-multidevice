@@ -9,6 +9,8 @@ type ICallUsecase interface {
 	StartCall(ctx context.Context, phone string) (CallInfo, error)
 	HangupCall(ctx context.Context, callID string) error
 	ActiveCalls(ctx context.Context) ([]CallInfo, error)
+	SetDeviceCalls(ctx context.Context, deviceID string, enabled bool) (DeviceCallsResponse, error)
+	GetDeviceCalls(ctx context.Context, deviceID string) (DeviceCallsResponse, error)
 }
 
 type RejectCallRequest struct {
@@ -32,4 +34,12 @@ type CallInfo struct {
 	Peer      string `json:"peer"`
 	State     string `json:"state"`
 	StartedAt string `json:"started_at"`
+}
+
+type DeviceCallsRequest struct {
+	Enabled *bool `json:"enabled" form:"enabled"`
+}
+
+type DeviceCallsResponse struct {
+	Enabled bool `json:"enabled"`
 }

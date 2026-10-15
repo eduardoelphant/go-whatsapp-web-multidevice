@@ -45,9 +45,14 @@ func TestForgetCallsOnReset(t *testing.T) {
 }
 
 func withCallsConfig(t *testing.T, enabled bool, devices []string) {
-	oe, od := config.WhatsappCallsEnabled, config.WhatsappCallsDevices
-	t.Cleanup(func() { config.WhatsappCallsEnabled, config.WhatsappCallsDevices = oe, od })
+	oe, od, of := config.WhatsappCallsEnabled, config.WhatsappCallsDevices, callsStoreFn
+	resetDeviceCallsCache()
+	t.Cleanup(func() {
+		config.WhatsappCallsEnabled, config.WhatsappCallsDevices, callsStoreFn = oe, od, of
+		resetDeviceCallsCache()
+	})
 	config.WhatsappCallsEnabled, config.WhatsappCallsDevices = enabled, devices
+	callsStoreFn = func() deviceCallsStore { return nil }
 }
 
 func TestAttachCallsNotAllowedKeepsOff(t *testing.T) {

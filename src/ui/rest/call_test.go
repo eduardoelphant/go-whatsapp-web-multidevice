@@ -22,6 +22,8 @@ type callServiceStub struct {
 	answered      string
 	started       string
 	contextDevice *whatsapp.DeviceInstance
+	switchDevice  string
+	switchValue   bool
 }
 
 func (s *callServiceStub) AnswerCall(ctx context.Context, id string) error {
