@@ -91,6 +91,7 @@ function cleanup() {
 }
 
 async function answer(callId) {
+  if (pc) { log('a call is already live; hang up first'); return; }
   try {
     const call = await api('GET', '/call/' + encodeURIComponent(callId));
     if (!call.offer_sdp) throw new Error('the call has no offer_sdp');
@@ -117,6 +118,7 @@ async function reject(call) {
 }
 
 $('call').onclick = async () => {
+  if (pc) { log('a call is already live; hang up first'); return; }
   try {
     await newPeer();
     await pc.setLocalDescription(await pc.createOffer());
