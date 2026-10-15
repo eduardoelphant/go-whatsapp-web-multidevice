@@ -260,12 +260,14 @@ history of the work.
   - Outbound from the page, answered on an iPhone: `call.status` ACCEPTED, `call.answered`, `call.ended`
     `COMPLETED` with `recording`. The called number's own GOWA device also sent `call.offer` with
     `calls_enabled: false` (correct: it stays on the phone).
-  - Defect: no `call.status` RINGING. The preaccept arrived under 1 s after the offer, before `Start`
-    registered the ringing callback, and meowcaller does not replay it. Fixed in `v9.6.0-elphant.9`
-    (`OnRinging` checks the phase after registering, like `OnEnd`).
+  - Defect: no `call.status` RINGING. `v9.6.0-elphant.9` assumed a missed callback and did not fix it
+    (a live call on `.9` still had no RINGING). Cause: outbound media starts on the relay allocation in
+    the call ack, which moves meowcaller's phase to Connecting before the preaccept, and the preaccept
+    only sets Ringing from Calling. Fixed with fork `v0.2.0-elphant.7` (`Call.OnPeerPreAccept`, one-shot,
+    replayed) in GOWA `v9.6.0-elphant.10`.
   - The device 15 reject did not recur: device 15 is the owner's WhatsApp Web, which placed the inbound
     test call. The `.8` terminate-after-reject path is covered by the fork's unit test only.
-  - **Open:** RINGING to confirm live on `.9`; remove the sink and its three env lines afterwards;
+  - **Open:** RINGING to confirm live on `.10`; remove the sink and its three env lines afterwards;
     Chrome `jitterBufferDelay` and per-call CPU still unmeasured.
 
 ### D-6 Debian 11 on the gateway host

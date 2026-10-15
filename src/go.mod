@@ -97,4 +97,4 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 )
 
-replace github.com/purpshell/meowcaller => github.com/eduardoelphant/meowcaller v0.2.0-elphant.6
+replace github.com/purpshell/meowcaller => github.com/eduardoelphant/meowcaller v0.2.0-elphant.7
