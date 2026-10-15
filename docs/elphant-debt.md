@@ -244,13 +244,29 @@ history of the work.
     the second matches what the phone did, but a real decline then rings until the timeout.
     FIXED in fork `v0.2.0-elphant.6` (GOWA `v9.6.0-elphant.8`): a peer reject on an outgoing call
     now sends a terminate, so the call ends REJECTED on every device.
+  - Inbound answered in the page (13:35, from the owner's second number via WhatsApp Web): media on
+    both legs, `hangup_agent` after 12 s, `COMPLETED`, recording written.
   - Idle CPU after the calls: under 0.1%; per-call CPU not measured yet.
-  - **Open:** the DDD 11 device has no webhook configured, so the `call.*` webhooks were queued for 0
-    targets and not checked end to end; check them when the CRM driver points a webhook at the device.
-    Inbound calls answered in the page (2a's flow is now the page's) and Chrome `jitterBufferDelay`
-    still to confirm.
-    The "calls enabled" log line names every device when calls are on globally; the per-device switch
+  - Each call logs `selected audio codec from voip_settings codec=mlow` followed by `audio codec: opus`;
+    the fork's Opus mode wins, as in stage 1.
+  - The "calls enabled" log line names every device when calls are on globally; the per-device switch
     decides handling.
+- **Webhooks end to end (2026-10-15, `v9.6.0-elphant.8`):** the DDD 11 device's own webhook (the CRM)
+  whitelists message events only, so `call.*` went nowhere. For the test a temporary sink service on the
+  overlay network got `call.*` through `WHATSAPP_WEBHOOK`, `WHATSAPP_WEBHOOK_EVENTS` and
+  `WHATSAPP_WEBHOOK_DEVICE_MERGE_GLOBAL=true`, leaving the CRM's device webhook untouched.
+  - Inbound answered in the page: `call.offer` (`calls_enabled: true`, `offer_sdp`), `call.answered`,
+    `call.ended` `COMPLETED` with `recording`; all signed.
+  - Outbound from the page, answered on an iPhone: `call.status` ACCEPTED, `call.answered`, `call.ended`
+    `COMPLETED` with `recording`. The called number's own GOWA device also sent `call.offer` with
+    `calls_enabled: false` (correct: it stays on the phone).
+  - Defect: no `call.status` RINGING. The preaccept arrived under 1 s after the offer, before `Start`
+    registered the ringing callback, and meowcaller does not replay it. Fixed in `v9.6.0-elphant.9`
+    (`OnRinging` checks the phase after registering, like `OnEnd`).
+  - The device 15 reject did not recur: device 15 is the owner's WhatsApp Web, which placed the inbound
+    test call. The `.8` terminate-after-reject path is covered by the fork's unit test only.
+  - **Open:** RINGING to confirm live on `.9`; remove the sink and its three env lines afterwards;
+    Chrome `jitterBufferDelay` and per-call CPU still unmeasured.
 
 ### D-6 Debian 11 on the gateway host
 
