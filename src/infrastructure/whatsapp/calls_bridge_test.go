@@ -172,33 +172,53 @@ func level(p []float32) float64 {
 	return math.Sqrt(s / float64(len(p)))
 }
 
-// startPacedBridge is startBridge with a short pacer tick, so the paced tests run quickly.
-func startPacedBridge(t *testing.T, tick time.Duration) (*callBridge, *fakeLeg, *fakeCall) {
+// pacedBridge is a started bridge whose pacer clock the test drives by hand.
+type pacedBridge struct {
+	b    *callBridge
+	leg  *fakeLeg
+	h    *fakeCall
+	tick chan time.Time
+}
+
+func startPacedBridge(t *testing.T) *pacedBridge {
 	t.Helper()
 	f, rtc := testFactory(t, time.Second, &fakeRecorder{bytes: 1}, nil)
 	media, err := f.Inbound()
 	require.NoError(t, err)
 	b := media.(*callBridge)
-	b.tick = tick
-	h := &fakeCall{id: "IN-1"}
-	b.Start(h, (&bridgeEvents{}).events())
+	p := &pacedBridge{b: b, h: &fakeCall{id: "IN-1"}, tick: make(chan time.Time)}
+	b.newTicker = func() (<-chan time.Time, func()) { return p.tick, func() {} }
+	b.Start(p.h, (&bridgeEvents{}).events())
+	p.leg = rtc.legs[0]
 	t.Cleanup(func() { b.Close() })
-	return b, rtc.legs[0], h
+	return p
 }
 
-func waitFrames(t *testing.T, leg *fakeLeg, n int) {
+// ticks fires n pacer ticks and waits until each has written its frame.
+func (p *pacedBridge) ticks(t *testing.T, n int) {
 	t.Helper()
-	require.Eventually(t, func() bool { return len(leg.frames()) >= n }, 2*time.Second, time.Millisecond)
+	want := len(p.leg.frames()) + n
+	for i := 0; i < n; i++ {
+		p.tick <- time.Now()
+	}
+	require.Eventually(t, func() bool { return len(p.leg.frames()) == want }, 2*time.Second, time.Millisecond)
+}
+
+func (p *pacedBridge) hasAudio() bool {
+	for _, f := range p.leg.frames() {
+		if level(f) > 0.2 {
+			return true
+		}
+	}
+	return false
 }
 
 // With no customer audio (DTX silence) the pacer still sends one silent 20 ms frame per tick.
 func TestBridgePacerSendsSilenceWithoutAudio(t *testing.T) {
-	const tick = 10 * time.Millisecond
-	_, leg, _ := startPacedBridge(t, tick)
-	start := time.Now()
-	waitFrames(t, leg, 8)
-	frames := leg.frames()
-	assert.LessOrEqual(t, len(frames), int(time.Since(start)/tick)+1, "never faster than one frame per tick")
+	p := startPacedBridge(t)
+	p.ticks(t, 8)
+	frames := p.leg.frames()
+	require.Len(t, frames, 8, "exactly one frame per tick")
 	for _, f := range frames {
 		require.Len(t, f, rtcFrame)
 		assert.Zero(t, level(f))
@@ -207,24 +227,16 @@ func TestBridgePacerSendsSilenceWithoutAudio(t *testing.T) {
 
 // Once the jitter buffer reaches its prefill the pacer plays the audio, one frame per tick.
 func TestBridgePacerPlaysAudioAfterPrefill(t *testing.T) {
-	const tick = 10 * time.Millisecond
-	_, leg, h := startPacedBridge(t, tick)
-	hasAudio := func() bool {
-		for _, f := range leg.frames() {
-			if level(f) > 0.2 {
-				return true
-			}
-		}
-		return false
-	}
-	start := time.Now()
-	require.NoError(t, h.sink.WriteFrame(tone(960, 16000, 440)))
-	waitFrames(t, leg, 6)
-	assert.False(t, hasAudio(), "60 ms is below the 80 ms prefill: still silence")
-	require.NoError(t, h.sink.WriteFrame(tone(960, 16000, 440)))
-	require.Eventually(t, hasAudio, 2*time.Second, time.Millisecond)
-	frames := leg.frames()
-	assert.LessOrEqual(t, len(frames), int(time.Since(start)/tick)+1)
+	p := startPacedBridge(t)
+	require.NoError(t, p.h.sink.WriteFrame(tone(960, 16000, 440)))
+	p.ticks(t, 3)
+	assert.False(t, p.hasAudio(), "60 ms is below the 80 ms prefill: still silence")
+	require.NoError(t, p.h.sink.WriteFrame(tone(960, 16000, 440)))
+	p.ticks(t, 1)
+	assert.True(t, p.hasAudio())
+	p.ticks(t, 4)
+	frames := p.leg.frames()
+	require.Len(t, frames, 8)
 	for _, f := range frames {
 		assert.Len(t, f, rtcFrame)
 	}
@@ -232,34 +244,33 @@ func TestBridgePacerPlaysAudioAfterPrefill(t *testing.T) {
 
 // A burst after a silence gap is spread over ticks, never sent at once.
 func TestBridgePacerBurstAfterGapIsPaced(t *testing.T) {
-	const tick = 10 * time.Millisecond
-	_, leg, h := startPacedBridge(t, tick)
-	waitFrames(t, leg, 5) // a gap of silence first
-	before := len(leg.frames())
-	start := time.Now()
+	p := startPacedBridge(t)
+	p.ticks(t, 5)            // a gap of silence first
 	for i := 0; i < 4; i++ { // 240 ms of audio at once
-		require.NoError(t, h.sink.WriteFrame(tone(960, 16000, 440)))
+		require.NoError(t, p.h.sink.WriteFrame(tone(960, 16000, 440)))
 	}
-	time.Sleep(5 * tick)
-	got := len(leg.frames()) - before
-	elapsed := time.Since(start)
-	assert.LessOrEqual(t, got, int(elapsed/tick)+1, "at most one frame per tick, not a burst")
-	assert.Greater(t, got, 0)
+	assert.Len(t, p.leg.frames(), 5, "the burst alone writes nothing")
+	p.ticks(t, 1)
+	assert.Len(t, p.leg.frames(), 6, "one frame for the one tick")
+	assert.True(t, p.hasAudio())
 }
 
 // Close stops the pacer before the leg closes: nothing is written afterwards.
 func TestBridgeCloseStopsPacer(t *testing.T) {
-	b, leg, _ := startPacedBridge(t, 5*time.Millisecond)
-	waitFrames(t, leg, 3)
-	b.Close()
-	n := len(leg.frames())
-	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, n, len(leg.frames()), "no writes after Close")
+	p := startPacedBridge(t)
+	p.ticks(t, 3)
+	p.b.Close()
 	select {
-	case <-b.pacerDone:
+	case <-p.b.pacerDone:
 	default:
 		t.Fatal("pacer still running after Close")
 	}
+	select {
+	case p.tick <- time.Now():
+		t.Fatal("pacer took a tick after Close")
+	case <-time.After(20 * time.Millisecond):
+	}
+	assert.Len(t, p.leg.frames(), 3, "no writes after Close")
 }
 
 func TestBridgeAgentToWhatsAppAndRecorder(t *testing.T) {

@@ -126,12 +126,13 @@ type callBridge struct {
 	leg       rtcLeg
 	up        *callaudio.Upsampler
 	down      *callaudio.Downsampler
-	agent     *callaudio.FIFO // agent audio (16 kHz) for meowcaller's send loop
-	customer  *callaudio.FIFO // customer audio (16 kHz) for the recorder, sample-granular
-	toBrowser *callaudio.FIFO // customer audio (48 kHz) waiting for the pacer
-	tick      time.Duration   // pacer period (browserTick; tests shorten it)
-	done      chan struct{}   // closed by close(): stops the pacer
-	pacerDone chan struct{}   // closed when the pacer has exited; nil until it starts
+	agent     *callaudio.FIFO                   // agent audio (16 kHz) for meowcaller's send loop
+	customer  *callaudio.FIFO                   // customer audio (16 kHz) for the recorder, sample-granular
+	toBrowser *callaudio.FIFO                   // customer audio (48 kHz) waiting for the pacer
+	newTicker func() (<-chan time.Time, func()) // pacer clock; tests drive it by hand
+	writeErrs int                               // pacer-only until close() has joined it
+	done      chan struct{}                     // closed by close(): stops the pacer
+	pacerDone chan struct{}                     // closed when the pacer has exited; nil until it starts
 
 	closeOnce sync.Once
 
@@ -154,7 +155,7 @@ func newCallBridge(f *bridgeFactory, leg rtcLeg) *callBridge {
 		down: callaudio.NewDownsampler(), agent: callaudio.NewFIFO(agentPrefill, agentMax),
 		customer:  callaudio.NewFIFO(0, customerMax),
 		toBrowser: callaudio.NewFIFO(browserPrefill, browserMax),
-		tick:      browserTick, done: make(chan struct{}),
+		newTicker: realTicker, done: make(chan struct{}),
 	}
 	// Registered before the answer is applied, so an early "up" is never missed.
 	leg.OnFrame(b.fromBrowser)
@@ -192,17 +193,23 @@ func (b *callBridge) Start(h callHandle, ev mediaEvents) {
 	b.maybeFlowing()
 }
 
+func realTicker() (<-chan time.Time, func()) {
+	t := time.NewTicker(browserTick)
+	return t.C, t.Stop
+}
+
 // pace sends one 20 ms frame to the browser per tick, silence when the jitter buffer is empty
 // or still filling, so the RTP timestamps follow wall time whatever WhatsApp's DTX does.
 func (b *callBridge) pace() {
 	defer close(b.pacerDone)
-	t := time.NewTicker(b.tick)
-	defer t.Stop()
+	tc, stop := b.newTicker()
+	defer stop()
+	lastErr := ""
 	for {
 		select {
 		case <-b.done:
 			return
-		case <-t.C:
+		case <-tc:
 		}
 		select { // a tick that raced with close must not touch the closing leg
 		case <-b.done:
@@ -210,7 +217,12 @@ func (b *callBridge) pace() {
 		default:
 		}
 		if err := b.leg.WriteFrame(b.toBrowser.Read(rtcFrame)); err != nil {
-			logrus.Debugf("[CALLS] browser write: %v", err)
+			// 50 writes a second would flood the log while the browser is away.
+			b.writeErrs++
+			if msg := err.Error(); msg != lastErr {
+				lastErr = msg
+				logrus.Debugf("[CALLS] browser write: %v", err)
+			}
 		}
 	}
 }
@@ -393,7 +405,7 @@ func (b *callBridge) close() {
 	logrus.Debugf("[CALLS] bridge closed: agent jitter buffer %d underruns, %d samples dropped; customer queue %d underruns, %d samples dropped", au, ad, cu, cd)
 
 	bu, bd := b.toBrowser.Stats()
-	logrus.Debugf("[CALLS] browser jitter buffer %d underruns, %d samples dropped", bu, bd)
+	logrus.Debugf("[CALLS] browser jitter buffer %d underruns, %d samples dropped, %d write errors", bu, bd, b.writeErrs)
 
 	_ = b.leg.Close()
 	var result *RecordingInfo
