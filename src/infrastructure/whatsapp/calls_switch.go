@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/sirupsen/logrus"
@@ -34,7 +35,16 @@ var callsStoreFn = func() DeviceCallsStore {
 	if dm == nil || dm.storage == nil {
 		return nil
 	}
-	reg, _ := dm.storage.(DeviceCallsStore)
+	return callsStoreOf(dm.storage)
+}
+
+// callsStoreOf finds the switch registry behind a repository. The device manager holds the
+// per-device wrapper, which does not carry the fork's calls methods; its base repository does.
+func callsStoreOf(repo domainChatStorage.IChatStorageRepository) DeviceCallsStore {
+	if w, ok := repo.(*deviceChatStorage); ok && w != nil {
+		repo = w.base
+	}
+	reg, _ := repo.(DeviceCallsStore)
 	return reg
 }
 

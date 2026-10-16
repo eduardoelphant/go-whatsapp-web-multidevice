@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mau.fi/whatsmeow"
@@ -187,4 +188,24 @@ func TestSwitchOffRacesLookups(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, false, v)
 	assert.Equal(t, map[string]bool{"slot-a": false}, reg.snapshot())
+}
+
+// registryRepo is a chat repository that also keeps the calls switch, like SQLiteRepository.
+type registryRepo struct {
+	domainChatStorage.IChatStorageRepository
+	*fakeCallsStore
+}
+
+func TestCallsStoreOfUnwrapsTheDeviceWrapper(t *testing.T) {
+	base := registryRepo{fakeCallsStore: newFakeCallsStore()}
+	wrapped := newDeviceChatStorage("slot-1", base)
+	if callsStoreOf(wrapped) == nil {
+		t.Fatal("the device manager's per-device wrapper must expose the base registry")
+	}
+	if callsStoreOf(base) == nil {
+		t.Fatal("a bare registry must be used as is")
+	}
+	if callsStoreOf(nil) != nil {
+		t.Fatal("no repository means no registry")
+	}
 }
