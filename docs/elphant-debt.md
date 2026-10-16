@@ -258,6 +258,12 @@ history of the work.
   registry was always nil: `PUT /devices/:id/calls` answered 500 "device registry unavailable" and reads fell back
   to the `WHATSAPP_CALLS_DEVICES` seed. The lookup now unwraps the wrapper (`callsStoreOf`). Unit tests had set the
   store by hand, so they missed it.
+- **Hosted companion reject (fixed 2026-10-16, `v9.6.0-elphant.12`, fork `v0.2.0-elphant.8`):** from 2026-10-16
+  01:20 UTC the Cloud API's hosted companion of the coexistence number (`…:99@hosted.lid`) rejects every incoming
+  call within a second, while the phone keeps ringing. meowcaller ended the incoming call on that reject, so the CRM
+  got `call.ended` REJECTED. Incoming calls now ignore rejects from the account's other devices; decline or answer
+  elsewhere still arrives as a terminate. Confirmed live: the reject is logged and ignored, the CRM agent answered,
+  63 s COMPLETED.
 - **CRM deploy step:** the CRM's device webhook kept the old event list until `php artisan gowa:webhook-sync` ran
   on 2026-10-16; until then the gateway logged `Queueing call.offer for 0 configured webhook(s)` and the CRM showed
   calls stuck in "calling".
