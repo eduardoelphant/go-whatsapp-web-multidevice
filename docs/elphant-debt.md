@@ -253,6 +253,14 @@ history of the work.
     the fork's Opus mode wins, as in stage 1.
   - The "calls enabled" log line names every device when calls are on globally; the per-device switch
     decides handling.
+- **Per-device switch never persisted (fixed 2026-10-16, `v9.6.0-elphant.11`):** `callsStoreFn` asserted the
+  device manager's storage to the registry, but the manager holds the per-device chat-storage wrapper, so the
+  registry was always nil: `PUT /devices/:id/calls` answered 500 "device registry unavailable" and reads fell back
+  to the `WHATSAPP_CALLS_DEVICES` seed. The lookup now unwraps the wrapper (`callsStoreOf`). Unit tests had set the
+  store by hand, so they missed it.
+- **CRM deploy step:** the CRM's device webhook kept the old event list until `php artisan gowa:webhook-sync` ran
+  on 2026-10-16; until then the gateway logged `Queueing call.offer for 0 configured webhook(s)` and the CRM showed
+  calls stuck in "calling".
 - **Webhooks end to end (2026-10-15, `v9.6.0-elphant.8`):** the DDD 11 device's own webhook (the CRM)
   whitelists message events only, so `call.*` went nowhere. For the test a temporary sink service on the
   overlay network got `call.*` through `WHATSAPP_WEBHOOK`, `WHATSAPP_WEBHOOK_EVENTS` and
