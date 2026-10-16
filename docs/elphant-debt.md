@@ -259,6 +259,11 @@ history of the work.
   registry was always nil: `PUT /devices/:id/calls` answered 500 "device registry unavailable" and reads fell back
   to the `WHATSAPP_CALLS_DEVICES` seed. The lookup now unwraps the wrapper (`callsStoreOf`). Unit tests had set the
   store by hand, so they missed it.
+- **Choppy customer audio in the browser (fixed 2026-10-16, `v9.6.0-elphant.13`):** the bridge forwarded each
+  decoded WhatsApp frame to the browser as it arrived; with WhatsApp's DTX the RTP clock fell behind wall time after
+  every silence and Chrome cut speech. The customer's audio now goes through an 80 ms jitter buffer and a 20 ms pacer
+  (silence when empty). Confirmed live: a 115 s call, no loss on the WhatsApp side, the agent heard the customer clean
+  and complete.
 - **Hosted companion reject (fixed 2026-10-16, `v9.6.0-elphant.12`, fork `v0.2.0-elphant.8`):** from 2026-10-16
   01:20 UTC the Cloud API's hosted companion of the coexistence number (`…:99@hosted.lid`) rejects every incoming
   call within a second, while the phone keeps ringing. meowcaller ended the incoming call on that reject, so the CRM
