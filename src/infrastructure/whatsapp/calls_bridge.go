@@ -67,6 +67,13 @@ const (
 	agentPrefill = waFrame + 2*rtcFrame/callaudio.Ratio
 	agentMax     = agentPrefill + 2*waFrame
 	customerMax  = 4 * waFrame // customer audio waiting for the recorder (240 ms)
+	// browserPrefill / browserMax size the browser-side jitter buffer at 48 kHz. WhatsApp sends
+	// nothing during silence (DTX) and bursts afterwards, so the pacer holds 80 ms (four 20 ms
+	// frames) before it starts and drops the oldest audio past 300 ms to bound the latency.
+	browserPrefill = 4 * rtcFrame  // 3840 samples, 80 ms
+	browserMax     = 15 * rtcFrame // 14400 samples, 300 ms
+	// browserTick is the pacer's period: one rtcFrame per tick keeps the RTP clock on wall time.
+	browserTick = 20 * time.Millisecond
 )
 
 // bridgeFactory makes one callBridge per call; it is the manager's mediaFactory.
@@ -111,16 +118,20 @@ func legError(err error) error {
 type graceToken struct{ t *time.Timer }
 
 // callBridge is one call's callMedia. Ownership of the single-goroutine audio stages:
-// up and chunk run on meowcaller's receive goroutine (the sink), down on the browser leg's
-// reader goroutine; agent is the locked hand-off to meowcaller's send loop (the source).
+// up runs on meowcaller's receive goroutine (the sink), down on the browser leg's reader
+// goroutine; agent is the locked hand-off to meowcaller's send loop (the source); toBrowser is
+// drained by the pacer goroutine, the only caller of leg.WriteFrame.
 type callBridge struct {
-	f        *bridgeFactory
-	leg      rtcLeg
-	up       *callaudio.Upsampler
-	chunk    *callaudio.Rechunker
-	down     *callaudio.Downsampler
-	agent    *callaudio.FIFO // agent audio (16 kHz) for meowcaller's send loop
-	customer *callaudio.FIFO // customer audio (16 kHz) for the recorder, sample-granular
+	f         *bridgeFactory
+	leg       rtcLeg
+	up        *callaudio.Upsampler
+	down      *callaudio.Downsampler
+	agent     *callaudio.FIFO // agent audio (16 kHz) for meowcaller's send loop
+	customer  *callaudio.FIFO // customer audio (16 kHz) for the recorder, sample-granular
+	toBrowser *callaudio.FIFO // customer audio (48 kHz) waiting for the pacer
+	tick      time.Duration   // pacer period (browserTick; tests shorten it)
+	done      chan struct{}   // closed by close(): stops the pacer
+	pacerDone chan struct{}   // closed when the pacer has exited; nil until it starts
 
 	closeOnce sync.Once
 
@@ -139,9 +150,11 @@ type callBridge struct {
 func newCallBridge(f *bridgeFactory, leg rtcLeg) *callBridge {
 	b := &callBridge{
 		f: f, leg: leg,
-		up: callaudio.NewUpsampler(), chunk: callaudio.NewRechunker(rtcFrame),
+		up:   callaudio.NewUpsampler(),
 		down: callaudio.NewDownsampler(), agent: callaudio.NewFIFO(agentPrefill, agentMax),
-		customer: callaudio.NewFIFO(0, customerMax),
+		customer:  callaudio.NewFIFO(0, customerMax),
+		toBrowser: callaudio.NewFIFO(browserPrefill, browserMax),
+		tick:      browserTick, done: make(chan struct{}),
 	}
 	// Registered before the answer is applied, so an early "up" is never missed.
 	leg.OnFrame(b.fromBrowser)
@@ -169,12 +182,37 @@ func (b *callBridge) Start(h callHandle, ev mediaEvents) {
 		return
 	}
 	b.started, b.ev, b.rec = true, ev, rec
+	b.pacerDone = make(chan struct{})
+	safego.Go("calls_browser_pacer", b.pace)
 	if !b.rtcUp {
 		b.armGraceLocked()
 	}
 	b.mu.Unlock()
 	h.Bridge(bridgeSource{b}, bridgeSink{b})
 	b.maybeFlowing()
+}
+
+// pace sends one 20 ms frame to the browser per tick, silence when the jitter buffer is empty
+// or still filling, so the RTP timestamps follow wall time whatever WhatsApp's DTX does.
+func (b *callBridge) pace() {
+	defer close(b.pacerDone)
+	t := time.NewTicker(b.tick)
+	defer t.Stop()
+	for {
+		select {
+		case <-b.done:
+			return
+		case <-t.C:
+		}
+		select { // a tick that raced with close must not touch the closing leg
+		case <-b.done:
+			return
+		default:
+		}
+		if err := b.leg.WriteFrame(b.toBrowser.Read(rtcFrame)); err != nil {
+			logrus.Debugf("[CALLS] browser write: %v", err)
+		}
+	}
 }
 
 func (b *callBridge) openRecorder(h callHandle) recorder {
@@ -308,7 +346,7 @@ func (s bridgeSource) ReadFrame() ([]float32, error) {
 func (s bridgeSource) Close() error { return nil }
 
 // bridgeSink receives the customer's decoded audio from meowcaller (16 kHz, 60 ms) and sends it
-// to the browser in three 20 ms frames at once: the browser's jitter buffer absorbs the burst.
+// to the browser's jitter buffer; the pacer sends it on a 20 ms clock.
 type bridgeSink struct{ b *callBridge }
 
 func (s bridgeSink) WriteFrame(frame []float32) error {
@@ -321,12 +359,7 @@ func (s bridgeSink) WriteFrame(frame []float32) error {
 	}
 	b.mu.Unlock()
 	b.customer.Write(pcm)
-	for _, f := range b.chunk.Push(b.up.Process(pcm)) {
-		if err := b.leg.WriteFrame(f); err != nil {
-			logrus.Debugf("[CALLS] browser write: %v", err)
-			break
-		}
-	}
+	b.toBrowser.Write(b.up.Process(pcm))
 	return nil
 }
 
@@ -347,11 +380,20 @@ func (b *callBridge) close() {
 	b.stopGraceLocked()
 	rec := b.rec
 	b.rec = nil
+	pd := b.pacerDone
 	b.mu.Unlock()
+
+	close(b.done)
+	if pd != nil {
+		<-pd // the pacer is gone before the leg closes
+	}
 
 	au, ad := b.agent.Stats()
 	cu, cd := b.customer.Stats()
 	logrus.Debugf("[CALLS] bridge closed: agent jitter buffer %d underruns, %d samples dropped; customer queue %d underruns, %d samples dropped", au, ad, cu, cd)
+
+	bu, bd := b.toBrowser.Stats()
+	logrus.Debugf("[CALLS] browser jitter buffer %d underruns, %d samples dropped", bu, bd)
 
 	_ = b.leg.Close()
 	var result *RecordingInfo

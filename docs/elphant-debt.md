@@ -165,8 +165,9 @@ history of the work.
     `audioPlayoutMu`. A group offer on a call-enabled device is neither handled nor auto-rejected.
   - For a call refused by the cap, `call.ended` can reach the webhook before `call.offer`
     (different paths); consumers match by `call_id`.
-  - The bridge sends the three 20 ms browser packets of each 60 ms WhatsApp frame at once; pace
-    them if a browser reports jitter.
+  - CLOSED: the bridge sent the three 20 ms browser packets of each 60 ms WhatsApp frame at once,
+    and DTX gaps made Chrome's jitter buffer drop speech; a 48 kHz jitter buffer (80 ms prefill,
+    300 ms max) now feeds the browser from a 20 ms pacer goroutine.
   - No TURN; RTP from the browser is not reordered before decoding.
   - pion adds no `a=ptime:20`; GOWA sends 20 ms frames anyway.
   - Policy rulings: outbound grace starts while the phone rings (a browser that never connects
