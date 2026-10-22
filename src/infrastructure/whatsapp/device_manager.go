@@ -1059,7 +1059,8 @@ func findStoreDeviceByJID(ctx context.Context, container *sqlstore.Container, ji
 }
 
 func configureDeviceProps() {
-	osName := fmt.Sprintf("%s %s", config.AppOs, config.AppVersion)
+	// Fork (elphant): send the OS name alone so the phone does not show the app version.
+	osName := config.AppOs
 	store.DeviceProps.PlatformType = &config.AppPlatform
 	store.DeviceProps.Os = &osName
 }

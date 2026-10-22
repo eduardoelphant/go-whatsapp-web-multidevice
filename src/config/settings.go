@@ -11,7 +11,7 @@ var (
 	AppPort                 = "3000"
 	AppHost                 = "0.0.0.0"
 	AppDebug                = false
-	AppOs                   = "GOWA"
+	AppOs                   = "macOS" // Fork (elphant): companion label shown on the phone; no GOWA branding
 	AppPlatform             = waCompanionReg.DeviceProps_PlatformType(1)
 	AppBasicAuthCredential  []string
 	AppStaticsSecret        string // Fork (elphant): HMAC secret for signed /statics URLs (empty: no signed URLs)

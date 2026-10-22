@@ -205,6 +205,13 @@ history of the work.
   on the owner's machine first; the old session database copies were deleted on purpose (obsolete credentials;
   the nightly backup covers recovery).
 
+### D-18 Flaky `TestMaxDurationFinishesSilentEngine`
+
+`src/infrastructure/whatsapp/calls_test.go:566` fails about once in six runs (`go test -count=6
+./infrastructure/whatsapp/`, 2026-10-22): `assert.True(t, placed.hungUp)` runs right after
+`m.Active()` empties, before the fake engine records the hang-up. Seen while testing the companion
+label change; unrelated to it. Fix: wait for `hungUp` inside the `require.Eventually` condition.
+
 ## Won't do
 
 - **Runtime on the gateway host (2026-10-14, `v9.6.0-elphant.3`, calls on the DDD 11 device only):**

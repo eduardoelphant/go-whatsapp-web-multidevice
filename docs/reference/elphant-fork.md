@@ -27,6 +27,13 @@ In this fork:
 
 Never run the same session in two processes at once. The two will keep replacing each other.
 
+## Companion label on the phone
+
+Upstream registers the companion as `GOWA <version>` (for example "Google Chrome (GOWA v9.6.0)"
+under Linked devices). This fork sends `APP_OS` alone, and its default is `macOS`, so the phone
+shows "Google Chrome (macOS)". The label is sent at pairing: a device paired before this change
+keeps its old label until it is unlinked and paired again.
+
 ## Startup does not print the configuration
 
 Upstream prints every setting to stdout on startup, including basic auth credentials, the
