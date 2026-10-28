@@ -40,6 +40,10 @@ type IChatStorageRepository interface {
 	DeleteMessageByDevice(deviceID, id, chatJID string) error
 	StoreSentMessageWithContext(ctx context.Context, messageID string, senderJID string, recipientJID string, content string, timestamp time.Time, msg *waE2E.Message) error
 
+	// Fork (elphant): messages CreateMessage skipped for having no text or media.
+	StoreSkippedMessage(skipped *SkippedMessage) error
+	GetSkippedMessageByDevice(deviceID, id string) (*SkippedMessage, error)
+
 	// Poll definition operations
 	UpsertPollDefinition(definition *PollDefinition) error
 	GetPollDefinition(deviceID, chatJID, pollMessageID string) (*PollDefinition, error)

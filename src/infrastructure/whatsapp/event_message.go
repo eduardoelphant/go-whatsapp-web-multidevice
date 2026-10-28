@@ -15,7 +15,6 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow/types/events"
-	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 var reMention = regexp.MustCompile(`\B@\w+`)
@@ -260,15 +259,7 @@ func hasRecognizedMessageType(msg *waE2E.Message) bool {
 // field descriptors — never field values — so this is safe to log at warn
 // level even though the message itself may carry customer content.
 func populatedMessageFields(msg *waE2E.Message) []string {
-	if msg == nil {
-		return nil
-	}
-	var names []string
-	msg.ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, _ protoreflect.Value) bool {
-		names = append(names, string(fd.Name()))
-		return true
-	})
-	return names
+	return utils.PopulatedMessageFields(msg)
 }
 
 func buildFromFields(ctx context.Context, client *whatsmeow.Client, evt *events.Message, payload map[string]any) {

@@ -435,3 +435,19 @@ func (r *deviceChatStorage) SetDeviceWebhookConfig(deviceID string, config *doma
 func (r *deviceChatStorage) GetDeviceWebhookConfig(deviceID string) (*domainChatStorage.DeviceWebhookConfig, error) {
 	return r.base.GetDeviceWebhookConfig(deviceID)
 }
+
+// Fork (elphant): see domains/chatstorage/skipped_message.go.
+func (r *deviceChatStorage) StoreSkippedMessage(skipped *domainChatStorage.SkippedMessage) error {
+	if skipped != nil && skipped.DeviceID == "" {
+		skipped.DeviceID = r.deviceID
+	}
+	return r.base.StoreSkippedMessage(skipped)
+}
+
+func (r *deviceChatStorage) GetSkippedMessageByDevice(deviceID, id string) (*domainChatStorage.SkippedMessage, error) {
+	targetDeviceID := deviceID
+	if targetDeviceID == "" {
+		targetDeviceID = r.deviceID
+	}
+	return r.base.GetSkippedMessageByDevice(targetDeviceID, id)
+}
