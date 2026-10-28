@@ -179,6 +179,30 @@ has no media, `410` when WhatsApp no longer has it: download soon after the webh
 - The download has its own 10-minute deadline (the global request timeout is 45 s). The temp file
   lives in the container's temp directory until the response ends.
 
+## Skipped messages and `GET /message/:message_id/skipped`
+
+Chat storage keeps only messages with text or media. Upstream drops the rest with a debug log
+("Skipping message ... no content or media"), so a lookup by id cannot tell "never arrived" from
+"arrived with nothing to show". The fork records each skipped message in its own table,
+`elphant_skipped_messages` (created on first use, outside upstream's numbered migrations): device,
+id, chat, sender, `is_from_me`, timestamp, a `reason` and the populated proto field names (never
+values).
+
+- `reason`: `protocol:<TYPE>` (e.g. `protocol:EPHEMERAL_SETTING`, which Cloud API businesses on a
+  `@hosted.lid` device send and the Cloud API reports to a coexistence number as `unsupported`),
+  `placeholder:<TYPE>` (`MASK_LINKED_DEVICES`), `album`, `enc_reaction`, `sender_key_distribution`,
+  `field:<protoField>` for any other format GOWA does not render, `empty` when nothing is set.
+- Not recorded: own-device sync protocol messages (history sync notification, app state key
+  share/request, peer data operations, LID migration sync and the like). Messages skipped during
+  history sync are not recorded either.
+- Retention: rows older than 30 days are pruned on write (at most once per hour). Device deletion
+  and `TruncateAllChats` clear them.
+- `GET /message/:message_id/skipped` (Basic Auth, `X-Device-Id`) returns `message_id`, `chat_jid`,
+  `sender_jid`, `is_from_me`, `reason`, `fields` and `timestamp`; `404 SKIPPED_MESSAGE_NOT_FOUND`
+  when the message was stored, never arrived or the record expired.
+- `payload.stable` is unchanged: a skipped message still goes out (when it is not a protocol
+  message, which never reaches the webhook) as `type: "unknown"`.
+
 ## Stable payload audit
 
 With `WHATSAPP_STABLE_AUDIT_DIR` set as a real environment variable (it is not read from

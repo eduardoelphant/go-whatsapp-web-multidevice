@@ -1578,6 +1578,14 @@ func (r *SQLiteRepository) TruncateAllChats() error {
 		return fmt.Errorf("failed to delete scheduled sends: %w", err)
 	}
 
+	// Fork (elphant): skip records, see sqlite_repository_skipped.go.
+	if _, err = tx.Exec(createSkippedMessagesTable); err == nil {
+		_, err = tx.Exec("DELETE FROM elphant_skipped_messages")
+	}
+	if err != nil {
+		return fmt.Errorf("failed to delete skipped messages: %w", err)
+	}
+
 	// Delete messages after dependent rows to keep cleanup explicit.
 	_, err = tx.Exec("DELETE FROM messages")
 	if err != nil {
@@ -1627,6 +1635,11 @@ func (r *SQLiteRepository) DeleteDeviceData(deviceID string) error {
 
 	if _, err := tx.Exec(`DELETE FROM scheduled_sends WHERE device_id = ?`, deviceID); err != nil {
 		return fmt.Errorf("failed to delete device scheduled sends: %w", err)
+	}
+
+	// Fork (elphant): skip records, see sqlite_repository_skipped.go.
+	if err := deleteSkippedMessagesForDevice(tx, deviceID); err != nil {
+		return fmt.Errorf("failed to delete device skipped messages: %w", err)
 	}
 
 	// Delete messages after dependent rows via direct device_id filter.
@@ -2280,6 +2293,23 @@ func (r *SQLiteRepository) CreateMessage(ctx context.Context, evt *events.Messag
 	// Skip if there's no content and no media
 	if content == "" && mediaType == "" {
 		logrus.Debugf("Skipping message %s - no content or media", evt.Info.ID)
+		// Fork (elphant): record what the message was, so a lookup by id can tell
+		// "skipped" from "never arrived". See sqlite_repository_skipped.go.
+		if utils.ShouldRecordSkippedMessage(evt.Message) {
+			skipped := &domainChatStorage.SkippedMessage{
+				DeviceID:  deviceID,
+				ID:        evt.Info.ID,
+				ChatJID:   chatJID,
+				Sender:    sender,
+				IsFromMe:  evt.Info.IsFromMe,
+				Reason:    utils.SkippedMessageReason(evt.Message),
+				Fields:    utils.SkippedMessageFields(evt.Message),
+				Timestamp: evt.Info.Timestamp,
+			}
+			if err := r.StoreSkippedMessage(skipped); err != nil {
+				logrus.Warnf("Failed to record skipped message %s: %v", evt.Info.ID, err)
+			}
+		}
 		return nil
 	}
 
