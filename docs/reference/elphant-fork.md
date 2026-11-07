@@ -203,6 +203,24 @@ values).
 - `payload.stable` is unchanged: a skipped message still goes out (when it is not a protocol
   message, which never reaches the webhook) as `type: "unknown"`.
 
+## Group administration: `POST /group/join-approval` and `group.info`
+
+Upstream has no route to turn group join approval on or off, and its group webhook only covers
+participant changes. The fork adds both, for the CRM group administration screen.
+
+- `POST /group/join-approval` (Basic Auth, `X-Device-Id`), body `{"group_id": "...", "enabled":
+  true|false}`, turns membership approval on or off through whatsmeow `SetGroupJoinApprovalMode`.
+  The device must be a group admin.
+- `group.info` webhook: one delivery per setting changed in a whatsmeow `GroupInfo` event, with
+  `payload.chat_id`, `payload.type` (`name`, `topic`, `locked`, `announce`, `ephemeral`,
+  `approval`, `invite_link_reset`), `payload.value` (the new value; `ephemeral` in seconds, 0 when
+  off; null for `invite_link_reset`) and `payload.sender` (who changed it, null when unknown).
+  `group.participants` is unchanged; an event that only changes ephemeral, approval or the invite
+  link no longer gets dropped before the forwarders run.
+- Like every event, `group.info` goes only where the device or global event list allows it. A
+  device whose list was set without `group.info` (the CRM syncs the list with
+  `gowa:webhook-sync`) gets nothing new until the list includes it.
+
 ## Stable payload audit
 
 With `WHATSAPP_STABLE_AUDIT_DIR` set as a real environment variable (it is not read from
