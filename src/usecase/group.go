@@ -392,6 +392,31 @@ func (service serviceGroup) SetGroupLocked(ctx context.Context, request domainGr
 	return client.SetGroupLocked(ctx, groupJID, request.Locked)
 }
 
+// groupJoinApprovalSetter isolates the whatsmeow call so tests can fake it.
+type groupJoinApprovalSetter func(ctx context.Context, jid types.JID, enabled bool) error
+
+func (service serviceGroup) SetGroupJoinApproval(ctx context.Context, request domainGroup.SetGroupJoinApprovalRequest) (err error) {
+	if err = validations.ValidateSetGroupJoinApproval(ctx, request); err != nil {
+		return err
+	}
+
+	client := whatsapp.ClientFromContext(ctx)
+	if client == nil {
+		return pkgError.ErrWaCLI
+	}
+
+	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	if err != nil {
+		return err
+	}
+
+	return applyGroupJoinApproval(ctx, client.SetGroupJoinApprovalMode, groupJID, request.Enabled)
+}
+
+func applyGroupJoinApproval(ctx context.Context, set groupJoinApprovalSetter, groupJID types.JID, enabled bool) error {
+	return set(ctx, groupJID, enabled)
+}
+
 func (service serviceGroup) SetGroupAnnounce(ctx context.Context, request domainGroup.SetGroupAnnounceRequest) (err error) {
 	if err = validations.ValidateSetGroupAnnounce(ctx, request); err != nil {
 		return err

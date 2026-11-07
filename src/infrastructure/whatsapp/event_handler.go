@@ -396,7 +396,8 @@ func handleAppState(ctx context.Context, evt *events.AppState, deviceID string, 
 func handleGroupInfo(ctx context.Context, evt *events.GroupInfo, deviceID string, client *whatsmeow.Client) {
 	// Only process events that have actual changes
 	hasChanges := len(evt.Join) > 0 || len(evt.Leave) > 0 || len(evt.Promote) > 0 || len(evt.Demote) > 0 ||
-		evt.Name != nil || evt.Topic != nil || evt.Locked != nil || evt.Announce != nil
+		evt.Name != nil || evt.Topic != nil || evt.Locked != nil || evt.Announce != nil ||
+		evt.Ephemeral != nil || evt.MembershipApprovalMode != nil || evt.NewInviteLink != nil
 
 	if !hasChanges {
 		return

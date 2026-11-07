@@ -40,6 +40,7 @@ func InitRestGroup(app fiber.Router, service domainGroup.IGroupUsecase) Group {
 	app.Post("/group/photo", rest.SetGroupPhoto)
 	app.Post("/group/name", rest.SetGroupName)
 	app.Post("/group/locked", rest.SetGroupLocked)
+	app.Post("/group/join-approval", rest.SetGroupJoinApproval)
 	app.Post("/group/announce", rest.SetGroupAnnounce)
 	app.Post("/group/topic", rest.SetGroupTopic)
 	app.Get("/group/invite-link", rest.GetGroupInviteLink)
@@ -380,6 +381,28 @@ func (controller *Group) SetGroupLocked(c fiber.Ctx) error {
 	message := "Success set group as unlocked"
 	if request.Locked {
 		message = "Success set group as locked"
+	}
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: message,
+	})
+}
+
+func (controller *Group) SetGroupJoinApproval(c fiber.Ctx) error {
+	var request domainGroup.SetGroupJoinApprovalRequest
+	err := c.Bind().Body(&request)
+	utils.PanicIfNeeded(err)
+
+	utils.SanitizePhone(&request.GroupID)
+
+	err = controller.Service.SetGroupJoinApproval(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	message := "Success disabled group join approval"
+	if request.Enabled {
+		message = "Success enabled group join approval"
 	}
 
 	return c.JSON(utils.ResponseData{

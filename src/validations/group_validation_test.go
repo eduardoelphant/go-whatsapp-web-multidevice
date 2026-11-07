@@ -706,3 +706,9 @@ func TestValidateGroupInfo(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSetGroupJoinApproval(t *testing.T) {
+	assert.Error(t, ValidateSetGroupJoinApproval(context.Background(), domainGroup.SetGroupJoinApprovalRequest{Enabled: true}))
+	assert.NoError(t, ValidateSetGroupJoinApproval(context.Background(), domainGroup.SetGroupJoinApprovalRequest{GroupID: "123456789@g.us", Enabled: false}))
+	assert.NoError(t, ValidateSetGroupJoinApproval(context.Background(), domainGroup.SetGroupJoinApprovalRequest{GroupID: "123456789@g.us", Enabled: true}))
+}

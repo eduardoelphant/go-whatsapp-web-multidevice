@@ -4081,6 +4081,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorInternalServer'
+  /group/join-approval:
+    post:
+      operationId: setGroupJoinApproval
+      tags:
+        - group
+      summary: Set group join approval mode
+      description: Turn on/off admin approval for new members joining the group
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                group_id:
+                  type: string
+                  example: '120363024512399999@g.us'
+                  description: The group ID
+                enabled:
+                  type: boolean
+                  example: true
+                  description: Whether admin approval is required to join (true) or not (false)
+              required:
+                - group_id
+                - enabled
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBadRequest'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorInternalServer'
   /group/announce:
     post:
       operationId: setGroupAnnounce

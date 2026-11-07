@@ -179,6 +179,19 @@ func ValidateSetGroupLocked(ctx context.Context, request domainGroup.SetGroupLoc
 	return nil
 }
 
+func ValidateSetGroupJoinApproval(ctx context.Context, request domainGroup.SetGroupJoinApprovalRequest) error {
+	err := validation.ValidateStructWithContext(ctx, &request,
+		validation.Field(&request.GroupID, validation.Required),
+		// Enabled is a boolean, no additional validation needed
+	)
+
+	if err != nil {
+		return pkgError.ValidationError(err.Error())
+	}
+
+	return nil
+}
+
 func ValidateSetGroupAnnounce(ctx context.Context, request domainGroup.SetGroupAnnounceRequest) error {
 	err := validation.ValidateStructWithContext(ctx, &request,
 		validation.Field(&request.GroupID, validation.Required),

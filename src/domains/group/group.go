@@ -90,6 +90,11 @@ type SetGroupLockedRequest struct {
 	Locked  bool   `json:"locked" form:"locked"`
 }
 
+type SetGroupJoinApprovalRequest struct {
+	GroupID string `json:"group_id" form:"group_id"`
+	Enabled bool   `json:"enabled" form:"enabled"`
+}
+
 type SetGroupAnnounceRequest struct {
 	GroupID  string `json:"group_id" form:"group_id"`
 	Announce bool   `json:"announce" form:"announce"`

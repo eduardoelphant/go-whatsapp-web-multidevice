@@ -727,6 +727,7 @@ You may also fork or modify the source code.
 | ✅       | Set Group Photo                        | POST   | /group/photo                        |
 | ✅       | Set Group Name                         | POST   | /group/name                         |
 | ✅       | Lock or Unlock Group Settings          | POST   | /group/locked                       |
+| ✅       | Group Join Approval On/Off             | POST   | /group/join-approval                |
 | ✅       | Set Group Announcement Mode            | POST   | /group/announce                     |
 | ✅       | Set Group Topic                        | POST   | /group/topic                        |
 | ✅       | Get Group Invite Link                  | GET    | /group/invite-link                  |
