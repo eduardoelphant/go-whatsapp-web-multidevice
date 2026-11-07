@@ -23,6 +23,7 @@ The following events can be received via webhook:
 | `chat_presence`      | Typing and recording indicators from contacts           |
 | `group.participants` | Group member join/leave/promote/demote events           |
 | `group.joined`       | You were added to a group                               |
+| `group.info`         | Group setting changed (name, topic, locked, announce, ephemeral, approval, invite_link_reset) |
 | `label.edit`         | WhatsApp label metadata changed                         |
 | `label.association`  | Label applied to or removed from a chat                 |
 | `newsletter.joined`  | You subscribed to a newsletter/channel                  |

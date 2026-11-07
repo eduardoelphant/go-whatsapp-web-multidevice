@@ -72,13 +72,91 @@ func forwardGroupInfoToWebhook(ctx context.Context, evt *events.GroupInfo, devic
 		if len(action.jids) > 0 {
 			payload := createGroupInfoPayload(ctx, evt, action.actionType, action.jids, deviceID, client)
 
-			if err := forwardPayloadToConfiguredWebhooks(ctx, payload, "group.participants"); err != nil {
+			if err := forwardGroupWebhook(ctx, payload, "group.participants"); err != nil {
 				logrus.Warnf("Failed to forward group %s event to webhook: %v", action.actionType, err)
 			}
 		}
 	}
 
+	for _, change := range groupInfoChanges(evt) {
+		payload := createGroupSettingPayload(ctx, evt, change, deviceID, client)
+
+		if err := forwardGroupWebhook(ctx, payload, "group.info"); err != nil {
+			logrus.Warnf("Failed to forward group.info %s event to webhook: %v", change.changeType, err)
+		}
+	}
+
 	return nil
+}
+
+// forwardGroupWebhook is a seam so tests can capture group webhooks.
+var forwardGroupWebhook = forwardPayloadToConfiguredWebhooks
+
+type groupInfoChange struct {
+	changeType string
+	value      any
+}
+
+// groupInfoChanges lists one change per setting present in the event.
+func groupInfoChanges(evt *events.GroupInfo) []groupInfoChange {
+	var changes []groupInfoChange
+	if evt.Name != nil {
+		changes = append(changes, groupInfoChange{"name", evt.Name.Name})
+	}
+	if evt.Topic != nil {
+		changes = append(changes, groupInfoChange{"topic", evt.Topic.Topic})
+	}
+	if evt.Locked != nil {
+		changes = append(changes, groupInfoChange{"locked", evt.Locked.IsLocked})
+	}
+	if evt.Announce != nil {
+		changes = append(changes, groupInfoChange{"announce", evt.Announce.IsAnnounce})
+	}
+	if evt.Ephemeral != nil {
+		seconds := 0
+		if evt.Ephemeral.IsEphemeral {
+			seconds = int(evt.Ephemeral.DisappearingTimer)
+		}
+		changes = append(changes, groupInfoChange{"ephemeral", seconds})
+	}
+	if evt.MembershipApprovalMode != nil {
+		changes = append(changes, groupInfoChange{"approval", evt.MembershipApprovalMode.IsJoinApprovalRequired})
+	}
+	if evt.NewInviteLink != nil {
+		changes = append(changes, groupInfoChange{"invite_link_reset", nil})
+	}
+	return changes
+}
+
+// createGroupSettingPayload builds the group.info webhook body for one change.
+func createGroupSettingPayload(ctx context.Context, evt *events.GroupInfo, change groupInfoChange, deviceID string, client *whatsmeow.Client) map[string]any {
+	payload := map[string]any{
+		"chat_id": evt.JID.ToNonAD().String(),
+		"type":    change.changeType,
+		"value":   change.value,
+		"sender":  nil,
+	}
+	if sender := groupInfoSender(ctx, evt, client); sender != "" {
+		payload["sender"] = sender
+	}
+
+	body := map[string]any{
+		"event":     "group.info",
+		"payload":   payload,
+		"timestamp": evt.Timestamp.Format(time.RFC3339),
+	}
+	if deviceID != "" {
+		body["device_id"] = deviceID
+	}
+	return body
+}
+
+// groupInfoSender returns the author as a phone JID, resolving LIDs like group.participants does.
+func groupInfoSender(ctx context.Context, evt *events.GroupInfo, client *whatsmeow.Client) string {
+	if evt.Sender == nil || evt.Sender.IsEmpty() {
+		return ""
+	}
+	return NormalizeJIDFromLID(ctx, *evt.Sender, client).ToNonAD().String()
 }
 
 // handleJoinedGroup handles the event when the connected device is added to a new group

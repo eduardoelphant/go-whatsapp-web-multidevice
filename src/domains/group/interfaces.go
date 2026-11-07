@@ -27,6 +27,7 @@ type IGroupSettings interface {
 	SetGroupPhoto(ctx context.Context, request SetGroupPhotoRequest) (pictureID string, err error)
 	SetGroupName(ctx context.Context, request SetGroupNameRequest) (err error)
 	SetGroupLocked(ctx context.Context, request SetGroupLockedRequest) (err error)
+	SetGroupJoinApproval(ctx context.Context, request SetGroupJoinApprovalRequest) (err error)
 	SetGroupAnnounce(ctx context.Context, request SetGroupAnnounceRequest) (err error)
 	SetGroupTopic(ctx context.Context, request SetGroupTopicRequest) (err error)
 }

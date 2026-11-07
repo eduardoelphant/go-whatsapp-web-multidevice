@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	domainGroup "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/group"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waVnameCert"
 	"go.mau.fi/whatsmeow/store"
@@ -87,5 +88,27 @@ func TestResolveParticipantDisplayNamePreservesSourceOrdering(t *testing.T) {
 				t.Fatalf("contact reads = %d, want %d", contacts.reads, tt.wantReads)
 			}
 		})
+	}
+}
+
+func TestApplyGroupJoinApprovalForwardsFlag(t *testing.T) {
+	groupJID := types.NewJID("120363000000000001", types.GroupServer)
+	for _, enabled := range []bool{true, false} {
+		var gotJID types.JID
+		var gotEnabled bool
+		err := applyGroupJoinApproval(context.Background(), func(_ context.Context, jid types.JID, on bool) error {
+			gotJID, gotEnabled = jid, on
+			return nil
+		}, groupJID, enabled)
+		if err != nil || gotJID != groupJID || gotEnabled != enabled {
+			t.Fatalf("enabled=%v: err=%v jid=%v got=%v", enabled, err, gotJID, gotEnabled)
+		}
+	}
+}
+
+func TestSetGroupJoinApprovalRejectsEmptyGroupID(t *testing.T) {
+	err := serviceGroup{}.SetGroupJoinApproval(context.Background(), domainGroup.SetGroupJoinApprovalRequest{Enabled: true})
+	if err == nil {
+		t.Fatal("expected validation error")
 	}
 }
