@@ -95,3 +95,23 @@ func TestConvertRejectsBrokenKeys(t *testing.T) {
 		}
 	}
 }
+
+// libsignal-node grava previousCounter -1 (sem giro de cadeia); a conversao
+// deve aceitar e mapear para 0 em vez de falhar o unmarshal em uint32.
+func TestNegativePreviousCounterIsAccepted(t *testing.T) {
+	state := loadState(t)
+	name := "session-5511900000002.3"
+	re := regexp.MustCompile(`previousCounter(\\?"):\s*\d+`)
+	patched := re.ReplaceAll(state.Keys[name], []byte(`previousCounter$1:-1`))
+	if string(patched) == string(state.Keys[name]) {
+		t.Fatal("fixture sem previousCounter para trocar")
+	}
+	state.Keys[name] = patched
+	plan, err := Convert(state, Options{})
+	if err != nil {
+		t.Fatalf("previousCounter -1 deveria converter: %v", err)
+	}
+	if _, ok := plan.Sessions["5511900000002:3"]; !ok {
+		t.Fatalf("sessao nao importada: skipped=%v", plan.Skipped)
+	}
+}

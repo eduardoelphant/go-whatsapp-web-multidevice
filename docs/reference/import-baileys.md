@@ -101,6 +101,8 @@ go.mau.fi/libsignal records serialized as JSON. The conversion:
 - chain counters are shifted: libsignal-node's `counter` is the last index it
   derived, go.mau.fi/libsignal's `index` is the next one (`index = counter + 1`);
   a closed chain has no chain key and only serves its stored message keys;
+- `currentRatchet.previousCounter` can be `-1` (no sending chain turned yet,
+  same sentinel as `counter`); it is read as a signed integer and mapped to `0`;
 - stored message keys are seeds in libsignal-node and are expanded with the
   same HKDF it runs at decryption time (salt of 32 zero bytes, info
   `WhisperMessageKeys`, 80 bytes: cipher key, MAC key, IV);

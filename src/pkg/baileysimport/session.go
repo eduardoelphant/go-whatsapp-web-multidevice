@@ -49,9 +49,9 @@ type nodeSessionEntry struct {
 			PubKey  Bytes `json:"pubKey"`
 			PrivKey Bytes `json:"privKey"`
 		} `json:"ephemeralKeyPair"`
-		LastRemoteEphemeralKey Bytes  `json:"lastRemoteEphemeralKey"`
-		PreviousCounter        uint32 `json:"previousCounter"`
-		RootKey                Bytes  `json:"rootKey"`
+		LastRemoteEphemeralKey Bytes     `json:"lastRemoteEphemeralKey"`
+		PreviousCounter        jsonInt64 `json:"previousCounter"`
+		RootKey                Bytes     `json:"rootKey"`
 	} `json:"currentRatchet"`
 	IndexInfo struct {
 		BaseKey           Bytes     `json:"baseKey"`
@@ -294,10 +294,18 @@ func convertSessionEntry(e *nodeSessionEntry, remoteRegID *uint32, local localId
 	if remoteRegID != nil {
 		regID = *remoteRegID
 	}
+	// libsignal-node grava previousCounter -1 quando a sessao ainda nao girou
+	// a cadeia de envio (mesmo sentinela do chainKey.counter). Em
+	// go.mau.fi/libsignal o campo e uint32 e "nenhuma" e 0, entao -1 vira 0.
+	prev := int64(e.CurrentRatchet.PreviousCounter)
+	if prev < -1 || prev > 1<<32-1 {
+		return nil, stats, fmt.Errorf("previousCounter %d out of range", prev)
+	}
+	previousCounter := uint32(max(prev, 0))
 	state := &record.StateStructure{
 		LocalIdentityPublic:  prefixedPublicKey(local.Public[:]),
 		LocalRegistrationID:  local.RegistrationID,
-		PreviousCounter:      e.CurrentRatchet.PreviousCounter,
+		PreviousCounter:      previousCounter,
 		ReceiverChains:       receivers,
 		RemoteIdentityPublic: remoteIdentity,
 		RemoteRegistrationID: regID,
