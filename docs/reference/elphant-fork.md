@@ -579,6 +579,8 @@ message (`GetMessageByIDChatAndDevice`) and the option names are checked against
 `poll_definitions` row. Success answers the usual envelope with `results.message_id` set to the vote
 message id. Errors: 400 `VALIDATION_ERROR` blank `phone`/`message_id`, 404 `NOT_FOUND` poll unknown to this device (no stored
 message, or no poll secret in whatsmeow's store), 422 `UNPROCESSABLE_ENTITY` option not in the poll or more than `max_answer`.
+
+Addressing: the vote is signed by the sender in the group's addressing. In LID-addressed groups (`AddressingMode` LID, from whatsmeow's cached group info) our own polls use `Store.GetLID()` and others' polls map the stored phone JID to a LID via `Store.LIDs.GetLIDForPN` (stored sender if unmapped); otherwise the phone JID is kept. The message row is saved asynchronously after a poll is sent, so when the row is missing but the `poll_definitions` row exists (saved synchronously) the poll is treated as ours instead of 404.
 The vote is not stored as a chat message.
 
 ## Specs and plans

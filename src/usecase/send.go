@@ -1682,7 +1682,7 @@ func (service serviceSend) SendPollVote(ctx context.Context, request domainSend.
 		return response, err
 	}
 
-	info, definition, err := service.resolvePollVoteTarget(ctx, chat, request.MessageID, client.Store.ID)
+	info, definition, err := service.resolvePollVoteTarget(ctx, chat, request.MessageID, clientPollAddressing{client: client})
 	if err != nil {
 		return response, err
 	}
@@ -1695,14 +1695,6 @@ func (service serviceSend) SendPollVote(ctx context.Context, request domainSend.
 		options = []string{}
 	}
 	msg, err := client.BuildPollVote(ctx, info, options)
-	if err != nil && info.IsFromMe && !client.Store.GetLID().IsEmpty() {
-		// A poll sent by this device may be keyed by its LID in the secret store.
-		retry := *info
-		retry.Sender = client.Store.GetLID().ToNonAD()
-		if retryMsg, retryErr := client.BuildPollVote(ctx, &retry, options); retryErr == nil {
-			msg, err, info = retryMsg, nil, &retry
-		}
-	}
 	if err != nil {
 		if errors.Is(err, whatsmeow.ErrOriginalMessageSecretNotFound) {
 			return response, pkgError.ErrPollNotFound
@@ -1725,9 +1717,38 @@ func (service serviceSend) SendPollVote(ctx context.Context, request domainSend.
 	return response, nil
 }
 
+// pollAddressing is the seam for the group addressing facts a poll vote needs.
+type pollAddressing interface {
+	OwnPN() *types.JID
+	OwnLID() types.JID
+	// IsLIDGroup reports whether the group addresses members by LID.
+	IsLIDGroup(ctx context.Context, chat types.JID) bool
+	LIDForPN(ctx context.Context, pn types.JID) (types.JID, error)
+}
+
+type clientPollAddressing struct{ client *whatsmeow.Client }
+
+func (a clientPollAddressing) OwnPN() *types.JID { return a.client.Store.ID }
+func (a clientPollAddressing) OwnLID() types.JID { return a.client.Store.GetLID() }
+
+// IsLIDGroup uses whatsmeow's cached group info.
+func (a clientPollAddressing) IsLIDGroup(ctx context.Context, chat types.JID) bool {
+	if chat.Server != types.GroupServer {
+		return false
+	}
+	info, err := a.client.GetGroupInfo(ctx, chat)
+	return err == nil && info != nil && info.AddressingMode == types.AddressingModeLID
+}
+
+func (a clientPollAddressing) LIDForPN(ctx context.Context, pn types.JID) (types.JID, error) {
+	return a.client.Store.LIDs.GetLIDForPN(ctx, pn)
+}
+
 // resolvePollVoteTarget rebuilds the poll's MessageInfo from the calling device's own
-// storage. A poll without a stored definition and message is unknown (404).
-func (service serviceSend) resolvePollVoteTarget(ctx context.Context, chat types.JID, pollID string, own *types.JID) (*types.MessageInfo, *domainChatStorage.PollDefinition, error) {
+// storage, in the group's addressing (LID groups sign and decrypt votes by LID). A poll
+// without a stored message is unknown (404), unless its definition exists: the message
+// row is saved asynchronously after sending, so that poll is ours.
+func (service serviceSend) resolvePollVoteTarget(ctx context.Context, chat types.JID, pollID string, addr pollAddressing) (*types.MessageInfo, *domainChatStorage.PollDefinition, error) {
 	deviceID := deviceIDFromContext(ctx)
 	if deviceID == "" {
 		return nil, nil, domainChatStorage.ErrMissingDeviceContext
@@ -1741,20 +1762,24 @@ func (service serviceSend) resolvePollVoteTarget(ctx context.Context, chat types
 	if err != nil {
 		return nil, nil, pkgError.InternalServerError(fmt.Sprintf("failed to look up poll: %v", err))
 	}
-	if message == nil {
-		return nil, nil, pkgError.ErrPollNotFound
-	}
 	definition, err := service.chatStorageRepo.GetPollDefinition(deviceID, chatID, pollID)
 	if err != nil {
 		return nil, nil, pkgError.InternalServerError(fmt.Sprintf("failed to look up poll definition: %v", err))
 	}
+	if message == nil && definition == nil {
+		return nil, nil, pkgError.ErrPollNotFound
+	}
 
+	isFromMe := message == nil || message.IsFromMe
 	info := &types.MessageInfo{
-		MessageSource: types.MessageSource{Chat: chat.ToNonAD(), IsFromMe: message.IsFromMe, IsGroup: chat.Server == types.GroupServer},
+		MessageSource: types.MessageSource{Chat: chat.ToNonAD(), IsFromMe: isFromMe, IsGroup: chat.Server == types.GroupServer},
 		ID:            pollID,
 	}
-	if message.IsFromMe {
-		if own != nil {
+	lidGroup := addr.IsLIDGroup(ctx, chat)
+	if isFromMe {
+		if lid := addr.OwnLID(); lidGroup && !lid.IsEmpty() {
+			info.Sender = lid.ToNonAD()
+		} else if own := addr.OwnPN(); own != nil {
 			info.Sender = own.ToNonAD()
 		}
 		return info, definition, nil
@@ -1763,7 +1788,13 @@ func (service serviceSend) resolvePollVoteTarget(ctx context.Context, chat types
 	if parseErr != nil || sender.IsEmpty() {
 		return nil, nil, pkgError.InternalServerError(fmt.Sprintf("poll %s has no usable sender", pollID))
 	}
-	info.Sender = sender.ToNonAD()
+	sender = sender.ToNonAD()
+	if lidGroup && sender.Server == types.DefaultUserServer {
+		if lid, lidErr := addr.LIDForPN(ctx, sender); lidErr == nil && !lid.IsEmpty() {
+			sender = lid.ToNonAD()
+		}
+	}
+	info.Sender = sender
 	return info, definition, nil
 }
 
