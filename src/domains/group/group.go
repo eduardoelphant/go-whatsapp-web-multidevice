@@ -32,7 +32,8 @@ type ParticipantStatus struct {
 	Participant string `json:"participant"`
 	Status      string `json:"status"`
 	Message     string `json:"message"`
-	// Code is always serialized: 0 means success. Its presence tells the CRM the gateway is the new one.
+	// Code is the WhatsApp result code for this participant: 0 on success, otherwise the error code.
+	// It is always serialized, even when 0.
 	Code        int    `json:"code"`
 	PhoneNumber string `json:"phone_number,omitempty"`
 }

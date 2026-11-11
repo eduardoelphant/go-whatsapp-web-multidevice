@@ -93,14 +93,17 @@ func (service serviceGroup) CreateGroupWithStatus(ctx context.Context, request d
 		return response, err
 	}
 
-	var own types.JID
-	if client.Store != nil && client.Store.ID != nil {
-		own = *client.Store.ID
+	var own []types.JID
+	if client.Store != nil {
+		if client.Store.ID != nil {
+			own = append(own, *client.Store.ID)
+		}
+		own = append(own, client.Store.LID)
 	}
 
 	return domainGroup.CreateGroupResponse{
 		GroupID:      groupInfo.JID.String(),
-		Participants: participantStatuses(groupInfo.Participants, own),
+		Participants: participantStatuses(groupInfo.Participants, own...),
 	}, nil
 }
 

@@ -10,13 +10,18 @@ import (
 )
 
 // participantStatuses converte o retorno do WhatsApp em status por participante.
-// O próprio número (own) fica de fora: o servidor o devolve como membro do grupo criado.
-func participantStatuses(participants []types.GroupParticipant, own types.JID) []domainGroup.ParticipantStatus {
-	ownUser := own.ToNonAD().User
+// O próprio número (own: telefone e LID) fica de fora: o servidor o devolve como membro do grupo criado.
+func participantStatuses(participants []types.GroupParticipant, own ...types.JID) []domainGroup.ParticipantStatus {
+	ownUsers := map[string]bool{}
+	for _, jid := range own {
+		if user := jid.ToNonAD().User; user != "" {
+			ownUsers[user] = true
+		}
+	}
 	result := make([]domainGroup.ParticipantStatus, 0, len(participants))
 
 	for _, participant := range participants {
-		if ownUser != "" && (participant.JID.ToNonAD().User == ownUser || participant.PhoneNumber.ToNonAD().User == ownUser) {
+		if ownUsers[participant.JID.ToNonAD().User] || ownUsers[participant.PhoneNumber.ToNonAD().User] || ownUsers[participant.LID.ToNonAD().User] {
 			continue
 		}
 

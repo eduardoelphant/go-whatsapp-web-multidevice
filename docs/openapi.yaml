@@ -4888,7 +4888,7 @@ components:
           example: SUCCESS
         message:
           type: string
-          example: Success get list groups
+          example: Success created group
         results:
           type: object
           properties:

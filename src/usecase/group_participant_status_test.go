@@ -12,6 +12,7 @@ func TestParticipantStatuses(t *testing.T) {
 	own := types.NewJID("5511900000000", types.DefaultUserServer)
 	pn := types.NewJID("5511911111111", types.DefaultUserServer)
 	lid := types.NewJID("99887766", types.HiddenUserServer)
+	ownLID := types.NewJID("55443322", types.HiddenUserServer)
 	req := &types.GroupParticipantAddRequest{}
 
 	cases := []struct {
@@ -32,10 +33,11 @@ func TestParticipantStatuses(t *testing.T) {
 		{"LID com telefone", types.GroupParticipant{JID: lid, PhoneNumber: pn}, 1, "success", "Action success", 0, pn.String()},
 		{"próprio por JID", types.GroupParticipant{JID: own}, 0, "", "", 0, ""},
 		{"próprio por telefone", types.GroupParticipant{JID: lid, PhoneNumber: own}, 0, "", "", 0, ""},
+		{"próprio só por LID", types.GroupParticipant{JID: ownLID}, 0, "", "", 0, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := participantStatuses([]types.GroupParticipant{c.in}, own)
+			got := participantStatuses([]types.GroupParticipant{c.in}, own, ownLID)
 			if len(got) != c.want {
 				t.Fatalf("len = %d, want %d", len(got), c.want)
 			}
@@ -69,5 +71,9 @@ func TestRequestParticipantStatuses(t *testing.T) {
 	}
 	if got[1].Status != "error" || got[1].Code != 409 || got[1].Message != "Action approve failed (code 409)" {
 		t.Fatalf("got %+v", got[1])
+	}
+	rej := requestParticipantStatuses([]types.GroupParticipant{{JID: pn}, {JID: pn, Error: 409}}, "reject")
+	if rej[0].Message != "Action reject success" || rej[1].Code != 409 || rej[1].Message != "Action reject failed (code 409)" {
+		t.Fatalf("got %+v", rej)
 	}
 }
