@@ -1880,6 +1880,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorInternalServer'
+  /send/poll-vote:
+    post:
+      operationId: sendPollVote
+      tags:
+        - send
+      summary: Vote on a poll (fork)
+      description: |
+        Votes on a poll the calling device knows (sent or received), in the chat given by `phone`
+        (a group JID for group polls). Empty `options` retracts the vote.
+        404 when the poll is unknown to the device, 422 when an option is not one of the poll's
+        options or more options than `max_answer` are sent.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                  example: '120363000000000000@g.us'
+                message_id:
+                  type: string
+                  description: ID of the poll creation message.
+                options:
+                  type: array
+                  items:
+                    type: string
+                  example: [ 'Zuko' ]
+              required:
+                - phone
+                - message_id
+      responses:
+        '200':
+          description: OK (results.message_id is the vote message id)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendResponse'
+        '404':
+          description: Poll unknown to this device
+        '422':
+          description: Option not in the poll
   /send/presence:
     post:
       operationId: sendPresence

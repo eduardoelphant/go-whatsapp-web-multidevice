@@ -1664,6 +1664,130 @@ func (service serviceSend) SendPoll(ctx context.Context, request domainSend.Poll
 	return response, nil
 }
 
+// SendPollVote (fork: elphant) votes on a poll known to the calling device. The poll's
+// MessageInfo is rebuilt from the device-scoped stored message; whatsmeow reads the poll
+// secret from its own store. Empty options retract the vote.
+func (service serviceSend) SendPollVote(ctx context.Context, request domainSend.PollVoteRequest) (response domainSend.GenericResponse, err error) {
+	if err = validations.ValidatePollVote(ctx, request); err != nil {
+		return response, err
+	}
+
+	client := whatsapp.ClientFromContext(ctx)
+	if client == nil {
+		return response, pkgError.ErrWaCLI
+	}
+
+	chat, err := utils.ValidateJidWithLogin(client, request.Phone)
+	if err != nil {
+		return response, err
+	}
+
+	info, definition, err := service.resolvePollVoteTarget(ctx, chat, request.MessageID, client.Store.ID)
+	if err != nil {
+		return response, err
+	}
+	if err = validatePollVoteOptions(definition, request.Options); err != nil {
+		return response, err
+	}
+
+	options := request.Options
+	if options == nil {
+		options = []string{}
+	}
+	msg, err := client.BuildPollVote(ctx, info, options)
+	if err != nil && info.IsFromMe && !client.Store.GetLID().IsEmpty() {
+		// A poll sent by this device may be keyed by its LID in the secret store.
+		retry := *info
+		retry.Sender = client.Store.GetLID().ToNonAD()
+		if retryMsg, retryErr := client.BuildPollVote(ctx, &retry, options); retryErr == nil {
+			msg, err, info = retryMsg, nil, &retry
+		}
+	}
+	if err != nil {
+		if errors.Is(err, whatsmeow.ErrOriginalMessageSecretNotFound) {
+			return response, pkgError.ErrPollNotFound
+		}
+		return response, pkgError.InternalServerError(fmt.Sprintf("failed to build poll vote: %v", err))
+	}
+
+	instance, _ := whatsapp.DeviceFromContext(ctx)
+	if err := whatsapp.CheckReachoutGuard(ctx, instance, client, chat); err != nil {
+		return response, err
+	}
+	ts, err := client.SendMessage(ctx, chat, msg, sendRequestExtra())
+	if err != nil {
+		noteReachoutFailure(ctx, err)
+		return response, normalizeSendError(err)
+	}
+
+	response.MessageID = ts.ID
+	response.Status = fmt.Sprintf("Send poll vote success %s (server timestamp: %s)", request.Phone, ts.Timestamp.String())
+	return response, nil
+}
+
+// resolvePollVoteTarget rebuilds the poll's MessageInfo from the calling device's own
+// storage. A poll without a stored definition and message is unknown (404).
+func (service serviceSend) resolvePollVoteTarget(ctx context.Context, chat types.JID, pollID string, own *types.JID) (*types.MessageInfo, *domainChatStorage.PollDefinition, error) {
+	deviceID := deviceIDFromContext(ctx)
+	if deviceID == "" {
+		return nil, nil, domainChatStorage.ErrMissingDeviceContext
+	}
+	if service.chatStorageRepo == nil {
+		return nil, nil, pkgError.ErrPollNotFound
+	}
+	chatID := chat.ToNonAD().String()
+
+	message, err := service.chatStorageRepo.GetMessageByIDChatAndDevice(deviceID, chatID, pollID)
+	if err != nil {
+		return nil, nil, pkgError.InternalServerError(fmt.Sprintf("failed to look up poll: %v", err))
+	}
+	if message == nil {
+		return nil, nil, pkgError.ErrPollNotFound
+	}
+	definition, err := service.chatStorageRepo.GetPollDefinition(deviceID, chatID, pollID)
+	if err != nil {
+		return nil, nil, pkgError.InternalServerError(fmt.Sprintf("failed to look up poll definition: %v", err))
+	}
+
+	info := &types.MessageInfo{
+		MessageSource: types.MessageSource{Chat: chat.ToNonAD(), IsFromMe: message.IsFromMe, IsGroup: chat.Server == types.GroupServer},
+		ID:            pollID,
+	}
+	if message.IsFromMe {
+		if own != nil {
+			info.Sender = own.ToNonAD()
+		}
+		return info, definition, nil
+	}
+	sender, parseErr := types.ParseJID(message.Sender)
+	if parseErr != nil || sender.IsEmpty() {
+		return nil, nil, pkgError.InternalServerError(fmt.Sprintf("poll %s has no usable sender", pollID))
+	}
+	info.Sender = sender.ToNonAD()
+	return info, definition, nil
+}
+
+// validatePollVoteOptions rejects an option the poll does not have (422). Without a
+// stored definition the options cannot be checked and are passed through.
+func validatePollVoteOptions(definition *domainChatStorage.PollDefinition, options []string) error {
+	if definition == nil || len(definition.Options) == 0 {
+		return nil
+	}
+	known := make(map[string]struct{}, len(definition.Options))
+	for _, option := range definition.Options {
+		known[option.Name] = struct{}{}
+	}
+	for _, name := range options {
+		if _, ok := known[name]; !ok {
+			return pkgError.UnprocessableError(fmt.Sprintf("options: %q is not an option of this poll.", name))
+		}
+	}
+	if definition.SelectableOptionCount > 0 && uint32(len(options)) > definition.SelectableOptionCount {
+		return pkgError.UnprocessableError(fmt.Sprintf("options: at most %d selectable.", definition.SelectableOptionCount))
+	}
+	return nil
+}
+
 func (service serviceSend) persistSentPollDefinition(ctx context.Context, recipient types.JID, pollID string, request domainSend.PollRequest, sentAt ...time.Time) error {
 	if service.chatStorageRepo == nil {
 		return fmt.Errorf("chat storage repository is not configured")

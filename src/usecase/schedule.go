@@ -829,6 +829,9 @@ func (s *scheduledSendService) SendPoll(ctx context.Context, req domainSend.Poll
 	}
 	return s.scheduler.Create(ctx, "poll", req.Phone, req.Question, req.ScheduleOptions, req, nil)
 }
+func (s *scheduledSendService) SendPollVote(ctx context.Context, req domainSend.PollVoteRequest) (domainSend.GenericResponse, error) {
+	return s.base.SendPollVote(ctx, req)
+}
 func (s *scheduledSendService) SendPresence(ctx context.Context, req domainSend.PresenceRequest) (domainSend.GenericResponse, error) {
 	return s.base.SendPresence(ctx, req)
 }

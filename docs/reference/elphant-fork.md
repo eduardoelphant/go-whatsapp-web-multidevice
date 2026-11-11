@@ -571,6 +571,16 @@ The upstream release workflow (goreleaser cross-builds with CGO) is disabled in 
 is re-enabled it needs libopus too. `CGO_ENABLED=0 -tags purego` builds still compile; there
 calls stay on MLow and the browser leg reports itself unavailable.
 
+## Poll vote: `POST /send/poll-vote`
+
+Votes on a poll the device knows. Body: `{"phone": "<chat jid>", "message_id": "<poll id>", "options": ["A"]}`;
+`options: []` retracts the vote. The poll's `MessageInfo` is rebuilt from the device's own stored
+message (`GetMessageByIDChatAndDevice`) and the option names are checked against the stored
+`poll_definitions` row. Success answers the usual envelope with `results.message_id` set to the vote
+message id. Errors: 400 `VALIDATION_ERROR` blank `phone`/`message_id`, 404 `NOT_FOUND` poll unknown to this device (no stored
+message, or no poll secret in whatsmeow's store), 422 `UNPROCESSABLE_ENTITY` option not in the poll or more than `max_answer`.
+The vote is not stored as a chat message.
+
 ## Specs and plans
 
 Knowledge pages that the fork owns live in `docs/reference/` (this page and `import-baileys.md`); files

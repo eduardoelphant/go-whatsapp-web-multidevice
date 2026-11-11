@@ -1278,3 +1278,25 @@ func TestValidateForwardMessage(t *testing.T) {
 		})
 	}
 }
+
+func TestValidatePollVote(t *testing.T) {
+	ctx := context.Background()
+	ok := domainSend.PollVoteRequest{Phone: "120363000000@g.us", MessageID: "ABC", Options: []string{"Sim"}}
+	assert.NoError(t, ValidatePollVote(ctx, ok))
+
+	retract := ok
+	retract.Options = nil
+	assert.NoError(t, ValidatePollVote(ctx, retract), "empty options retract the vote")
+
+	noID := ok
+	noID.MessageID = ""
+	assert.Equal(t, pkgError.ValidationError("message_id: cannot be blank."), ValidatePollVote(ctx, noID))
+
+	noPhone := ok
+	noPhone.Phone = ""
+	assert.Equal(t, pkgError.ValidationError("phone: cannot be blank."), ValidatePollVote(ctx, noPhone))
+
+	blank := ok
+	blank.Options = []string{""}
+	assert.Error(t, ValidatePollVote(ctx, blank))
+}

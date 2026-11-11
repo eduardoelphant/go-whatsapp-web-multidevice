@@ -77,6 +77,9 @@ func (s *stubSendService) SendPoll(_ context.Context, r domainSend.PollRequest) 
 	s.lastPoll = &r
 	return s.resp()
 }
+func (s *stubSendService) SendPollVote(_ context.Context, _ domainSend.PollVoteRequest) (domainSend.GenericResponse, error) {
+	return s.resp()
+}
 func (s *stubSendService) SendLink(_ context.Context, r domainSend.LinkRequest) (domainSend.GenericResponse, error) {
 	s.lastLink = &r
 	return s.resp()
