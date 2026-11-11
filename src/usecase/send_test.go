@@ -679,3 +679,53 @@ func TestSendRequestExtraChecksGroupPermissions(t *testing.T) {
 		t.Fatal("expected sends to ask whatsmeow to check group permissions before sending")
 	}
 }
+
+func TestGetMentionsFromListKeepsExplicitLID(t *testing.T) {
+	service := serviceSend{}
+	jids, all := service.getMentionsFromList(context.Background(), []string{"123456789012345@lid", "123456789012345:7@lid"}, types.JID{})
+	assert.Equal(t, []string{"123456789012345@lid", "123456789012345@lid"}, jids)
+	assert.False(t, all)
+}
+
+func TestGetMentionsFromListAllKeywordDoesNotExpandParticipants(t *testing.T) {
+	service := serviceSend{}
+	group := types.NewJID("120363000000000000", types.GroupServer)
+	jids, all := service.getMentionsFromList(context.Background(), []string{"@all"}, group)
+	assert.Empty(t, jids)
+	assert.True(t, all)
+}
+
+func TestGetMentionsFromListEveryoneWithoutClientStaysEmpty(t *testing.T) {
+	service := serviceSend{}
+	jids, all := service.getMentionsFromList(context.Background(), []string{"@everyone", "5511999990000"}, types.JID{})
+	assert.Empty(t, jids)
+	assert.False(t, all)
+}
+
+func TestResolveMentionsReturnsAllMarker(t *testing.T) {
+	service := serviceSend{}
+	jids, all := service.resolveMentions(context.Background(), "oi", []string{"@all", "99887766@lid"}, types.JID{})
+	assert.Equal(t, []string{"99887766@lid"}, jids)
+	assert.True(t, all)
+}
+
+func TestApplyMentionsSetsNonJIDMentionsForEveryMessageKind(t *testing.T) {
+	contexts := map[string]*waE2E.ContextInfo{
+		"text":     (&waE2E.ExtendedTextMessage{ContextInfo: &waE2E.ContextInfo{}}).ContextInfo,
+		"image":    (&waE2E.ImageMessage{ContextInfo: &waE2E.ContextInfo{}}).ContextInfo,
+		"video":    (&waE2E.VideoMessage{ContextInfo: &waE2E.ContextInfo{}}).ContextInfo,
+		"document": (&waE2E.DocumentMessage{ContextInfo: &waE2E.ContextInfo{}}).ContextInfo,
+	}
+	for name, info := range contexts {
+		t.Run(name, func(t *testing.T) {
+			applyMentions(info, nil, true)
+			assert.EqualValues(t, 1, info.GetNonJIDMentions())
+			assert.Empty(t, info.MentionedJID)
+		})
+	}
+	plain := &waE2E.ContextInfo{}
+	applyMentions(plain, []string{"1@lid"}, false)
+	assert.Equal(t, []string{"1@lid"}, plain.MentionedJID)
+	assert.Zero(t, plain.GetNonJIDMentions())
+	applyMentions(nil, nil, true)
+}

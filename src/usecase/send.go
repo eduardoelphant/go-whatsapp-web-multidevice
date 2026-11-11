@@ -421,9 +421,8 @@ func (service serviceSend) SendText(ctx context.Context, request domainSend.Mess
 		msg.ExtendedTextMessage.ContextInfo.Expiration = proto.Uint32(service.getDefaultEphemeralExpiration(ctx, request.BaseRequest.Phone))
 	}
 
-	if mentionedJIDs := service.resolveMentions(ctx, request.Message, request.Mentions, dataWaRecipient); len(mentionedJIDs) > 0 {
-		msg.ExtendedTextMessage.ContextInfo.MentionedJID = mentionedJIDs
-	}
+	mentionedJIDs, mentionAll := service.resolveMentions(ctx, request.Message, request.Mentions, dataWaRecipient)
+	applyMentions(msg.ExtendedTextMessage.ContextInfo, mentionedJIDs, mentionAll)
 
 	msg.ExtendedTextMessage.ContextInfo = service.mergeReplyContext(ctx, msg.ExtendedTextMessage.ContextInfo, request.ReplyMessageID)
 	msg.ExtendedTextMessage.ContextInfo = withAllowReshare(msg.ExtendedTextMessage.ContextInfo, request.AllowReshare)
@@ -606,11 +605,11 @@ func (service serviceSend) SendImage(ctx context.Context, request domainSend.Ima
 		}
 		msg.ImageMessage.ContextInfo.Expiration = proto.Uint32(uint32(*request.BaseRequest.Duration))
 	}
-	if mentionedJIDs := service.resolveMentions(ctx, request.Caption, request.Mentions, dataWaRecipient); len(mentionedJIDs) > 0 {
+	if mentionedJIDs, mentionAll := service.resolveMentions(ctx, request.Caption, request.Mentions, dataWaRecipient); len(mentionedJIDs) > 0 || mentionAll {
 		if msg.ImageMessage.ContextInfo == nil {
 			msg.ImageMessage.ContextInfo = &waE2E.ContextInfo{}
 		}
-		msg.ImageMessage.ContextInfo.MentionedJID = mentionedJIDs
+		applyMentions(msg.ImageMessage.ContextInfo, mentionedJIDs, mentionAll)
 	}
 	msg.ImageMessage.ContextInfo = service.mergeReplyContext(ctx, msg.ImageMessage.ContextInfo, request.ReplyMessageID)
 	msg.ImageMessage.ContextInfo = withAllowReshare(msg.ImageMessage.ContextInfo, request.AllowReshare)
@@ -699,11 +698,11 @@ func (service serviceSend) SendFile(ctx context.Context, request domainSend.File
 		}
 		msg.DocumentMessage.ContextInfo.Expiration = proto.Uint32(uint32(*request.BaseRequest.Duration))
 	}
-	if mentionedJIDs := service.resolveMentions(ctx, request.Caption, request.Mentions, dataWaRecipient); len(mentionedJIDs) > 0 {
+	if mentionedJIDs, mentionAll := service.resolveMentions(ctx, request.Caption, request.Mentions, dataWaRecipient); len(mentionedJIDs) > 0 || mentionAll {
 		if msg.DocumentMessage.ContextInfo == nil {
 			msg.DocumentMessage.ContextInfo = &waE2E.ContextInfo{}
 		}
-		msg.DocumentMessage.ContextInfo.MentionedJID = mentionedJIDs
+		applyMentions(msg.DocumentMessage.ContextInfo, mentionedJIDs, mentionAll)
 	}
 	msg.DocumentMessage.ContextInfo = service.mergeReplyContext(ctx, msg.DocumentMessage.ContextInfo, request.ReplyMessageID)
 
@@ -1184,11 +1183,11 @@ func (service serviceSend) SendVideo(ctx context.Context, request domainSend.Vid
 		}
 		msg.VideoMessage.ContextInfo.Expiration = proto.Uint32(uint32(*request.BaseRequest.Duration))
 	}
-	if mentionedJIDs := service.resolveMentions(ctx, request.Caption, request.Mentions, dataWaRecipient); len(mentionedJIDs) > 0 {
+	if mentionedJIDs, mentionAll := service.resolveMentions(ctx, request.Caption, request.Mentions, dataWaRecipient); len(mentionedJIDs) > 0 || mentionAll {
 		if msg.VideoMessage.ContextInfo == nil {
 			msg.VideoMessage.ContextInfo = &waE2E.ContextInfo{}
 		}
-		msg.VideoMessage.ContextInfo.MentionedJID = mentionedJIDs
+		applyMentions(msg.VideoMessage.ContextInfo, mentionedJIDs, mentionAll)
 	}
 	msg.VideoMessage.ContextInfo = service.mergeReplyContext(ctx, msg.VideoMessage.ContextInfo, request.ReplyMessageID)
 	msg.VideoMessage.ContextInfo = withAllowReshare(msg.VideoMessage.ContextInfo, request.AllowReshare)
@@ -1778,24 +1777,60 @@ func (service serviceSend) getMentionFromText(ctx context.Context, messages stri
 }
 
 // resolveMentions combines @phone mentions parsed from text with explicit (ghost)
-// mentions, deduplicated so the same person is not mentioned twice.
-func (service serviceSend) resolveMentions(ctx context.Context, text string, mentions []string, recipientJID types.JID) []string {
+// mentions, deduplicated so the same person is not mentioned twice. The bool is
+// true when the explicit list carries the native "@all" keyword.
+func (service serviceSend) resolveMentions(ctx context.Context, text string, mentions []string, recipientJID types.JID) ([]string, bool) {
 	result := service.getMentionFromText(ctx, text)
+	mentionAll := false
 	if len(mentions) > 0 {
-		result = utils.UniqueStrings(append(result, service.getMentionsFromList(ctx, mentions, recipientJID)...))
+		explicit, all := service.getMentionsFromList(ctx, mentions, recipientJID)
+		result = utils.UniqueStrings(append(result, explicit...))
+		mentionAll = all
 	}
-	return result
+	return result, mentionAll
 }
 
-// getMentionsFromList converts a list of phone numbers to JIDs for ghost mentions
-// Special keyword "@everyone" will fetch all group participants
-func (service serviceSend) getMentionsFromList(ctx context.Context, mentions []string, recipientJID types.JID) (result []string) {
-	client := whatsapp.ClientFromContext(ctx)
-	if client == nil {
-		return result
+// applyMentions writes the mentioned JIDs and the native "@all" marker
+// (NonJIDMentions = 1) into the context info.
+func applyMentions(info *waE2E.ContextInfo, jids []string, mentionAll bool) {
+	if info == nil {
+		return
 	}
+	if len(jids) > 0 {
+		info.MentionedJID = jids
+	}
+	if mentionAll {
+		info.NonJIDMentions = proto.Uint32(1)
+		logrus.Debugf("Outgoing mention: NonJIDMentions=%d mentioned_jids=%d", info.GetNonJIDMentions(), len(info.MentionedJID))
+	}
+}
+
+// getMentionsFromList converts a list of phone numbers to JIDs for ghost mentions.
+//   - "@everyone" expands to every group participant.
+//   - "@all" is the native mention-all: no JIDs, the bool is returned true so the
+//     caller sets ContextInfo.NonJIDMentions.
+//   - an explicit "...@lid" JID is kept as the LID (never resolved to the phone JID),
+//     so the "@<lid digits>" text token and the mentioned JID agree.
+func (service serviceSend) getMentionsFromList(ctx context.Context, mentions []string, recipientJID types.JID) (result []string, mentionAll bool) {
+	client := whatsapp.ClientFromContext(ctx)
 
 	for _, mention := range mentions {
+		if mention == "@all" {
+			mentionAll = true
+			continue
+		}
+
+		if strings.HasSuffix(strings.TrimSpace(mention), "@"+types.HiddenUserServer) {
+			if lid, err := utils.ParseJID(strings.TrimSpace(mention)); err == nil && lid.Server == types.HiddenUserServer {
+				result = append(result, lid.ToNonAD().String())
+				continue
+			}
+		}
+
+		if client == nil {
+			continue
+		}
+
 		// Handle @everyone keyword - fetch all group participants
 		if mention == "@everyone" {
 			if recipientJID.Server == types.GroupServer {
@@ -1814,7 +1849,7 @@ func (service serviceSend) getMentionsFromList(ctx context.Context, mentions []s
 			result = append(result, dataWaRecipient.String())
 		}
 	}
-	return result
+	return result, mentionAll
 }
 
 func (service serviceSend) SendSticker(ctx context.Context, request domainSend.StickerRequest) (response domainSend.GenericResponse, err error) {
