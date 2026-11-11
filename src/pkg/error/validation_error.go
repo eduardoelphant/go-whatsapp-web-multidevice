@@ -17,3 +17,19 @@ func (err ValidationError) ErrCode() string {
 func (err ValidationError) StatusCode() int {
 	return http.StatusBadRequest
 }
+
+// UnprocessableError (fork: elphant) is a well-formed request that names something the
+// target does not have, such as a poll option that does not exist. Answers 422.
+type UnprocessableError string
+
+func (err UnprocessableError) Error() string {
+	return string(err)
+}
+
+func (err UnprocessableError) ErrCode() string {
+	return "UNPROCESSABLE_ENTITY"
+}
+
+func (err UnprocessableError) StatusCode() int {
+	return http.StatusUnprocessableEntity
+}

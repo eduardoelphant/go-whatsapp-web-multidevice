@@ -567,3 +567,21 @@ func ValidateForwardMessage(ctx context.Context, request domainSend.ForwardReque
 
 	return nil
 }
+
+// ValidatePollVote checks a poll vote request. Empty options are valid: they
+// retract the vote.
+func ValidatePollVote(ctx context.Context, request domainSend.PollVoteRequest) error {
+	err := validation.ValidateStructWithContext(ctx, &request,
+		validation.Field(&request.Phone, validation.Required),
+		validation.Field(&request.MessageID, validation.Required),
+		validation.Field(&request.Options, validation.Each(validation.Required)),
+	)
+	if err != nil {
+		return pkgError.ValidationError(err.Error())
+	}
+
+	if err := validatePhoneNumber(request.Phone); err != nil {
+		return err
+	}
+	return nil
+}

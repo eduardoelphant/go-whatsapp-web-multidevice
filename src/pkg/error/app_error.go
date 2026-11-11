@@ -94,5 +94,7 @@ var (
 	ErrScheduledSendNotFound = notFoundError("scheduled send not found")
 	// Fork (elphant): avatar lookups that find no picture answer 404 instead of a 500.
 	ErrAvatarHidden = notFoundError("the user has hidden their profile picture from you")
+	// Fork (elphant): voting on a poll the device does not know answers 404.
+	ErrPollNotFound = notFoundError("poll not found for this device and chat")
 	ErrAvatarNotSet = notFoundError("that user or group does not have a profile picture")
 )
