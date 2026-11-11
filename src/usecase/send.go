@@ -1760,7 +1760,7 @@ func (service serviceSend) SendChatPresence(ctx context.Context, request domainS
 	return response, nil
 }
 
-func (service serviceSend) getMentionFromText(ctx context.Context, messages string) (result []string) {
+func (service serviceSend) getMentionFromText(ctx context.Context, messages string, skipUsers map[string]bool) (result []string) {
 	client := whatsapp.ClientFromContext(ctx)
 	if client == nil {
 		return result
@@ -1768,6 +1768,10 @@ func (service serviceSend) getMentionFromText(ctx context.Context, messages stri
 
 	mentions := utils.ContainsMention(messages)
 	for _, mention := range mentions {
+		// Token já coberto por menção explícita @lid: não vira JID de telefone nem consulta usync
+		if skipUsers[mention] {
+			continue
+		}
 		// Get JID from phone number
 		if dataWaRecipient, err := utils.ValidateJidWithLogin(client, mention); err == nil {
 			result = append(result, dataWaRecipient.String())
@@ -1776,11 +1780,26 @@ func (service serviceSend) getMentionFromText(ctx context.Context, messages stri
 	return result
 }
 
+// explicitLIDUsers devolve a parte de usuário de cada menção explícita "...@lid".
+func explicitLIDUsers(mentions []string) map[string]bool {
+	users := map[string]bool{}
+	for _, mention := range mentions {
+		mention = strings.TrimSpace(mention)
+		if !strings.HasSuffix(mention, "@"+types.HiddenUserServer) {
+			continue
+		}
+		if lid, err := utils.ParseJID(mention); err == nil && lid.Server == types.HiddenUserServer {
+			users[lid.User] = true
+		}
+	}
+	return users
+}
+
 // resolveMentions combines @phone mentions parsed from text with explicit (ghost)
 // mentions, deduplicated so the same person is not mentioned twice. The bool is
 // true when the explicit list carries the native "@all" keyword.
 func (service serviceSend) resolveMentions(ctx context.Context, text string, mentions []string, recipientJID types.JID) ([]string, bool) {
-	result := service.getMentionFromText(ctx, text)
+	result := service.getMentionFromText(ctx, text, explicitLIDUsers(mentions))
 	mentionAll := false
 	if len(mentions) > 0 {
 		explicit, all := service.getMentionsFromList(ctx, mentions, recipientJID)

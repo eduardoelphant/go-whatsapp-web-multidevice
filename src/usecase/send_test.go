@@ -709,6 +709,15 @@ func TestResolveMentionsReturnsAllMarker(t *testing.T) {
 	assert.True(t, all)
 }
 
+func TestExplicitLIDUsersSkipsTextTokenBeforeLookup(t *testing.T) {
+	skip := explicitLIDUsers([]string{"123456789012345:7@lid", "5511999990000", "@all"})
+	assert.True(t, skip["123456789012345"])
+	assert.False(t, skip["5511999990000"])
+	// sem cliente nenhum lookup acontece; só o JID LID explícito sai
+	jids, _ := serviceSend{}.resolveMentions(context.Background(), "oi @123456789012345", []string{"123456789012345@lid"}, types.JID{})
+	assert.Equal(t, []string{"123456789012345@lid"}, jids)
+}
+
 func TestApplyMentionsSetsNonJIDMentionsForEveryMessageKind(t *testing.T) {
 	contexts := map[string]*waE2E.ContextInfo{
 		"text":     (&waE2E.ExtendedTextMessage{ContextInfo: &waE2E.ContextInfo{}}).ContextInfo,
