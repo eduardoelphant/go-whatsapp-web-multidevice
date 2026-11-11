@@ -103,16 +103,14 @@ func (controller *Group) CreateGroup(c fiber.Ctx) error {
 	err := c.Bind().Body(&request)
 	utils.PanicIfNeeded(err)
 
-	groupID, err := controller.Service.CreateGroup(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	created, err := controller.Service.CreateGroupWithStatus(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
 		Code:    "SUCCESS",
-		Message: fmt.Sprintf("Success created group with id %s", groupID),
-		Results: map[string]string{
-			"group_id": groupID,
-		},
+		Message: fmt.Sprintf("Success created group with id %s", created.GroupID),
+		Results: created,
 	})
 }
 

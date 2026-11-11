@@ -593,3 +593,12 @@ the planning tools. Names follow `YYYY-MM-DD-<topic>-design.md` for specs and
 `YYYY-MM-DD-<topic>.md` for plans, and a plan names its spec in the header. Public repo: no
 host addresses, tokens, personal numbers or QR content in these files. Open work that is not
 in a spec is listed in [elphant-debt.md](../elphant-debt.md).
+
+## Group participant status: `code` and `phone_number`
+
+`POST /group/participants` (action `add`) and `POST /group` now return one status per participant with
+`code` (always serialized, 0 is success; its presence is how the CRM recognizes the new gateway) and
+`phone_number` (when known). 403 with an add request keeps `Failed to add participant`; any other
+error is `Failed to add participant (code N)`. `POST /group` answers `results: {"group_id", "participants"}`.
+Approve and refuse of join requests also carry `code` (409 means already resolved). Remove, promote and
+demote keep reporting success for all, with `code` 0.

@@ -32,6 +32,14 @@ type ParticipantStatus struct {
 	Participant string `json:"participant"`
 	Status      string `json:"status"`
 	Message     string `json:"message"`
+	// Code is always serialized: 0 means success. Its presence tells the CRM the gateway is the new one.
+	Code        int    `json:"code"`
+	PhoneNumber string `json:"phone_number,omitempty"`
+}
+
+type CreateGroupResponse struct {
+	GroupID      string              `json:"group_id"`
+	Participants []ParticipantStatus `json:"participants"`
 }
 
 type GetGroupParticipantsRequest struct {

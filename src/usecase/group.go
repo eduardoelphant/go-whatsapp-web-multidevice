@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
@@ -59,19 +58,27 @@ func (service serviceGroup) LeaveGroup(ctx context.Context, request domainGroup.
 }
 
 func (service serviceGroup) CreateGroup(ctx context.Context, request domainGroup.CreateGroupRequest) (groupID string, err error) {
+	response, err := service.CreateGroupWithStatus(ctx, request)
+	if err != nil {
+		return "", err
+	}
+	return response.GroupID, nil
+}
+
+func (service serviceGroup) CreateGroupWithStatus(ctx context.Context, request domainGroup.CreateGroupRequest) (response domainGroup.CreateGroupResponse, err error) {
 	if err = validations.ValidateCreateGroup(ctx, request); err != nil {
-		return groupID, err
+		return response, err
 	}
 
 	client := whatsapp.ClientFromContext(ctx)
 	if client == nil {
-		return groupID, pkgError.ErrWaCLI
+		return response, pkgError.ErrWaCLI
 	}
 	utils.MustLogin(client)
 
 	participantsJID, err := service.participantToJID(ctx, request.Participants)
 	if err != nil {
-		return
+		return response, err
 	}
 
 	groupConfig := whatsmeow.ReqCreateGroup{
@@ -83,10 +90,18 @@ func (service serviceGroup) CreateGroup(ctx context.Context, request domainGroup
 
 	groupInfo, err := client.CreateGroup(ctx, groupConfig)
 	if err != nil {
-		return
+		return response, err
 	}
 
-	return groupInfo.JID.String(), nil
+	var own types.JID
+	if client.Store != nil && client.Store.ID != nil {
+		own = *client.Store.ID
+	}
+
+	return domainGroup.CreateGroupResponse{
+		GroupID:      groupInfo.JID.String(),
+		Participants: participantStatuses(groupInfo.Participants, own),
+	}, nil
 }
 
 func (service serviceGroup) GetGroupInfoFromLink(ctx context.Context, request domainGroup.GetGroupInfoFromLinkRequest) (response domainGroup.GetGroupInfoFromLinkResponse, err error) {
@@ -146,20 +161,16 @@ func (service serviceGroup) ManageParticipant(ctx context.Context, request domai
 		return result, err
 	}
 
+	if request.Action == whatsmeow.ParticipantChangeAdd {
+		return participantStatuses(participants, types.EmptyJID), nil
+	}
+
 	for _, participant := range participants {
-		if participant.Error == 403 && participant.AddRequest != nil {
-			result = append(result, domainGroup.ParticipantStatus{
-				Participant: participant.JID.String(),
-				Status:      "error",
-				Message:     "Failed to add participant",
-			})
-		} else {
-			result = append(result, domainGroup.ParticipantStatus{
-				Participant: participant.JID.String(),
-				Status:      "success",
-				Message:     "Action success",
-			})
-		}
+		result = append(result, domainGroup.ParticipantStatus{
+			Participant: participant.JID.String(),
+			Status:      "success",
+			Message:     "Action success",
+		})
 	}
 
 	return result, nil
@@ -274,21 +285,7 @@ func (service serviceGroup) ManageGroupRequestParticipants(ctx context.Context, 
 		return result, err
 	}
 
-	for _, participant := range participants {
-		if participant.Error != 0 {
-			result = append(result, domainGroup.ParticipantStatus{
-				Participant: participant.JID.String(),
-				Status:      "error",
-				Message:     fmt.Sprintf("Action %s failed (code %d)", request.Action, participant.Error),
-			})
-		} else {
-			result = append(result, domainGroup.ParticipantStatus{
-				Participant: participant.JID.String(),
-				Status:      "success",
-				Message:     fmt.Sprintf("Action %s success", request.Action),
-			})
-		}
-	}
+	result = requestParticipantStatuses(participants, request.Action)
 
 	return result, nil
 }
