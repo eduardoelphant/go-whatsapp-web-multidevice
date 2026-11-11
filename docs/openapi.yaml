@@ -4962,6 +4962,10 @@ components:
               type: string
               example: 'This group is for discussing project updates'
               description: Additional description of the group
+            is_parent:
+              type: boolean
+              example: false
+              description: Whether the group is a community (parent group); always present
     ManageParticipantRequest:
       type: object
       properties:

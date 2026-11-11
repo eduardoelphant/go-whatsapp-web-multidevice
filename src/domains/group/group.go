@@ -128,6 +128,7 @@ type GetGroupInfoFromLinkResponse struct {
 	IsAnnounce       bool      `json:"is_announce"`
 	IsEphemeral      bool      `json:"is_ephemeral"`
 	Description      string    `json:"description"`
+	IsParent         bool      `json:"is_parent"`
 }
 
 type GroupInfoRequest struct {

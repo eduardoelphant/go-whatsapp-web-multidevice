@@ -2,7 +2,10 @@ package whatsapp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -123,9 +126,25 @@ func groupInfoChanges(evt *events.GroupInfo) []groupInfoChange {
 		changes = append(changes, groupInfoChange{"approval", evt.MembershipApprovalMode.IsJoinApprovalRequired})
 	}
 	if evt.NewInviteLink != nil {
-		changes = append(changes, groupInfoChange{"invite_link_reset", nil})
+		changes = append(changes, groupInfoChange{"invite_link_reset", inviteLinkValue(*evt.NewInviteLink)})
 	}
 	return changes
+}
+
+// inviteLinkValue is the hash of the new invite code, or nil when the link is empty.
+func inviteLinkValue(link string) any {
+	if link == "" {
+		return nil
+	}
+	return inviteCodeSHA256(link)
+}
+
+// inviteCodeSHA256 strips the invite prefix and returns the lowercase hex SHA-256 of the code.
+// The raw code is never forwarded: it is the credential to join the group.
+func inviteCodeSHA256(link string) string {
+	code := strings.TrimPrefix(link, whatsmeow.InviteLinkPrefix)
+	sum := sha256.Sum256([]byte(code))
+	return hex.EncodeToString(sum[:])
 }
 
 // createGroupSettingPayload builds the group.info webhook body for one change.

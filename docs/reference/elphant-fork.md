@@ -233,7 +233,7 @@ participant changes. The fork adds both, for the CRM group administration screen
 - `group.info` webhook: one delivery per setting changed in a whatsmeow `GroupInfo` event, with
   `payload.chat_id`, `payload.type` (`name`, `topic`, `locked`, `announce`, `ephemeral`,
   `approval`, `invite_link_reset`), `payload.value` (the new value; `ephemeral` in seconds, 0 when
-  off; null for `invite_link_reset`) and `payload.sender` (who changed it, null when unknown).
+  off; for `invite_link_reset`, the lowercase hex SHA-256 of the new invite code, null when empty) and `payload.sender` (who changed it, null when unknown).
   `group.participants` is unchanged; an event that only changes ephemeral, approval or the invite
   link no longer gets dropped before the forwarders run.
 - Like every event, `group.info` goes only where the device or global event list allows it. A
@@ -602,3 +602,10 @@ in a spec is listed in [elphant-debt.md](../elphant-debt.md).
 error is `Failed to add participant (code N)`. `POST /group` answers `results: {"group_id", "participants"}`.
 Approve and refuse of join requests also carry `code` (409 means already resolved). Remove, promote and
 demote keep reporting success for all, with `code` 0.
+
+`GET /group/info-from-link` also returns `is_parent` (true when the group is a community), always present.
+
+The `group.info` `value` of `invite_link_reset` is the SHA-256 of the new invite code (prefix
+`https://chat.whatsapp.com/` removed), never the code: the code is the credential to join, so it does not
+travel in a webhook. The consumer hashes the code it holds and compares, to tell a reset it did from one
+done elsewhere. The `value` of the other `group.info` types is unchanged.

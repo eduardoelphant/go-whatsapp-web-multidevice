@@ -123,17 +123,7 @@ func (service serviceGroup) GetGroupInfoFromLink(ctx context.Context, request do
 		return response, err
 	}
 
-	response = domainGroup.GetGroupInfoFromLinkResponse{
-		GroupID:          groupInfo.JID.String(),
-		Name:             groupInfo.Name,
-		Topic:            groupInfo.Topic,
-		CreatedAt:        groupInfo.GroupCreated,
-		ParticipantCount: len(groupInfo.Participants),
-		IsLocked:         groupInfo.IsLocked,
-		IsAnnounce:       groupInfo.IsAnnounce,
-		IsEphemeral:      groupInfo.IsEphemeral,
-		Description:      groupInfo.Topic, // Topic serves as description
-	}
+	response = groupInfoFromLinkResponse(groupInfo)
 
 	return response, nil
 }
@@ -631,4 +621,20 @@ func verifiedNameFromUserInfo(info types.UserInfo) string {
 		return info.VerifiedName.Details.GetVerifiedName()
 	}
 	return ""
+}
+
+// groupInfoFromLinkResponse converts the whatsmeow preview into the API response.
+func groupInfoFromLinkResponse(groupInfo *types.GroupInfo) domainGroup.GetGroupInfoFromLinkResponse {
+	return domainGroup.GetGroupInfoFromLinkResponse{
+		GroupID:          groupInfo.JID.String(),
+		Name:             groupInfo.Name,
+		Topic:            groupInfo.Topic,
+		CreatedAt:        groupInfo.GroupCreated,
+		ParticipantCount: len(groupInfo.Participants),
+		IsLocked:         groupInfo.IsLocked,
+		IsAnnounce:       groupInfo.IsAnnounce,
+		IsEphemeral:      groupInfo.IsEphemeral,
+		Description:      groupInfo.Topic, // Topic serves as description
+		IsParent:         groupInfo.GroupParent.IsParent,
+	}
 }
