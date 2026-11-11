@@ -179,6 +179,7 @@ func TestValidateSendMediaMentions(t *testing.T) {
 	}{
 		{name: "no mentions", mentions: nil, err: nil},
 		{name: "valid mentions and @everyone", mentions: []string{"628123456789", "@everyone"}, err: nil},
+		{name: "native @all and lid", mentions: []string{"@all", "123456789012345@lid"}, err: nil},
 		{name: "local-format mention", mentions: []string{"628123456789", "08123456789"}, err: invalidErr},
 	}
 

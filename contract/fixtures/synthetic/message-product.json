@@ -39,6 +39,9 @@
       "price_1000": 59900,
       "sale_price_1000": 49900
     },
-    "order": null
+    "order": null,
+    "mentions": [],
+    "mentions_all": false,
+    "non_jid_mentions": 0
   }
 }

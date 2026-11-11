@@ -99,10 +99,10 @@ func ValidateSendMessage(ctx context.Context, request domainSend.MessageRequest)
 	return validateMentions(request.Mentions)
 }
 
-// validateMentions checks explicit (ghost) mentions; "@everyone" is a keyword, not a phone.
+// validateMentions checks explicit (ghost) mentions; "@everyone" and "@all" are keywords, not phones.
 func validateMentions(mentions []string) error {
 	for _, mention := range mentions {
-		if mention == "@everyone" {
+		if mention == "@everyone" || mention == "@all" {
 			continue
 		}
 		if err := validatePhoneNumber(mention); err != nil {

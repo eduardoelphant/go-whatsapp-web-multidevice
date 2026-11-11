@@ -270,6 +270,25 @@ resolution order.
 }
 ```
 
+### Mentions (`payload.stable`)
+
+`payload.stable` of a `message` event carries the mentions of the message (text or media caption):
+
+```json
+"mentions": ["100000000000001@lid", "5511900000001@s.whatsapp.net"],
+"mentions_all": false,
+"non_jid_mentions": 0
+```
+
+- `mentions`: JIDs from `ContextInfo.MentionedJID`, as sent (not resolved between LID and phone).
+  Always an array, empty when nobody is mentioned.
+- `mentions_all`: `true` when `ContextInfo.NonJIDMentions > 0` (native @all).
+- `non_jid_mentions`: the raw `NonJIDMentions` value, `0` when absent (for diagnosis).
+
+To send them, use `mentions` on the send endpoints: `...@lid` entries are kept as LIDs, `@everyone`
+expands to every participant and `@all` sets `NonJIDMentions = 1` without expanding. The wire format
+of a phone's native "@all" was inferred from the proto field and still needs a real capture.
+
 ### Reaction Message
 
 ```json

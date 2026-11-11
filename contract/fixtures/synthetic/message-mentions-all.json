@@ -1,0 +1,38 @@
+{
+  "event": "message",
+  "stable": {
+    "schema": 1,
+    "id": "3EB0000000000000000001",
+    "timestamp": "2026-09-25T12:00:00Z",
+    "is_from_me": false,
+    "chat": {
+      "pn": "120363000000000001@g.us",
+      "lid": null,
+      "is_group": true
+    },
+    "sender": {
+      "pn": "5511900000001@s.whatsapp.net",
+      "lid": "100000000000001@lid",
+      "push_name": "Contact One"
+    },
+    "type": "text",
+    "text": "@all aviso",
+    "media": null,
+    "location": null,
+    "contact": null,
+    "quoted": null,
+    "forwarded": false,
+    "view_once": false,
+    "interactive": null,
+    "reply": null,
+    "referral": null,
+    "poll": null,
+    "poll_vote": null,
+    "call": null,
+    "product": null,
+    "order": null,
+    "mentions": [],
+    "mentions_all": true,
+    "non_jid_mentions": 1
+  }
+}

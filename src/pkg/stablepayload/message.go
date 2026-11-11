@@ -38,7 +38,7 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 
 	content, nestedViewOnce := unwrap(msg)
 	typ, text, media, loc, contact := classify(content, evt.Info.ID)
-	m := Message{Base: b, Type: typ, Text: text, Media: media, Location: loc, Contact: contact, ViewOnce: evt.IsViewOnce || nestedViewOnce}
+	m := Message{Base: b, Type: typ, Text: text, Media: media, Location: loc, Contact: contact, ViewOnce: evt.IsViewOnce || nestedViewOnce, Mentions: []string{}}
 	switch typ {
 	case TypeInteractive:
 		m.Interactive, _ = interactiveOf(content)
@@ -59,6 +59,11 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 		m.Forwarded = ci.GetIsForwarded()
 		m.Quoted = quoted(ctx, ci, r)
 		m.Referral = referralOf(ci)
+		if jids := ci.GetMentionedJID(); len(jids) > 0 {
+			m.Mentions = append([]string{}, jids...)
+		}
+		m.NonJIDMentions = ci.GetNonJIDMentions()
+		m.MentionsAll = m.NonJIDMentions > 0
 	}
 	return EventMessage, m
 }

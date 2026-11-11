@@ -129,6 +129,13 @@ type Message struct {
 	Call        *Call        `json:"call"`
 	Product     *Product     `json:"product"`
 	Order       *Order       `json:"order"`
+
+	// Mentions are the JIDs in ContextInfo.MentionedJID (never null, empty when
+	// nobody is mentioned); MentionsAll is true when NonJIDMentions > 0 (the
+	// native @all) and NonJIDMentions carries the raw value for diagnosis.
+	Mentions       []string `json:"mentions"`
+	MentionsAll    bool     `json:"mentions_all"`
+	NonJIDMentions uint32   `json:"non_jid_mentions"`
 }
 
 // Poll lists the options of a poll creation (type "poll").
