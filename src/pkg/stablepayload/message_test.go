@@ -235,3 +235,39 @@ func TestContextInfoOfMoreTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestMentionsFromContextInfo(t *testing.T) {
+	text := func(ci *waE2E.ContextInfo) *waE2E.Message {
+		return &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("x"), ContextInfo: ci}}
+	}
+	image := &waE2E.Message{ImageMessage: &waE2E.ImageMessage{ContextInfo: &waE2E.ContextInfo{MentionedJID: []string{"1@lid"}}}}
+	tests := []struct {
+		name   string
+		raw    *waE2E.Message
+		jids   []string
+		all    bool
+		nonJID uint32
+	}{
+		{"no context info", &waE2E.Message{Conversation: proto.String("x")}, nil, false, 0},
+		{"text mentions", text(&waE2E.ContextInfo{MentionedJID: []string{"1@lid", "2@s.whatsapp.net"}}), []string{"1@lid", "2@s.whatsapp.net"}, false, 0},
+		{"media caption mentions", image, []string{"1@lid"}, false, 0},
+		{"native all", text(&waE2E.ContextInfo{NonJIDMentions: proto.Uint32(1)}), nil, true, 1},
+		{"raw value kept", text(&waE2E.ContextInfo{NonJIDMentions: proto.Uint32(7)}), nil, true, 7},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := buildMessage(t, newMessageEvent(tt.raw))
+			if m.Mentions == nil || len(m.Mentions) != len(tt.jids) {
+				t.Fatalf("mentions = %#v, want %v (non-nil)", m.Mentions, tt.jids)
+			}
+			for i := range tt.jids {
+				if m.Mentions[i] != tt.jids[i] {
+					t.Fatalf("mentions = %v, want %v", m.Mentions, tt.jids)
+				}
+			}
+			if m.MentionsAll != tt.all || m.NonJIDMentions != tt.nonJID {
+				t.Fatalf("all=%v non_jid=%d, want %v %d", m.MentionsAll, m.NonJIDMentions, tt.all, tt.nonJID)
+			}
+		})
+	}
+}

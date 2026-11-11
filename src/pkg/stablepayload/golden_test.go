@@ -71,6 +71,9 @@ func goldenCases() map[string]func() (string, any) {
 			return Build(ctx, newMessageEvent(&waE2E.Message{Conversation: proto.String("who?")}, func(e *events.Message) { e.Info.Chat = lidContact; e.Info.Sender = lidContact }), nil, fakeResolver{})
 		},
 		"message-reply":             msg(&waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("answer"), ContextInfo: &waE2E.ContextInfo{StanzaID: proto.String("3EB0000000000000000000"), Participant: proto.String(lidContact.String()), QuotedMessage: &waE2E.Message{Conversation: proto.String("question")}}}}),
+		"message-mentions":          msg(&waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("@100000000000001 oi"), ContextInfo: &waE2E.ContextInfo{MentionedJID: []string{lidContact.String(), pnContact.String()}}}}, group),
+		"message-mentions-image":    msg(&waE2E.Message{ImageMessage: &waE2E.ImageMessage{Caption: proto.String("@100000000000001"), Mimetype: proto.String("image/jpeg"), ContextInfo: &waE2E.ContextInfo{MentionedJID: []string{lidContact.String()}}}}, group),
+		"message-mentions-all":      msg(&waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("@all aviso"), ContextInfo: &waE2E.ContextInfo{NonJIDMentions: proto.Uint32(1)}}}, group),
 		"message-forwarded":         msg(&waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("fwd"), ContextInfo: &waE2E.ContextInfo{IsForwarded: proto.Bool(true)}}}),
 		"message-edited":            msg(&waE2E.Message{EditedMessage: &waE2E.FutureProofMessage{Message: &waE2E.Message{ProtocolMessage: &waE2E.ProtocolMessage{Type: waE2E.ProtocolMessage_MESSAGE_EDIT.Enum(), Key: key, EditedMessage: &waE2E.Message{Conversation: proto.String("fixed")}}}}}),
 		"message-reaction":          msg(&waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: key, Text: proto.String("👍")}}),

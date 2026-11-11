@@ -37,6 +37,9 @@
       "status": "inquiry",
       "currency": "BRL",
       "total_1000": 149700
-    }
+    },
+    "mentions": [],
+    "mentions_all": false,
+    "non_jid_mentions": 0
   }
 }

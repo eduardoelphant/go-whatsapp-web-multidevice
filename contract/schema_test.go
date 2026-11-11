@@ -76,6 +76,9 @@ func TestSchemaRejectsContractViolations(t *testing.T) {
 		"schema 2":            mutate(func(_, s map[string]any) { s["schema"] = json.Number("2") }),
 		"missing interactive": mutate(func(_, s map[string]any) { delete(s, "interactive") }),
 		"missing order":       mutate(func(_, s map[string]any) { delete(s, "order") }),
+		"missing mentions":    mutate(func(_, s map[string]any) { delete(s, "mentions") }),
+		"null mentions":       mutate(func(_, s map[string]any) { s["mentions"] = nil }),
+		"mentions_all as int": mutate(func(_, s map[string]any) { s["mentions_all"] = json.Number("1") }),
 		"bad vote resolution": mutate(func(_, s map[string]any) {
 			s["poll_vote"] = map[string]any{"poll_id": "P", "selected": []any{}, "resolution": "maybe"}
 		}),

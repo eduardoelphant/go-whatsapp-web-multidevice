@@ -121,12 +121,12 @@ The contract is `contract/stable.schema.json`; examples are in `contract/fixture
   "type": "image", "text": "caption", "media": { "kind": "image", "mime": "image/jpeg", "size": 2048,
   "sha256": "…", "filename": null, "duration": null, "ptt": false, "width": 640, "height": 480,
   "url": "/message/3EB0…/media" }, "location": null, "contact": null, "quoted": null,
-  "forwarded": false, "view_once": false
+  "forwarded": false, "view_once": false, "mentions": [], "mentions_all": false, "non_jid_mentions": 0
 }
 ```
 
 Per event: `message` adds `type`, `text`, `media`, `location`, `contact`, `quoted`, `forwarded`,
-`view_once`, `interactive`, `reply`, `referral`, `poll`, `poll_vote`, `call`, `product` and `order`; `message.edited` adds `target_id`, `text`; `message.reaction` adds `target_id`,
+`view_once`, `interactive`, `reply`, `referral`, `poll`, `poll_vote`, `call`, `product`, `order`, `mentions`, `mentions_all` and `non_jid_mentions`; `message.edited` adds `target_id`, `text`; `message.reaction` adds `target_id`,
 `emoji` (`null` = removed); `message.revoked` adds `target_id`; `message.ack` adds `status`
 (`delivered`, `read`, `played`) and `ids`.
 
@@ -155,6 +155,25 @@ Polls, calls and catalog:
 - `type: "order"`: a catalog order; `text` is the buyer's note; `order` has `id`, `title`,
   `item_count`, `status` (`inquiry`, `accepted`, `declined`), `currency` and `total_1000`.
 - Amounts are in thousandths of the currency unit, as WhatsApp sends them (R$ 12,99 = `12990`).
+
+Mentions: `mentions` is an array of JID strings from `ContextInfo.MentionedJID` (text and media
+captions; the same `ContextInfo` the quote reads). It is never `null`: an empty array means nobody
+was mentioned, and each entry keeps the server it came with (`@lid` in LID-addressed groups,
+`@s.whatsapp.net` otherwise, not resolved). `mentions_all` is `true` when
+`ContextInfo.NonJIDMentions > 0`, and `non_jid_mentions` is that raw unsigned value (0 when absent),
+kept for diagnosis. Additive fields; `schema` stays `1`.
+
+Sending mentions (`mentions` field of the send endpoints):
+
+- An entry ending in `@lid` is sent as that LID JID and is never resolved to the phone JID, so the
+  text token `@<lid digits>` and the mentioned JID agree (what native clients do in LID-addressed
+  groups). Phone numbers and `@s.whatsapp.net` JIDs behave as before.
+- `@everyone` is unchanged: it expands to every group participant.
+- `@all` is the native mention-all: no participants are expanded and the outgoing
+  `ContextInfo.NonJIDMentions` is set to `1` (text, image, video and document). The send logs the
+  value at debug level (`Outgoing mention: NonJIDMentions=1 ...`). Open point: the wire format of
+  the native "@all" sent by phones was inferred from the whatsmeow proto field (`nonJIDMentions`,
+  `ContextInfo` field 70) and must be confirmed with a real capture before relying on it.
 
 Ads and entry points: `referral` is set when the message came from a Click-to-WhatsApp ad
 (Facebook/Instagram) or from a link carrying source/medium. It has `source_type`, `source_app`,

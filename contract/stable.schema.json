@@ -374,7 +374,10 @@
         "poll_vote",
         "call",
         "product",
-        "order"
+        "order",
+        "mentions",
+        "mentions_all",
+        "non_jid_mentions"
       ],
       "properties": {
         "type": {
@@ -422,6 +425,19 @@
               "$ref": "#/$defs/quoted"
             }
           ]
+        },
+        "mentions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mentions_all": {
+          "type": "boolean"
+        },
+        "non_jid_mentions": {
+          "type": "integer",
+          "minimum": 0
         },
         "forwarded": {
           "type": "boolean"

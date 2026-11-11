@@ -1253,7 +1253,7 @@ paths:
                   example: ["628123456789", "@everyone"]
                   description: |
                     List of phone numbers to mention (ghost mentions - no @ required in message text).
-                    Use special keyword "@everyone" to mention all group participants.
+                    Use special keyword "@everyone" to mention all group participants, or "@all" for the native mention-all (sets NonJIDMentions=1, no expansion). An entry ending in "@lid" is kept as that LID JID.
                 allow_reshare:
                   type: boolean
                   example: false
@@ -1308,7 +1308,7 @@ paths:
                   example: ["628123456789", "@everyone"]
                   description: |
                     List of phone numbers to mention (ghost mentions - no @ required in caption).
-                    `@phone` in the caption is also mentioned. Use special keyword "@everyone" to mention all group participants.
+                    `@phone` in the caption is also mentioned. Use special keyword "@everyone" to mention all group participants, or "@all" for the native mention-all (sets NonJIDMentions=1, no expansion). An entry ending in "@lid" is kept as that LID JID.
                     Send one `mentions` form field per entry.
                 reply_message_id:
                   type: string
@@ -1459,7 +1459,7 @@ paths:
                   example: ["628123456789", "@everyone"]
                   description: |
                     List of phone numbers to mention (ghost mentions - no @ required in caption).
-                    `@phone` in the caption is also mentioned. Use special keyword "@everyone" to mention all group participants.
+                    `@phone` in the caption is also mentioned. Use special keyword "@everyone" to mention all group participants, or "@all" for the native mention-all (sets NonJIDMentions=1, no expansion). An entry ending in "@lid" is kept as that LID JID.
                     Send one `mentions` form field per entry.
                 reply_message_id:
                   type: string
@@ -1591,7 +1591,7 @@ paths:
                   example: ["628123456789", "@everyone"]
                   description: |
                     List of phone numbers to mention (ghost mentions - no @ required in caption).
-                    `@phone` in the caption is also mentioned. Use special keyword "@everyone" to mention all group participants.
+                    `@phone` in the caption is also mentioned. Use special keyword "@everyone" to mention all group participants, or "@all" for the native mention-all (sets NonJIDMentions=1, no expansion). An entry ending in "@lid" is kept as that LID JID.
                     Send one `mentions` form field per entry.
                 reply_message_id:
                   type: string

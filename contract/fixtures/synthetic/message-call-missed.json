@@ -35,6 +35,9 @@
       "call_type": "regular"
     },
     "product": null,
-    "order": null
+    "order": null,
+    "mentions": [],
+    "mentions_all": false,
+    "non_jid_mentions": 0
   }
 }
