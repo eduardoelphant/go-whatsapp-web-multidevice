@@ -108,6 +108,9 @@ func (service serviceNewsletter) Create(ctx context.Context, request domainNewsl
 
 // isNewsletterNotFound reads the GraphQL error code 404 WhatsApp answers for an unknown channel.
 func isNewsletterNotFound(err error) bool {
+	if errors.Is(err, whatsmeow.ErrIQNotFound) {
+		return true
+	}
 	var gqlErrors types.GraphQLErrors
 	if errors.As(err, &gqlErrors) {
 		for _, gqlErr := range gqlErrors {

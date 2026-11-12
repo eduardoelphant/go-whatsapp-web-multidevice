@@ -173,8 +173,9 @@ func TestNewsletterInfoSemViewerNemFoto(t *testing.T) {
 func TestNewsletterInfoCanalInexistenteVira404(t *testing.T) {
 	notFound := fmt.Errorf("graphql error: %w", types.GraphQLErrors{{Extensions: types.GraphQLErrorExtensions{ErrorCode: 404}}})
 	cases := map[string]*fakeNewsletterAPI{
-		"graphql 404":      {infoErr: notFound},
-		"metadado ausente": {},
+		"iq item-not-found": {infoErr: fmt.Errorf("iq: %w", whatsmeow.ErrIQNotFound)},
+		"graphql 404":       {infoErr: notFound},
+		"metadado ausente":  {},
 	}
 	for name, api := range cases {
 		t.Run(name, func(t *testing.T) {

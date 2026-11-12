@@ -167,3 +167,10 @@ func TestNewsletterCreateRouteWithoutPicture(t *testing.T) {
 	require.Equal(t, 200, resp.StatusCode)
 	assert.Empty(t, service.created.Picture)
 }
+
+func TestNewsletterInfoRouteRejectsIDWithoutSuffix(t *testing.T) {
+	app := newNewsletterDataApp(&newsletterDataStub{err: pkgError.ValidationError("newsletter_id: must end with @newsletter")})
+	resp, err := app.Test(httptest.NewRequest("GET", "/newsletter/info?newsletter_id=123", nil))
+	require.NoError(t, err)
+	assert.Equal(t, 400, resp.StatusCode)
+}
