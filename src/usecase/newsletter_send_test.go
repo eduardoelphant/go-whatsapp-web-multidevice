@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -475,4 +476,45 @@ func TestNewsletterSendDocumentoRecusadoComTypeUnsupportedSemChamarOCliente(t *t
 	assert.Equal(t, 422, generic.StatusCode())
 	assert.Equal(t, "TYPE_UNSUPPORTED", generic.ErrCode())
 	assert.Empty(t, api.calls)
+}
+
+func TestConvertNewsletterAudioToOpus(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg ausente")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe ausente")
+	}
+	previous := config.PathSendItems
+	config.PathSendItems = t.TempDir()
+	t.Cleanup(func() { config.PathSendItems = previous })
+
+	t.Run("mp3 vira ogg opus", func(t *testing.T) {
+		mp3Path := filepath.Join(t.TempDir(), "tone.mp3")
+		out, err := exec.Command("ffmpeg", "-y", "-f", "lavfi", "-i", "sine=duration=2", mp3Path).CombinedOutput()
+		require.NoError(t, err, string(out))
+		mp3, err := os.ReadFile(mp3Path)
+		require.NoError(t, err)
+
+		got, err := convertNewsletterAudioToOpus(context.Background(), mp3, "tone.mp3")
+		require.NoError(t, err)
+		assert.True(t, bytes.HasPrefix(got, []byte("OggS")))
+
+		oggPath := filepath.Join(t.TempDir(), "out.ogg")
+		require.NoError(t, os.WriteFile(oggPath, got, 0o644))
+		probe, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", oggPath).CombinedOutput()
+		require.NoError(t, err, string(probe))
+		assert.Equal(t, "opus", strings.TrimSpace(string(probe)))
+
+		left, _ := os.ReadDir(config.PathSendItems)
+		assert.Empty(t, left)
+	})
+
+	t.Run("bytes invalidos devolvem MEDIA_BUILD_FAILED", func(t *testing.T) {
+		_, err := convertNewsletterAudioToOpus(context.Background(), []byte("nao e audio"), "x.mp3")
+		require.Error(t, err)
+		var generic pkgError.GenericError
+		require.True(t, errors.As(err, &generic))
+		assert.Equal(t, "MEDIA_BUILD_FAILED", generic.ErrCode())
+	})
 }

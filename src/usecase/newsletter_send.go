@@ -430,3 +430,45 @@ func isAnimatedWebP(data []byte) bool {
 	}
 	return bytes.Contains(data[12:min(len(data), 64)], []byte("ANIM"))
 }
+
+// convertNewsletterAudioToOpus converts any audio to OGG/Opus mono, the same
+// recipe SendAudio uses for PTT. Failure answers 422 MEDIA_BUILD_FAILED with the
+// ffmpeg stderr (fork: elphant).
+func convertNewsletterAudioToOpus(ctx context.Context, data []byte, filename string) ([]byte, error) {
+	if err := os.MkdirAll(config.PathSendItems, 0o755); err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to prepare audio folder: %v", err))
+	}
+	id := fiberUtils.UUIDv4()
+	inputPath := filepath.Join(config.PathSendItems, "newsletter_audio_in_"+id+filepath.Ext(filename))
+	outputPath := filepath.Join(config.PathSendItems, "newsletter_audio_out_"+id+".ogg")
+	defer os.Remove(inputPath)
+	defer os.Remove(outputPath)
+
+	if err := os.WriteFile(inputPath, data, 0o644); err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to save audio for conversion: %v", err))
+	}
+
+	convCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(convCtx, "ffmpeg",
+		"-i", inputPath,
+		"-c:a", "libopus",
+		"-b:a", "64k",
+		"-vbr", "on",
+		"-application", "voip",
+		"-ar", "48000",
+		"-ac", "1",
+		"-y",
+		outputPath,
+	)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, pkgError.MediaBuildFailed(fmt.Sprintf("failed to convert audio to OGG Opus: %v: %s", err, strings.TrimSpace(stderr.String())))
+	}
+	converted, err := os.ReadFile(outputPath)
+	if err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to read converted audio: %v", err))
+	}
+	return converted, nil
+}
