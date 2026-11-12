@@ -32,12 +32,6 @@ type fakeUpload struct {
 	data      []byte
 }
 
-type fakePollCall struct {
-	name    string
-	options []string
-	max     int
-}
-
 func (f *fakeNewsletterAPI) UploadNewsletter(_ context.Context, data []byte, mediaType whatsmeow.MediaType) (whatsmeow.UploadResponse, error) {
 	f.calls = append(f.calls, "upload")
 	f.uploads = append(f.uploads, fakeUpload{size: len(data), mediaType: mediaType, data: data})
@@ -68,11 +62,6 @@ func (f *fakeNewsletterAPI) SendMessage(_ context.Context, to types.JID, message
 		resp.ID = "3EB0GENERATED"
 	}
 	return resp, nil
-}
-
-func (f *fakeNewsletterAPI) BuildPollCreation(name string, options []string, max int) *waE2E.Message {
-	f.pollCalls = append(f.pollCalls, fakePollCall{name, options, max})
-	return &waE2E.Message{PollCreationMessage: &waE2E.PollCreationMessage{Name: &name}}
 }
 
 func (f *fakeNewsletterAPI) BuildEdit(chat types.JID, id types.MessageID, content *waE2E.Message) *waE2E.Message {
@@ -244,11 +233,11 @@ func TestNewsletterSendFigurinhaConvertePraWebP(t *testing.T) {
 	assert.Equal(t, uint32(8), sticker.GetWidth())
 }
 
-func TestNewsletterSendEnqueteMontaBuildPollCreation(t *testing.T) {
+func TestNewsletterSendEnqueteSemMessageSecret(t *testing.T) {
 	cases := []struct {
 		name    string
 		max     int
-		wantMax int
+		wantMax uint32
 	}{
 		{"ausente vira 1", 0, 1},
 		{"informado", 2, 2},
@@ -261,10 +250,16 @@ func TestNewsletterSendEnqueteMontaBuildPollCreation(t *testing.T) {
 				PollOptions: []string{"A", "B", "A"}, PollMaxAnswer: tc.max,
 			})
 			require.NoError(t, err)
-			require.Len(t, api.pollCalls, 1)
-			assert.Equal(t, "Qual?", api.pollCalls[0].name)
-			assert.Equal(t, []string{"A", "B", "A"}, api.pollCalls[0].options, "opções repetidas seguem")
-			assert.Equal(t, tc.wantMax, api.pollCalls[0].max)
+			poll := api.sendMsg.GetPollCreationMessage()
+			require.NotNil(t, poll)
+			assert.Nil(t, api.sendMsg.GetMessageContextInfo(), "canal não leva messageSecret")
+			assert.Equal(t, "Qual?", poll.GetName())
+			assert.Equal(t, tc.wantMax, poll.GetSelectableOptionsCount())
+			var names []string
+			for _, o := range poll.GetOptions() {
+				names = append(names, o.GetOptionName())
+			}
+			assert.Equal(t, []string{"A", "B", "A"}, names, "opções repetidas seguem")
 			assert.Empty(t, api.uploads)
 			assert.Empty(t, api.sendExtra.MediaHandle)
 		})

@@ -82,7 +82,7 @@ func (service serviceNewsletter) buildNewsletterMessage(ctx context.Context, api
 		return service.buildNewsletterText(ctx, api, recipient, request), extra, request.Text, nil
 
 	case domainNewsletter.SendTypePoll:
-		msg := api.BuildPollCreation(request.PollQuestion, request.PollOptions, request.PollMaxAnswer)
+		msg := buildNewsletterPoll(request.PollQuestion, request.PollOptions, request.PollMaxAnswer)
 		return msg, extra, "📊 " + request.PollQuestion, nil
 
 	case domainNewsletter.SendTypeImage:

@@ -30,7 +30,6 @@ type newsletterAPI interface {
 	AcceptTOSNotice(ctx context.Context, noticeID, stage string) error
 	UploadNewsletter(ctx context.Context, data []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error)
 	SendMessage(ctx context.Context, to types.JID, message *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
-	BuildPollCreation(name string, optionNames []string, selectableOptionCount int) *waE2E.Message
 	BuildEdit(chat types.JID, id types.MessageID, newContent *waE2E.Message) *waE2E.Message
 	BuildRevoke(chat, sender types.JID, id types.MessageID) *waE2E.Message
 	// SendMexIQ is the whatsmeow DangerousInternals call; the real client needs newsletterClient.

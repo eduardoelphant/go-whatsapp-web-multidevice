@@ -121,7 +121,6 @@ type fakeNewsletterAPI struct {
 	sendMsg    *waE2E.Message
 	sendExtra  whatsmeow.SendRequestExtra
 	sendResp   whatsmeow.SendResponse
-	pollCalls  []fakePollCall
 	handleSeed string
 
 	// edit and revoke (newsletter_edit_test.go)
