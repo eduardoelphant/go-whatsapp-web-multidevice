@@ -180,28 +180,41 @@ func TestNewsletterSendMidiaSobePorUploadNewsletterEHandleVaiNoExtra(t *testing.
 	}
 }
 
-func TestNewsletterSendAudioOggSaiComoVozEMp3ComoArquivo(t *testing.T) {
+func TestNewsletterSendAudioOggEMp3SaemComoVoz(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg ausente")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe ausente")
+	}
 	useTempSendItems(t)
 	cases := []struct {
 		name     string
 		filename string
-		data     []byte
-		wantPTT  bool
-		wantMime string
+		ext      string
 	}{
-		{"ogg", "voz.ogg", []byte("OggS\x00\x02rest"), true, "audio/ogg; codecs=opus"},
-		{"ogg sem extensao", "voz", []byte("OggS\x00\x02rest"), true, "audio/ogg; codecs=opus"},
-		{"mp3", "musica.mp3", []byte("ID3\x03\x00rest"), false, "audio/mpeg"},
+		{"ogg", "voz.ogg", "ogg"},
+		{"ogg sem extensao", "voz", "ogg"},
+		{"mp3", "musica.mp3", "mp3"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			srcPath := filepath.Join(t.TempDir(), "tone."+tc.ext)
+			out, err := exec.Command("ffmpeg", "-y", "-f", "lavfi", "-i", "sine=duration=2", srcPath).CombinedOutput()
+			require.NoError(t, err, string(out))
+			data, err := os.ReadFile(srcPath)
+			require.NoError(t, err)
+
 			api := &fakeNewsletterAPI{}
-			_, err := newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{
-				NewsletterID: sendTestJID, Type: "audio", File: tc.data, FileName: tc.filename,
+			_, err = newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{
+				NewsletterID: sendTestJID, Type: "audio", File: data, FileName: tc.filename,
 			})
 			require.NoError(t, err)
-			assert.Equal(t, tc.wantPTT, api.sendMsg.GetAudioMessage().GetPTT())
-			assert.Equal(t, tc.wantMime, api.sendMsg.GetAudioMessage().GetMimetype())
+			audio := api.sendMsg.GetAudioMessage()
+			assert.True(t, audio.GetPTT())
+			assert.Equal(t, "audio/ogg; codecs=opus", audio.GetMimetype())
+			assert.NotEmpty(t, audio.GetWaveform())
+			assert.Greater(t, audio.GetSeconds(), uint32(0))
 			assert.Equal(t, whatsmeow.MediaAudio, api.uploads[0].mediaType)
 			assert.NotEmpty(t, api.sendExtra.MediaHandle)
 		})

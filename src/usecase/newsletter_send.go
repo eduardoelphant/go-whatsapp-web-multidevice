@@ -173,28 +173,26 @@ func (service serviceNewsletter) buildNewsletterText(ctx context.Context, api ne
 	return &waE2E.Message{Conversation: proto.String(request.Text)}
 }
 
-// buildNewsletterAudio sends OGG as a voice note (PTT) and any other format as a file.
+// buildNewsletterAudio sends every audio as a voice note (PTT). The file is always
+// converted to OGG Opus first (WhatsApp channels only play voice notes in that format),
+// and duration and waveform are measured on the converted file that gets uploaded.
 func (service serviceNewsletter) buildNewsletterAudio(ctx context.Context, api newsletterAPI, request domainNewsletter.SendRequest) (*waE2E.Message, whatsmeow.SendRequestExtra, string, error) {
 	var extra whatsmeow.SendRequestExtra
 
-	filename := request.FileName
-	mimeType := resolveAudioMIME(filename, request.File)
-	isOgg := strings.HasPrefix(mimeType, "audio/ogg") || strings.HasPrefix(mimeType, "application/ogg") || bytes.HasPrefix(request.File, []byte("OggS"))
-	if isOgg {
-		mimeType = "audio/ogg; codecs=opus"
+	converted, err := convertNewsletterAudioToOpus(ctx, request.File, request.FileName)
+	if err != nil {
+		return nil, extra, "", err
 	}
 
 	var seconds uint32
 	var waveform []byte
-	if tempPath := writeNewsletterTempAudio(request.File, filename); tempPath != "" {
+	if tempPath := writeNewsletterTempAudio(converted, "voice.ogg"); tempPath != "" {
 		defer os.Remove(tempPath)
 		seconds = getAudioDuration(tempPath)
-		if isOgg {
-			waveform = generateWaveform(tempPath, seconds)
-		}
+		waveform = generateWaveform(tempPath, seconds)
 	}
 
-	uploaded, err := uploadNewsletterMedia(ctx, api, whatsmeow.MediaAudio, request.File)
+	uploaded, err := uploadNewsletterMedia(ctx, api, whatsmeow.MediaAudio, converted)
 	if err != nil {
 		return nil, extra, "", err
 	}
@@ -202,10 +200,10 @@ func (service serviceNewsletter) buildNewsletterAudio(ctx context.Context, api n
 	msg := &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
 		URL:        proto.String(uploaded.URL),
 		DirectPath: proto.String(uploaded.DirectPath),
-		Mimetype:   proto.String(mimeType),
+		Mimetype:   proto.String("audio/ogg; codecs=opus"),
 		FileSHA256: uploaded.FileSHA256,
 		FileLength: proto.Uint64(uploaded.FileLength),
-		PTT:        proto.Bool(isOgg),
+		PTT:        proto.Bool(true),
 		Seconds:    proto.Uint32(seconds),
 		Waveform:   waveform,
 	}}
