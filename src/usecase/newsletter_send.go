@@ -56,6 +56,10 @@ func (service serviceNewsletter) Send(ctx context.Context, request domainNewslet
 	}
 	extra.ID = types.MessageID(request.MessageID)
 
+	if request.Type == domainNewsletter.SendTypePoll && newsletterPollMode() == newsletterPollModeNode {
+		return service.sendNewsletterPollNode(ctx, api, recipient, request, content)
+	}
+
 	sent, err := api.SendMessage(ctx, recipient, msg, extra)
 	if err != nil {
 		return response, mapNewsletterSendError(err, extra.MediaHandle != "")
@@ -69,6 +73,31 @@ func (service serviceNewsletter) Send(ctx context.Context, request domainNewslet
 		MessageID: sent.ID,
 		ServerID:  int(sent.ServerID),
 		Timestamp: sent.Timestamp.Format(time.RFC3339),
+	}, nil
+}
+
+// sendNewsletterPollNode publishes the poll as a raw node with meta polltype (node mode).
+func (service serviceNewsletter) sendNewsletterPollNode(ctx context.Context, api newsletterAPI, recipient types.JID, request domainNewsletter.SendRequest, content string) (domainNewsletter.SendResponse, error) {
+	id := types.MessageID(request.MessageID)
+	if id == "" {
+		id = api.GenerateMessageID()
+	}
+	msg := newsletterNodePollMessage(request.PollQuestion, request.PollOptions, request.PollMaxAnswer)
+	node, err := buildNewsletterPollNode(recipient, id, msg)
+	if err != nil {
+		return domainNewsletter.SendResponse{}, err
+	}
+	serverID, sentAt, err := api.SendNewsletterNode(ctx, id, node)
+	if err != nil {
+		return domainNewsletter.SendResponse{}, mapNewsletterSendError(err, false)
+	}
+	if service.storeSent != nil {
+		service.storeSent(ctx, api, id, recipient, content, sentAt, msg)
+	}
+	return domainNewsletter.SendResponse{
+		MessageID: id,
+		ServerID:  int(serverID),
+		Timestamp: sentAt.Format(time.RFC3339),
 	}, nil
 }
 

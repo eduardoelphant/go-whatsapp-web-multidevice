@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	domainNewsletter "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/newsletter"
 	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
 	"go.mau.fi/whatsmeow"
+	waBinary "go.mau.fi/whatsmeow/binary"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -130,6 +132,12 @@ type fakeNewsletterAPI struct {
 	revokeChat   types.JID
 	revokeSender types.JID
 	revokeID     types.MessageID
+
+	// node poll (newsletter_poll_test.go)
+	nodeSent     waBinary.Node
+	nodeServerID types.MessageServerID
+	nodeAt       time.Time
+	nodeErr      error
 
 	// channel update (newsletter_update_test.go)
 	mexQueryID string

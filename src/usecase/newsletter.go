@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	waBinary "go.mau.fi/whatsmeow/binary"
 	"os"
 	"path/filepath"
 	"time"
@@ -34,6 +35,9 @@ type newsletterAPI interface {
 	BuildRevoke(chat, sender types.JID, id types.MessageID) *waE2E.Message
 	// SendMexIQ is the whatsmeow DangerousInternals call; the real client needs newsletterClient.
 	SendMexIQ(ctx context.Context, queryID string, variables any) (json.RawMessage, error)
+	// GenerateMessageID and SendNewsletterNode serve the node poll mode (WHATSAPP_NEWSLETTER_POLL_MODE=node).
+	GenerateMessageID() types.MessageID
+	SendNewsletterNode(ctx context.Context, id types.MessageID, node waBinary.Node) (types.MessageServerID, time.Time, error)
 }
 
 type serviceNewsletter struct {
