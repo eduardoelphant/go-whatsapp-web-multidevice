@@ -609,3 +609,84 @@ The `group.info` `value` of `invite_link_reset` is the SHA-256 of the new invite
 `https://chat.whatsapp.com/` removed), never the code: the code is the credential to join, so it does not
 travel in a webhook. The consumer hashes the code it holds and compares, to tell a reset it did from one
 done elsewhere. The `value` of the other `group.info` types is unchanged.
+
+## Newsletter (channel) data and creation
+
+`GET /newsletter/info?newsletter_id=` returns one channel the device is joined to as
+`results: {newsletter_id, name, description, invite, subscribers_count, state, role, verification, picture_url}`
+(`role` comes from the viewer metadata, `state` from `state.type`). A channel that does not exist answers
+404 `NOT_FOUND` (GraphQL error code 404 or empty metadata). `NewsletterInfoResponse` is the shape every newsletter
+route that returns channel data uses.
+
+`POST /newsletter/create` (multipart `name` 1 to 100, `description` up to 1024, `picture` optional `image/jpeg`)
+calls `AcceptTOSNotice("20601218", "5")` and then `CreateNewsletter`, always in that order, and answers the same
+shape. The picture bytes are sent as is, no resizing, and no "terms accepted" state is kept.
+Both routes read `X-Device-Id` like the other newsletter routes; existing routes are unchanged.
+
+## Newsletter (channel) publishing
+
+`POST /newsletter/send` (multipart) publishes one post: `newsletter_id`, `message_id` (optional), `type`
+(`text`, `image`, `video`, `audio`, `document`, `sticker`, `poll`), `text` (text or caption), `link_preview`
+(only `text`), `file`, `filename` (document), `poll_question`, `poll_options` (repeated, 2 to 12) and
+`poll_max_answer` (0 or absent becomes 1). It answers `results: {message_id, server_id, timestamp}`.
+
+- Idempotency: a `message_id` from the caller becomes `SendRequestExtra.ID`; absent, whatsmeow generates one and
+  the answer carries it. `server_id` is `resp.ServerID`.
+- Media goes up through `UploadNewsletter` (channels take unencrypted media), and the `Handle` of that upload is
+  passed as `SendRequestExtra.MediaHandle`. The existing `/send/*` routes never passed it, so they cannot publish
+  media in a channel; they are unchanged.
+- `text` with `link_preview` uses `buildLinkPreviewMessage`; if the preview lookup fails the plain text is sent,
+  no error. `audio` as OGG is a voice note (`PTT`, `audio/ogg; codecs=opus`), anything else a file. `sticker` is
+  converted to WebP as `/send/sticker` does (512 px box, ffmpeg or cwebp). `poll` uses `BuildPollCreation`.
+- `CheckPermissions` and the reach-out guard are not applied; WhatsApp's own answer decides.
+- Errors: 400 `MEDIA_REJECTED` (upload 4xx or a 400 on a send that carried a media handle), 403 `NOT_AUTHORIZED`
+  (`not-authorized`), 404 `NOT_FOUND` (`item-not-found`), 400 validation otherwise.
+- The post is stored in the device `chatstorage` like the other send routes, in a goroutine that does not hold the
+  answer.
+- Animated WebP stickers (ANIM chunk) are refused with 400 on this route; the `/send/sticker` animated branch is
+  not reproduced.
+- Debt: the message assembly (image, video, audio, document, sticker) is duplicated from the inline code of the
+  `/send/*` handlers, which were left untouched; a shared builder would remove the copy.
+- Video goes out with an inline JPEG preview, size and duration from ffmpeg/ffprobe; if they fail it goes without.
+
+## Newsletter (channel) edit, revoke and full read metrics
+
+`POST /newsletter/messages/:message_id/edit` (JSON `{newsletter_id, text}`) sends `BuildEdit` with a text message to
+the `@newsletter` JID; whatsmeow turns it into the admin edit. `POST /newsletter/messages/:message_id/revoke`
+(JSON `{newsletter_id}`) sends `BuildRevoke`, which becomes the admin revoke. Both answer
+`results: {message_id}`. They are separate routes: `/message/:id/update` and `/message/:id/revoke` are not reused.
+`message_id` is validated like on send (1 to 64 letters or digits).
+
+- Errors: edit refused by WhatsApp (`bad-request`, `not-acceptable`, `ErrIQBadRequest`) is 422 `EDIT_REFUSED` carrying
+  the server text; `not-authorized` is 403 `NOT_AUTHORIZED`; `item-not-found` is 404 `NOT_FOUND`. Revoke uses the
+  send mapping (no 422).
+- Revoke passes the empty JID as sender, the form whatsmeow documents for the device's own posts (the key gets
+  `FromMe`); the seam has no own-JID accessor.
+- Routing: `/newsletter/messages/:server_id/download` is GET and the new ones are POST with a different suffix, so
+  neither captures the other (tested).
+- `GET /newsletter/messages` items gain `forwards_count` (from `ForwardsCount`), `media_type` (`image`, `video`,
+  `audio`, `document`, `sticker`, `poll`; absent on text) and `caption` (image, video, document). Every existing key
+  is unchanged, `text` included; `count` default (50) and cap (100) are unchanged. `GetMessages` still uses the
+  real client directly, so its mapping is tested through `newsletterMessageResponse`.
+
+## Newsletter (channel) edit of name, description and picture
+
+`POST /newsletter/update` (multipart `newsletter_id`, `name`, `description`, `picture` JPEG, `remove_picture`) edits
+the channel itself and answers the same `NewsletterInfoResponse` as `GET /newsletter/info`. A field is sent only when
+its multipart key is present (an empty `description` clears it); at least one is required, and `picture` with
+`remove_picture` is a validation error. The picture is validated by byte sniff (JPEG) and is not resized.
+
+- Call: `cli.DangerousInternals().SendMexIQ(ctx, queryID, variables)`, reached through `newsletterClient` (a wrapper
+  that gives the real client the `SendMexIQ` method the `newsletterAPI` seam declares; the type assertions that need
+  the bare client go through `realNewsletterClient`). whatsmeow is not changed.
+- Variables (Baileys format): `{"newsletter_id": "<jid>", "updates": {"name"?, "description"?, "picture"? (base64),
+  "settings": null}}`. `settings` is always present and `null`; `remove_picture` writes `"picture": ""`. Response path
+  `xwa2_newsletter_update` (a `NewsletterMetadata`).
+- Query id: `7150902998257522`, copied from `mutationUpdateNewsletter` (`newsletter.go:123` of go.mau.fi/whatsmeow, not
+  exported); `sendMexIQ` swaps it for the desktop id. Env `WHATSAPP_NEWSLETTER_UPDATE_QUERY_ID` overrides it (plan B:
+  the Baileys id `24250201037901610`), no new image needed. Which id the server accepts is unverified until the live test.
+- Answer completion: when the mutation answer has no id, no name, or no picture after one was set, the usecase reads
+  `GetNewsletterInfo` and answers from that.
+- Errors (`GraphQLErrorExtensions.ErrorCode`): 401 or 403 is 403 `NOT_AUTHORIZED`, 404 is 404 `NOT_FOUND`, any other
+  GraphQL error is 422 `UPDATE_REFUSED` carrying the server text. Non-GraphQL errors use the send mapping.
+- `POST /newsletter/messages/:message_id/edit` replaces the text of a text post; a media caption is not editable.

@@ -4336,6 +4336,221 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorInternalServer'
+  /newsletter/info:
+    get:
+      operationId: getNewsletterInfo
+      tags:
+        - newsletter
+      summary: Get channel data
+      description: |
+        Fork (elphant). Reads one channel the device is joined to: name, description,
+        invite code, subscriber count, state, the device's role, verification and picture URL.
+        Answers 404 `NOT_FOUND` when the channel does not exist.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - name: newsletter_id
+          in: query
+          required: true
+          description: Channel JID, ending with `@newsletter`
+          schema:
+            type: string
+          example: '120363024512399999@newsletter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsletterInfoResponse'
+        '400':
+          description: Invalid newsletter_id
+        '404':
+          description: Channel not found (`NOT_FOUND`)
+  /newsletter/create:
+    post:
+      operationId: createNewsletter
+      tags:
+        - newsletter
+      summary: Create a channel
+      description: |
+        Fork (elphant). Accepts the channel-creation terms notice (`20601218`, stage `5`) and then
+        creates the channel. The picture is sent to WhatsApp as is, without resizing. No state of
+        "terms accepted" is kept.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                description:
+                  type: string
+                  maxLength: 1024
+                picture:
+                  type: string
+                  format: binary
+                  description: Optional, `image/jpeg`
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsletterInfoResponse'
+        '400':
+          description: Validation error
+
+  /newsletter/update:
+    post:
+      operationId: updateNewsletter
+      tags:
+        - newsletter
+      summary: Edit name, description and picture of a channel
+      description: |
+        Fork (elphant). Edits the channel itself through the channel update mutation
+        (`DangerousInternals().SendMexIQ`), in the Baileys format
+        `{newsletter_id, updates: {name?, description?, picture?, settings: null}}`; only the fields
+        sent go into `updates`. The picture is a JPEG sent as is (no resizing) and travels as base64;
+        `remove_picture` writes an empty picture. At least one field is required; `picture` and
+        `remove_picture` do not go together. An empty `description` clears it. The query id is
+        `7150902998257522` (whatsmeow) unless `WHATSAPP_NEWSLETTER_UPDATE_QUERY_ID` is set. The answer
+        is the channel read from `xwa2_newsletter_update`, completed with a channel info read when the
+        answer lacks a field. Needs a channel role that may edit (owner or admin).
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [newsletter_id]
+              properties:
+                newsletter_id:
+                  type: string
+                  example: '120363024512399999@newsletter'
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                description:
+                  type: string
+                  maxLength: 1024
+                picture:
+                  type: string
+                  format: binary
+                  description: Optional, `image/jpeg`
+                remove_picture:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsletterInfoResponse'
+        '400':
+          description: Validation error (nothing to update, bad JID, picture not JPEG, limits)
+        '403':
+          description: '`NOT_AUTHORIZED`, the device has no role that may edit the channel'
+        '404':
+          description: '`NOT_FOUND`, the channel does not exist'
+        '422':
+          description: '`UPDATE_REFUSED`, WhatsApp refused the update; `message` carries the server text'
+
+  /newsletter/send:
+    post:
+      operationId: sendNewsletterPost
+      tags:
+        - newsletter
+      summary: Publish a post in a channel
+      description: |
+        Fork (elphant). Publishes one post with the device as channel admin. Media goes up through
+        `UploadNewsletter` and its handle travels in the send request (`media_id`). `message_id`,
+        when given, is the WhatsApp message id (1 to 64 letters or digits); otherwise one is
+        generated. `CheckPermissions` and the reach-out guard are not applied. `text` is the text
+        (type `text`) or the caption. `link_preview` only applies to `text`; when the preview cannot
+        be fetched the plain text is sent. `audio` sent as OGG goes out as a voice note (PTT), any
+        other format as a file. `sticker` is converted to WebP like `/send/sticker`. `poll_options`
+        is a repeated field (2 to 12); `poll_max_answer` 0 or absent becomes 1.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [newsletter_id, type]
+              properties:
+                newsletter_id:
+                  type: string
+                  example: '120363024512399999@newsletter'
+                message_id:
+                  type: string
+                  example: '3EB0A1B2C3D4E5F6A7B8C9'
+                type:
+                  type: string
+                  enum: [text, image, video, audio, document, sticker, poll]
+                text:
+                  type: string
+                link_preview:
+                  type: boolean
+                file:
+                  type: string
+                  format: binary
+                  description: Required for image, video, audio, document and sticker
+                filename:
+                  type: string
+                  description: Document file name
+                poll_question:
+                  type: string
+                poll_options:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 2
+                  maxItems: 12
+                poll_max_answer:
+                  type: integer
+                  minimum: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: SUCCESS
+                  message:
+                    type: string
+                  results:
+                    type: object
+                    properties:
+                      message_id:
+                        type: string
+                      server_id:
+                        type: integer
+                      timestamp:
+                        type: string
+                        format: date-time
+        '400':
+          description: Validation error, or `MEDIA_REJECTED` when WhatsApp refused the media
+        '403':
+          description: '`NOT_AUTHORIZED`, the device is not admin of the channel'
+        '404':
+          description: '`NOT_FOUND`, the channel does not exist'
+
   /newsletter/messages:
     get:
       operationId: getNewsletterMessages
@@ -4389,6 +4604,110 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorInternalServer'
+
+  /newsletter/messages/{message_id}/edit:
+    post:
+      operationId: editNewsletterPost
+      tags:
+        - newsletter
+      summary: Edit the text of a channel post
+      description: |
+        Fork (elphant). Admin edit that replaces the text of a text post (a media caption is not editable). Does not reuse `/message/{message_id}/update`. WhatsApp refusing the edit answers 422 `EDIT_REFUSED` with the server text.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - name: message_id
+          in: path
+          required: true
+          description: WhatsApp message id of the post (1 to 64 letters or digits)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newsletter_id, text]
+              properties:
+                newsletter_id:
+                  type: string
+                  example: '120363024512399999@newsletter'
+                text:
+                  type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: SUCCESS
+                  results:
+                    type: object
+                    properties:
+                      message_id:
+                        type: string
+        '400':
+          description: Validation error
+        '422':
+          description: '`EDIT_REFUSED`, WhatsApp refused the edit; `message` carries the server text'
+        '403':
+          description: '`NOT_AUTHORIZED`, the device is not admin of the channel'
+        '404':
+          description: '`NOT_FOUND`, the channel or the post does not exist'
+
+  /newsletter/messages/{message_id}/revoke:
+    post:
+      operationId: revokeNewsletterPost
+      tags:
+        - newsletter
+      summary: Delete a channel post for everyone
+      description: |
+        Fork (elphant). Admin revoke of a published post. Does not reuse `/message/{message_id}/revoke`.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - name: message_id
+          in: path
+          required: true
+          description: WhatsApp message id of the post (1 to 64 letters or digits)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newsletter_id]
+              properties:
+                newsletter_id:
+                  type: string
+                  example: '120363024512399999@newsletter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: SUCCESS
+                  results:
+                    type: object
+                    properties:
+                      message_id:
+                        type: string
+        '400':
+          description: Validation error
+        '403':
+          description: '`NOT_AUTHORIZED`, the device is not admin of the channel'
+        '404':
+          description: '`NOT_FOUND`, the channel or the post does not exist'
 
   /newsletter/messages/{server_id}/download:
     get:
@@ -5993,6 +6312,26 @@ components:
             role:
               type: string
               example: "subscriber"
+    NewsletterInfoResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          example: SUCCESS
+        message:
+          type: string
+        results:
+          type: object
+          properties:
+            newsletter_id: {type: string, example: '120363024512399999@newsletter'}
+            name: {type: string}
+            description: {type: string}
+            invite: {type: string}
+            subscribers_count: {type: integer}
+            state: {type: string, example: active}
+            role: {type: string, example: owner}
+            verification: {type: string, example: verified}
+            picture_url: {type: string}
     NewsletterMessagesResponse:
       type: object
       properties:
@@ -6035,6 +6374,17 @@ components:
         text:
           type: string
           example: "Hello from the channel!"
+        forwards_count:
+          type: integer
+          description: Fork (elphant). Times the post was forwarded.
+          example: 4
+        media_type:
+          type: string
+          enum: [image, video, audio, document, sticker, poll]
+          description: Fork (elphant). Absent for text posts.
+        caption:
+          type: string
+          description: Fork (elphant). Caption of an image, video or document post.
     NewsletterMediaDownloadResponse:
       type: object
       properties:

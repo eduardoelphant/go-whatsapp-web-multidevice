@@ -83,6 +83,62 @@ func (err notFoundError) StatusCode() int {
 	return http.StatusNotFound
 }
 
+// forbiddenError answers 403 when WhatsApp refuses an action for lack of role.
+type forbiddenError string
+
+func (err forbiddenError) Error() string { return string(err) }
+
+// ErrCode will return the error code based on the error data type
+func (err forbiddenError) ErrCode() string { return "NOT_AUTHORIZED" }
+
+// StatusCode will return the HTTP status code based on the error data type
+func (err forbiddenError) StatusCode() int { return http.StatusForbidden }
+
+// mediaRejectedError answers 400 when WhatsApp refuses the uploaded media.
+type mediaRejectedError string
+
+func (err mediaRejectedError) Error() string { return string(err) }
+
+// ErrCode will return the error code based on the error data type
+func (err mediaRejectedError) ErrCode() string { return "MEDIA_REJECTED" }
+
+// StatusCode will return the HTTP status code based on the error data type
+func (err mediaRejectedError) StatusCode() int { return http.StatusBadRequest }
+
+// MediaRejected builds the 400 MEDIA_REJECTED error carrying the server text.
+func MediaRejected(text string) error { return mediaRejectedError(text) }
+
+// editRefusedError answers 422 when WhatsApp refuses to edit a channel post.
+type editRefusedError string
+
+func (err editRefusedError) Error() string { return string(err) }
+
+// ErrCode will return the error code based on the error data type
+func (err editRefusedError) ErrCode() string { return "EDIT_REFUSED" }
+
+// StatusCode will return the HTTP status code based on the error data type
+func (err editRefusedError) StatusCode() int { return http.StatusUnprocessableEntity }
+
+// EditRefused builds the 422 EDIT_REFUSED error carrying the server text.
+func EditRefused(text string) error { return editRefusedError(text) }
+
+// updateRefusedError answers 422 when WhatsApp refuses to edit the channel itself.
+type updateRefusedError string
+
+func (err updateRefusedError) Error() string { return string(err) }
+
+// ErrCode will return the error code based on the error data type
+func (err updateRefusedError) ErrCode() string { return "UPDATE_REFUSED" }
+
+// StatusCode will return the HTTP status code based on the error data type
+func (err updateRefusedError) StatusCode() int { return http.StatusUnprocessableEntity }
+
+// UpdateRefused builds the 422 UPDATE_REFUSED error carrying the server text.
+func UpdateRefused(text string) error { return updateRefusedError(text) }
+
+// NotAuthorized builds the 403 NOT_AUTHORIZED error carrying the server text.
+func NotAuthorized(text string) error { return forbiddenError(text) }
+
 var (
 	ErrAlreadyLoggedIn       = LoginError("you are already logged in.")
 	ErrNotConnected          = AuthError("you are not connect to services server, please reconnect")
@@ -97,4 +153,6 @@ var (
 	// Fork (elphant): voting on a poll the device does not know answers 404.
 	ErrPollNotFound = notFoundError("poll not found for this device and chat")
 	ErrAvatarNotSet = notFoundError("that user or group does not have a profile picture")
+	// Fork (elphant): newsletter (channel) lookups that find nothing answer 404.
+	ErrNewsletterNotFound = notFoundError("that newsletter does not exist")
 )

@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"io"
 	"strconv"
 
 	domainNewsletter "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/newsletter"
@@ -17,8 +18,14 @@ type Newsletter struct {
 func InitRestNewsletter(app fiber.Router, service domainNewsletter.INewsletterUsecase) Newsletter {
 	rest := Newsletter{Service: service}
 	app.Post("/newsletter/unfollow", rest.Unfollow)
+	app.Get("/newsletter/info", rest.Info)
+	app.Post("/newsletter/create", rest.Create)
+	app.Post("/newsletter/send", rest.Send)
+	app.Post("/newsletter/update", rest.Update)
 	app.Get("/newsletter/messages", rest.GetMessages)
 	app.Get("/newsletter/messages/:server_id/download", rest.DownloadMedia)
+	app.Post("/newsletter/messages/:message_id/edit", rest.Edit)
+	app.Post("/newsletter/messages/:message_id/revoke", rest.Revoke)
 	return rest
 }
 
@@ -73,6 +80,159 @@ func (controller *Newsletter) DownloadMedia(c fiber.Ctx) error {
 		Status:  200,
 		Code:    "SUCCESS",
 		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Newsletter) Info(c fiber.Ctx) error {
+	var request domainNewsletter.InfoRequest
+	err := c.Bind().Query(&request)
+	utils.PanicIfNeeded(err)
+
+	response, err := controller.Service.Info(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success get newsletter info",
+		Results: response,
+	})
+}
+
+func (controller *Newsletter) Create(c fiber.Ctx) error {
+	var request domainNewsletter.CreateRequest
+	err := c.Bind().Body(&request)
+	utils.PanicIfNeeded(err)
+
+	request.Picture, err = readNewsletterPicture(c)
+	utils.PanicIfNeeded(err)
+
+	response, err := controller.Service.Create(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success create newsletter",
+		Results: response,
+	})
+}
+
+// Send publishes one post. The multipart "file" field is read as bytes, "poll_options"
+// is a repeated field.
+func (controller *Newsletter) Send(c fiber.Ctx) error {
+	var request domainNewsletter.SendRequest
+	err := c.Bind().Body(&request)
+	utils.PanicIfNeeded(err)
+
+	if form, formErr := c.MultipartForm(); formErr == nil && form != nil {
+		request.PollOptions = form.Value["poll_options"]
+	}
+	if len(request.PollOptions) == 0 {
+		request.PollOptions = nil
+	}
+
+	if file, fileErr := c.FormFile("file"); fileErr == nil {
+		handle, openErr := file.Open()
+		if openErr != nil {
+			utils.PanicIfNeeded(pkgError.ValidationError("file: unreadable file."))
+		}
+		defer handle.Close()
+		request.File, err = io.ReadAll(handle)
+		utils.PanicIfNeeded(err)
+		request.FileName = file.Filename
+	}
+
+	response, err := controller.Service.Send(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success send newsletter post",
+		Results: response,
+	})
+}
+
+// readNewsletterPicture returns the raw bytes of the optional multipart "picture"
+// field; the usecase validation checks they are a JPEG.
+func readNewsletterPicture(c fiber.Ctx) ([]byte, error) {
+	file, err := c.FormFile("picture")
+	if err != nil {
+		return nil, nil
+	}
+	handle, err := file.Open()
+	if err != nil {
+		return nil, pkgError.ValidationError("picture: unreadable file.")
+	}
+	defer handle.Close()
+
+	return io.ReadAll(handle)
+}
+
+// Edit replaces the text of a post; the message id comes from the route.
+func (controller *Newsletter) Edit(c fiber.Ctx) error {
+	var request domainNewsletter.EditRequest
+	err := c.Bind().Body(&request)
+	utils.PanicIfNeeded(err)
+	request.MessageID = c.Params("message_id")
+
+	response, err := controller.Service.Edit(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success edit newsletter post",
+		Results: response,
+	})
+}
+
+// Revoke deletes a post for everyone; the message id comes from the route.
+func (controller *Newsletter) Revoke(c fiber.Ctx) error {
+	var request domainNewsletter.RevokeRequest
+	err := c.Bind().Body(&request)
+	utils.PanicIfNeeded(err)
+	request.MessageID = c.Params("message_id")
+
+	response, err := controller.Service.Revoke(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success revoke newsletter post",
+		Results: response,
+	})
+}
+
+// Update edits name, description and picture of the channel. A field is only sent when
+// its multipart key is present, so an empty description clears it.
+func (controller *Newsletter) Update(c fiber.Ctx) error {
+	var request domainNewsletter.UpdateRequest
+	err := c.Bind().Body(&request)
+	utils.PanicIfNeeded(err)
+
+	if form, formErr := c.MultipartForm(); formErr == nil && form != nil {
+		if values, ok := form.Value["name"]; ok && len(values) > 0 {
+			request.Name = &values[0]
+		}
+		if values, ok := form.Value["description"]; ok && len(values) > 0 {
+			request.Description = &values[0]
+		}
+	}
+
+	request.Picture, err = readNewsletterPicture(c)
+	utils.PanicIfNeeded(err)
+
+	response, err := controller.Service.Update(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success update newsletter",
 		Results: response,
 	})
 }

@@ -84,6 +84,7 @@ var (
 	WhatsappReachoutGuard                      = false         // Fork (elphant): refuse sends to recipients without a tctoken while the account is timelocked
 	WhatsappReachoutSuspectMinutes             = 30            // Fork (elphant): how long a timelock with no known end (a 463, or an event without one) is assumed to last
 	WhatsappWatchdogIntervalSeconds            = 120           // Fork (elphant): seconds between reconnect watchdog checks of every paired device (0 or less disables it)
+	WhatsappNewsletterUpdateQueryID            string          // Fork (elphant): GraphQL query id of the channel edit mutation (empty: whatsmeow id)
 	WhatsappPresenceOnConnect                  = "unavailable" // Presence to send on connect: "available", "unavailable", or "none"
 	WhatsappPresencePulseEnabled               = true          // Periodically pulse presence available, then unavailable
 	WhatsappPresencePulseInterval              = 24 * time.Hour
