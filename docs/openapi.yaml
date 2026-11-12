@@ -4888,13 +4888,31 @@ components:
           example: SUCCESS
         message:
           type: string
-          example: Success get list groups
+          example: Success created group
         results:
           type: object
           properties:
             group_id:
               type: string
               example: 1203632782168851111@g.us
+            participants:
+              type: array
+              description: Status per participant (fork); the own number is omitted.
+              items:
+                type: object
+                properties:
+                  participant:
+                    type: string
+                  status:
+                    type: string
+                    enum: [success, error]
+                  message:
+                    type: string
+                  code:
+                    type: integer
+                    description: Always present; 0 is success, otherwise the WhatsApp error code.
+                  phone_number:
+                    type: string
     GroupInfoFromLinkResponse:
       type: object
       properties:
@@ -4944,6 +4962,10 @@ components:
               type: string
               example: 'This group is for discussing project updates'
               description: Additional description of the group
+            is_parent:
+              type: boolean
+              example: false
+              description: Whether the group is a community (parent group); always present
     ManageParticipantRequest:
       type: object
       properties:

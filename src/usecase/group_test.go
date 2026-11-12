@@ -112,3 +112,15 @@ func TestSetGroupJoinApprovalRejectsEmptyGroupID(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 }
+
+func TestGroupInfoFromLinkResponseIsParent(t *testing.T) {
+	for _, isParent := range []bool{true, false} {
+		info := &types.GroupInfo{
+			JID:         types.NewJID("120363000000000001", types.GroupServer),
+			GroupParent: types.GroupParent{IsParent: isParent},
+		}
+		if got := groupInfoFromLinkResponse(info).IsParent; got != isParent {
+			t.Fatalf("IsParent = %v, want %v", got, isParent)
+		}
+	}
+}

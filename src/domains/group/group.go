@@ -32,6 +32,15 @@ type ParticipantStatus struct {
 	Participant string `json:"participant"`
 	Status      string `json:"status"`
 	Message     string `json:"message"`
+	// Code is the WhatsApp result code for this participant: 0 on success, otherwise the error code.
+	// It is always serialized, even when 0.
+	Code        int    `json:"code"`
+	PhoneNumber string `json:"phone_number,omitempty"`
+}
+
+type CreateGroupResponse struct {
+	GroupID      string              `json:"group_id"`
+	Participants []ParticipantStatus `json:"participants"`
 }
 
 type GetGroupParticipantsRequest struct {
@@ -119,6 +128,7 @@ type GetGroupInfoFromLinkResponse struct {
 	IsAnnounce       bool      `json:"is_announce"`
 	IsEphemeral      bool      `json:"is_ephemeral"`
 	Description      string    `json:"description"`
+	IsParent         bool      `json:"is_parent"`
 }
 
 type GroupInfoRequest struct {

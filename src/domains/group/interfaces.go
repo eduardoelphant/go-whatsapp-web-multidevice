@@ -9,6 +9,7 @@ type IGroupManagement interface {
 	JoinGroupWithLink(ctx context.Context, request JoinGroupWithLinkRequest) (groupID string, err error)
 	LeaveGroup(ctx context.Context, request LeaveGroupRequest) (err error)
 	CreateGroup(ctx context.Context, request CreateGroupRequest) (groupID string, err error)
+	CreateGroupWithStatus(ctx context.Context, request CreateGroupRequest) (response CreateGroupResponse, err error)
 	GetGroupInfoFromLink(ctx context.Context, request GetGroupInfoFromLinkRequest) (response GetGroupInfoFromLinkResponse, err error)
 	GetGroupInviteLink(ctx context.Context, request GetGroupInviteLinkRequest) (response GetGroupInviteLinkResponse, err error)
 	GroupInfo(ctx context.Context, request GroupInfoRequest) (response GroupInfoResponse, err error)

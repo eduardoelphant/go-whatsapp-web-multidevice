@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -26,7 +27,7 @@ func captureGroupWebhooks(t *testing.T) *[]map[string]any {
 func TestForwardGroupInfoToWebhookSettings(t *testing.T) {
 	got := captureGroupWebhooks(t)
 	sender := types.NewJID("5511999990000", types.DefaultUserServer)
-	link := "abc"
+	link := whatsmeow.InviteLinkPrefix + "abc"
 	evt := &events.GroupInfo{
 		JID:                    types.NewJID("120363000000000001", types.GroupServer),
 		Sender:                 &sender,
@@ -58,7 +59,8 @@ func TestForwardGroupInfoToWebhookSettings(t *testing.T) {
 		case "approval":
 			assert.Equal(t, true, p["value"])
 		case "invite_link_reset":
-			assert.Nil(t, p["value"])
+			// sha256("abc"): o código cru nunca sai
+			assert.Equal(t, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", p["value"])
 		}
 	}
 	assert.Equal(t, []string{"name", "announce", "ephemeral", "approval", "invite_link_reset"}, types_)
