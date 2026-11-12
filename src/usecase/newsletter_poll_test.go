@@ -76,6 +76,24 @@ func TestParseNewsletterAck(t *testing.T) {
 	assert.ErrorIs(t, err, whatsmeow.ErrServerReturnedError)
 }
 
+func TestParseNewsletterAckDesconexaoNaoViraSucessoNemRecusa(t *testing.T) {
+	for name, node := range map[string]*waBinary.Node{
+		"canal fechado":  nil,
+		"fim do stream":  {Tag: "xmlstreamend"},
+		"erro de stream": {Tag: "stream:error", Attrs: waBinary.Attrs{"code": "515"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.NotPanics(t, func() {
+				_, _, err := parseNewsletterAck(node)
+				require.Error(t, err)
+				assert.NotErrorIs(t, err, whatsmeow.ErrServerReturnedError)
+				mapped := mapNewsletterSendError(err, false)
+				assert.Equal(t, err, mapped, "erro transitório passa sem virar SEND_REFUSED")
+			})
+		})
+	}
+}
+
 func TestNewsletterSendEnqueteModoNo(t *testing.T) {
 	old := config.WhatsappNewsletterPollMode
 	t.Cleanup(func() { config.WhatsappNewsletterPollMode = old })

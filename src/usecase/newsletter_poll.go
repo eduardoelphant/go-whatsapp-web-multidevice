@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -71,8 +72,18 @@ func buildNewsletterPollNode(to types.JID, id types.MessageID, msg *waE2E.Messag
 	}, nil
 }
 
+var errNewsletterAckConnectionLost = errors.New("connection lost while waiting for poll ack")
+
+// newsletterAckTimeout bounds the wait for the poll ack.
+const newsletterAckTimeout = 75 * time.Second
+
 // parseNewsletterAck reads the server ack of a sent node the way whatsmeow's send.go does.
+// A nil node (closed channel) or a stream end/error node means the socket dropped while
+// waiting: that is a transient error, never a success and never a server refusal.
 func parseNewsletterAck(node *waBinary.Node) (types.MessageServerID, time.Time, error) {
+	if node == nil || node.Tag == "xmlstreamend" || node.Tag == "stream:error" {
+		return 0, time.Time{}, errNewsletterAckConnectionLost
+	}
 	ag := node.AttrGetter()
 	serverID := types.MessageServerID(ag.OptionalInt("server_id"))
 	timestamp := ag.UnixTime("t")
@@ -90,10 +101,12 @@ func (c newsletterClient) SendNewsletterNode(ctx context.Context, id types.Messa
 	if _, err := internals.SendNodeAndGetData(ctx, node); err != nil {
 		return 0, time.Time{}, fmt.Errorf("failed to send message node: %w", err)
 	}
+	waitCtx, cancel := context.WithTimeout(ctx, newsletterAckTimeout)
+	defer cancel()
 	select {
 	case ack := <-ch:
 		return parseNewsletterAck(ack)
-	case <-ctx.Done():
-		return 0, time.Time{}, ctx.Err()
+	case <-waitCtx.Done():
+		return 0, time.Time{}, fmt.Errorf("timed out waiting for poll ack: %w", waitCtx.Err())
 	}
 }
