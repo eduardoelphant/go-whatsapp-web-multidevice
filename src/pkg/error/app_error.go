@@ -108,6 +108,20 @@ func (err mediaRejectedError) StatusCode() int { return http.StatusBadRequest }
 // MediaRejected builds the 400 MEDIA_REJECTED error carrying the server text.
 func MediaRejected(text string) error { return mediaRejectedError(text) }
 
+// editRefusedError answers 422 when WhatsApp refuses to edit a channel post.
+type editRefusedError string
+
+func (err editRefusedError) Error() string { return string(err) }
+
+// ErrCode will return the error code based on the error data type
+func (err editRefusedError) ErrCode() string { return "EDIT_REFUSED" }
+
+// StatusCode will return the HTTP status code based on the error data type
+func (err editRefusedError) StatusCode() int { return http.StatusUnprocessableEntity }
+
+// EditRefused builds the 422 EDIT_REFUSED error carrying the server text.
+func EditRefused(text string) error { return editRefusedError(text) }
+
 // NotAuthorized builds the 403 NOT_AUTHORIZED error carrying the server text.
 func NotAuthorized(text string) error { return forbiddenError(text) }
 

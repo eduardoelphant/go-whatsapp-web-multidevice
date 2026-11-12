@@ -30,6 +30,8 @@ type newsletterAPI interface {
 	UploadNewsletter(ctx context.Context, data []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error)
 	SendMessage(ctx context.Context, to types.JID, message *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
 	BuildPollCreation(name string, optionNames []string, selectableOptionCount int) *waE2E.Message
+	BuildEdit(chat types.JID, id types.MessageID, newContent *waE2E.Message) *waE2E.Message
+	BuildRevoke(chat, sender types.JID, id types.MessageID) *waE2E.Message
 }
 
 type serviceNewsletter struct {
@@ -204,15 +206,7 @@ func (service serviceNewsletter) GetMessages(ctx context.Context, request domain
 
 	response.Data = make([]domainNewsletter.Message, 0, len(messages))
 	for _, msg := range messages {
-		response.Data = append(response.Data, domainNewsletter.Message{
-			ServerID:       int(msg.MessageServerID),
-			MessageID:      string(msg.MessageID),
-			Type:           msg.Type,
-			Timestamp:      msg.Timestamp.Format(time.RFC3339),
-			ViewsCount:     msg.ViewsCount,
-			ReactionCounts: msg.ReactionCounts,
-			Text:           utils.ExtractMessageTextFromProto(msg.Message),
-		})
+		response.Data = append(response.Data, newsletterMessageResponse(msg))
 	}
 
 	return response, nil
@@ -310,4 +304,43 @@ func newsletterDownloadableMedia(message *waE2E.Message) (whatsmeow.Downloadable
 	}
 
 	return nil, "", fmt.Errorf("newsletter message does not contain downloadable media")
+}
+
+// newsletterMessageResponse maps one channel post to the REST shape. The first keys are
+// the original ones and stay as they were; forwards_count, media_type and caption are
+// the fork's additions.
+func newsletterMessageResponse(msg *types.NewsletterMessage) domainNewsletter.Message {
+	mediaType, caption := newsletterMediaTypeAndCaption(msg.Message)
+	return domainNewsletter.Message{
+		ServerID:       int(msg.MessageServerID),
+		MessageID:      string(msg.MessageID),
+		Type:           msg.Type,
+		Timestamp:      msg.Timestamp.Format(time.RFC3339),
+		ViewsCount:     msg.ViewsCount,
+		ReactionCounts: msg.ReactionCounts,
+		Text:           utils.ExtractMessageTextFromProto(msg.Message),
+		ForwardsCount:  msg.ForwardsCount,
+		MediaType:      mediaType,
+		Caption:        caption,
+	}
+}
+
+// newsletterMediaTypeAndCaption names the kind of a media or poll post; the caption is
+// only read for image, video and document.
+func newsletterMediaTypeAndCaption(message *waE2E.Message) (string, string) {
+	switch {
+	case message.GetImageMessage() != nil:
+		return "image", message.GetImageMessage().GetCaption()
+	case message.GetVideoMessage() != nil:
+		return "video", message.GetVideoMessage().GetCaption()
+	case message.GetDocumentMessage() != nil:
+		return "document", message.GetDocumentMessage().GetCaption()
+	case message.GetAudioMessage() != nil:
+		return "audio", ""
+	case message.GetStickerMessage() != nil:
+		return "sticker", ""
+	case message.GetPollCreationMessage() != nil, message.GetPollCreationMessageV2() != nil, message.GetPollCreationMessageV3() != nil:
+		return "poll", ""
+	}
+	return "", ""
 }

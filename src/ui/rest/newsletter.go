@@ -23,6 +23,8 @@ func InitRestNewsletter(app fiber.Router, service domainNewsletter.INewsletterUs
 	app.Post("/newsletter/send", rest.Send)
 	app.Get("/newsletter/messages", rest.GetMessages)
 	app.Get("/newsletter/messages/:server_id/download", rest.DownloadMedia)
+	app.Post("/newsletter/messages/:message_id/edit", rest.Edit)
+	app.Post("/newsletter/messages/:message_id/revoke", rest.Revoke)
 	return rest
 }
 
@@ -166,4 +168,40 @@ func readNewsletterPicture(c fiber.Ctx) ([]byte, error) {
 	defer handle.Close()
 
 	return io.ReadAll(handle)
+}
+
+// Edit replaces the text of a post; the message id comes from the route.
+func (controller *Newsletter) Edit(c fiber.Ctx) error {
+	var request domainNewsletter.EditRequest
+	err := c.Bind().Body(&request)
+	utils.PanicIfNeeded(err)
+	request.MessageID = c.Params("message_id")
+
+	response, err := controller.Service.Edit(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success edit newsletter post",
+		Results: response,
+	})
+}
+
+// Revoke deletes a post for everyone; the message id comes from the route.
+func (controller *Newsletter) Revoke(c fiber.Ctx) error {
+	var request domainNewsletter.RevokeRequest
+	err := c.Bind().Body(&request)
+	utils.PanicIfNeeded(err)
+	request.MessageID = c.Params("message_id")
+
+	response, err := controller.Service.Revoke(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success revoke newsletter post",
+		Results: response,
+	})
 }

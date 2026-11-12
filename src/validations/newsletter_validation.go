@@ -161,3 +161,30 @@ func ValidateSendNewsletter(ctx context.Context, request *domainNewsletter.SendR
 
 	return nil
 }
+
+// ValidateEditNewsletter checks an edit request: channel JID, message id and a text.
+func ValidateEditNewsletter(ctx context.Context, request domainNewsletter.EditRequest) error {
+	err := validation.ValidateStructWithContext(ctx, &request,
+		validation.Field(&request.NewsletterID, validation.Required, validation.By(validateNewsletterJIDShape)),
+		validation.Field(&request.MessageID, validation.Required, validation.Match(newsletterMessageIDShape).Error("must be 1 to 64 letters or digits")),
+		validation.Field(&request.Text, validation.Required),
+	)
+	if err != nil {
+		return pkgError.ValidationError(err.Error())
+	}
+
+	return nil
+}
+
+// ValidateRevokeNewsletter checks a revoke request: channel JID and message id.
+func ValidateRevokeNewsletter(ctx context.Context, request domainNewsletter.RevokeRequest) error {
+	err := validation.ValidateStructWithContext(ctx, &request,
+		validation.Field(&request.NewsletterID, validation.Required, validation.By(validateNewsletterJIDShape)),
+		validation.Field(&request.MessageID, validation.Required, validation.Match(newsletterMessageIDShape).Error("must be 1 to 64 letters or digits")),
+	)
+	if err != nil {
+		return pkgError.ValidationError(err.Error())
+	}
+
+	return nil
+}

@@ -122,6 +122,14 @@ type fakeNewsletterAPI struct {
 	sendResp   whatsmeow.SendResponse
 	pollCalls  []fakePollCall
 	handleSeed string
+
+	// edit and revoke (newsletter_edit_test.go)
+	editChat     types.JID
+	editID       types.MessageID
+	editContent  *waE2E.Message
+	revokeChat   types.JID
+	revokeSender types.JID
+	revokeID     types.MessageID
 }
 
 func (f *fakeNewsletterAPI) GetNewsletterInfo(_ context.Context, _ types.JID) (*types.NewsletterMetadata, error) {

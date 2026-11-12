@@ -4547,6 +4547,110 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorInternalServer'
 
+  /newsletter/messages/{message_id}/edit:
+    post:
+      operationId: editNewsletterPost
+      tags:
+        - newsletter
+      summary: Edit the text of a channel post
+      description: |
+        Fork (elphant). Admin edit of the text or caption of a published post. Does not reuse `/message/{message_id}/update`. WhatsApp refusing the edit answers 422 `EDIT_REFUSED` with the server text.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - name: message_id
+          in: path
+          required: true
+          description: WhatsApp message id of the post (1 to 64 letters or digits)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newsletter_id, text]
+              properties:
+                newsletter_id:
+                  type: string
+                  example: '120363024512399999@newsletter'
+                text:
+                  type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: SUCCESS
+                  results:
+                    type: object
+                    properties:
+                      message_id:
+                        type: string
+        '400':
+          description: Validation error
+        '422':
+          description: '`EDIT_REFUSED`, WhatsApp refused the edit; `message` carries the server text'
+        '403':
+          description: '`NOT_AUTHORIZED`, the device is not admin of the channel'
+        '404':
+          description: '`NOT_FOUND`, the channel or the post does not exist'
+
+  /newsletter/messages/{message_id}/revoke:
+    post:
+      operationId: revokeNewsletterPost
+      tags:
+        - newsletter
+      summary: Delete a channel post for everyone
+      description: |
+        Fork (elphant). Admin revoke of a published post. Does not reuse `/message/{message_id}/revoke`.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - name: message_id
+          in: path
+          required: true
+          description: WhatsApp message id of the post (1 to 64 letters or digits)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newsletter_id]
+              properties:
+                newsletter_id:
+                  type: string
+                  example: '120363024512399999@newsletter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: SUCCESS
+                  results:
+                    type: object
+                    properties:
+                      message_id:
+                        type: string
+        '400':
+          description: Validation error
+        '403':
+          description: '`NOT_AUTHORIZED`, the device is not admin of the channel'
+        '404':
+          description: '`NOT_FOUND`, the channel or the post does not exist'
+
   /newsletter/messages/{server_id}/download:
     get:
       operationId: downloadNewsletterMessageMedia
@@ -6212,6 +6316,17 @@ components:
         text:
           type: string
           example: "Hello from the channel!"
+        forwards_count:
+          type: integer
+          description: Fork (elphant). Times the post was forwarded.
+          example: 4
+        media_type:
+          type: string
+          enum: [image, video, audio, document, sticker, poll]
+          description: Fork (elphant). Absent for text posts.
+        caption:
+          type: string
+          description: Fork (elphant). Caption of an image, video or document post.
     NewsletterMediaDownloadResponse:
       type: object
       properties:

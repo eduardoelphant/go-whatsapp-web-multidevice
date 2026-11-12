@@ -648,3 +648,23 @@ Both routes read `X-Device-Id` like the other newsletter routes; existing routes
 - Debt: the message assembly (image, video, audio, document, sticker) is duplicated from the inline code of the
   `/send/*` handlers, which were left untouched; a shared builder would remove the copy.
 - Video goes out with an inline JPEG preview, size and duration from ffmpeg/ffprobe; if they fail it goes without.
+
+## Newsletter (channel) edit, revoke and full read metrics
+
+`POST /newsletter/messages/:message_id/edit` (JSON `{newsletter_id, text}`) sends `BuildEdit` with a text message to
+the `@newsletter` JID; whatsmeow turns it into the admin edit. `POST /newsletter/messages/:message_id/revoke`
+(JSON `{newsletter_id}`) sends `BuildRevoke`, which becomes the admin revoke. Both answer
+`results: {message_id}`. They are separate routes: `/message/:id/update` and `/message/:id/revoke` are not reused.
+`message_id` is validated like on send (1 to 64 letters or digits).
+
+- Errors: edit refused by WhatsApp (`bad-request`, `not-acceptable`, `ErrIQBadRequest`) is 422 `EDIT_REFUSED` carrying
+  the server text; `not-authorized` is 403 `NOT_AUTHORIZED`; `item-not-found` is 404 `NOT_FOUND`. Revoke uses the
+  send mapping (no 422).
+- Revoke passes the empty JID as sender, the form whatsmeow documents for the device's own posts (the key gets
+  `FromMe`); the seam has no own-JID accessor.
+- Routing: `/newsletter/messages/:server_id/download` is GET and the new ones are POST with a different suffix, so
+  neither captures the other (tested).
+- `GET /newsletter/messages` items gain `forwards_count` (from `ForwardsCount`), `media_type` (`image`, `video`,
+  `audio`, `document`, `sticker`, `poll`; absent on text) and `caption` (image, video, document). Every existing key
+  is unchanged, `text` included; `count` default (50) and cap (100) are unchanged. `GetMessages` still uses the
+  real client directly, so its mapping is tested through `newsletterMessageResponse`.

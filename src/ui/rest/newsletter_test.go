@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -266,4 +267,78 @@ func TestNewsletterSendRouteErrorCodes(t *testing.T) {
 			assert.Equal(t, tc.wantCode, out.Code)
 		})
 	}
+}
+
+type newsletterEditStub struct {
+	domainNewsletter.INewsletterUsecase
+	edited  domainNewsletter.EditRequest
+	revoked domainNewsletter.RevokeRequest
+	err     error
+}
+
+func (s *newsletterEditStub) Edit(_ context.Context, request domainNewsletter.EditRequest) (domainNewsletter.EditResponse, error) {
+	s.edited = request
+	return domainNewsletter.EditResponse{MessageID: request.MessageID}, s.err
+}
+
+func (s *newsletterEditStub) Revoke(_ context.Context, request domainNewsletter.RevokeRequest) (domainNewsletter.EditResponse, error) {
+	s.revoked = request
+	return domainNewsletter.EditResponse{MessageID: request.MessageID}, s.err
+}
+
+func (s *newsletterEditStub) DownloadMedia(_ context.Context, request domainNewsletter.DownloadMediaRequest) (domainNewsletter.DownloadMediaResponse, error) {
+	return domainNewsletter.DownloadMediaResponse{ServerID: request.ServerID, FilePath: "x"}, nil
+}
+
+func postNewsletterJSON(t *testing.T, app *fiber.App, path, body string) *http.Response {
+	t.Helper()
+	request := httptest.NewRequest("POST", path, bytes.NewBufferString(body))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(request)
+	require.NoError(t, err)
+	return resp
+}
+
+func TestNewsletterEditAndRevokeRoutes(t *testing.T) {
+	stub := &newsletterEditStub{}
+	app := newNewsletterDataApp(stub)
+
+	resp := postNewsletterJSON(t, app, "/newsletter/messages/3EB0AB/edit", `{"newsletter_id":"1@newsletter","text":"novo"}`)
+	require.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, domainNewsletter.EditRequest{NewsletterID: "1@newsletter", MessageID: "3EB0AB", Text: "novo"}, stub.edited)
+	var out struct {
+		Results domainNewsletter.EditResponse `json:"results"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
+	assert.Equal(t, "3EB0AB", out.Results.MessageID)
+
+	resp = postNewsletterJSON(t, app, "/newsletter/messages/3EB0AB/revoke", `{"newsletter_id":"1@newsletter"}`)
+	require.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, domainNewsletter.RevokeRequest{NewsletterID: "1@newsletter", MessageID: "3EB0AB"}, stub.revoked)
+}
+
+func TestNewsletterEditRefusedAnswers422(t *testing.T) {
+	app := newNewsletterDataApp(&newsletterEditStub{err: pkgError.EditRefused("bad-request")})
+	resp := postNewsletterJSON(t, app, "/newsletter/messages/3EB0AB/edit", `{"newsletter_id":"1@newsletter","text":"novo"}`)
+	require.Equal(t, 422, resp.StatusCode)
+	var out struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
+	assert.Equal(t, "EDIT_REFUSED", out.Code)
+	assert.Equal(t, "bad-request", out.Message)
+}
+
+func TestNewsletterDownloadAndEditRoutesDoNotShadowEachOther(t *testing.T) {
+	stub := &newsletterEditStub{}
+	app := newNewsletterDataApp(stub)
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/newsletter/messages/8872/download?newsletter_id=1@newsletter", nil))
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	resp = postNewsletterJSON(t, app, "/newsletter/messages/8872/edit", `{"newsletter_id":"1@newsletter","text":"x"}`)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "8872", stub.edited.MessageID)
 }

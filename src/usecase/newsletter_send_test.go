@@ -73,6 +73,18 @@ func (f *fakeNewsletterAPI) BuildPollCreation(name string, options []string, max
 	return &waE2E.Message{PollCreationMessage: &waE2E.PollCreationMessage{Name: &name}}
 }
 
+func (f *fakeNewsletterAPI) BuildEdit(chat types.JID, id types.MessageID, content *waE2E.Message) *waE2E.Message {
+	f.calls = append(f.calls, "build_edit")
+	f.editChat, f.editID, f.editContent = chat, id, content
+	return &waE2E.Message{EditedMessage: &waE2E.FutureProofMessage{Message: content}}
+}
+
+func (f *fakeNewsletterAPI) BuildRevoke(chat, sender types.JID, id types.MessageID) *waE2E.Message {
+	f.calls = append(f.calls, "build_revoke")
+	f.revokeChat, f.revokeSender, f.revokeID = chat, sender, id
+	return &waE2E.Message{ProtocolMessage: &waE2E.ProtocolMessage{}}
+}
+
 const sendTestJID = "120363000000000001@newsletter"
 
 func useTempSendItems(t *testing.T) {

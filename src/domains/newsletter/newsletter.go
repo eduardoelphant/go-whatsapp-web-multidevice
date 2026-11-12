@@ -11,6 +11,9 @@ type INewsletterUsecase interface {
 	Create(ctx context.Context, request CreateRequest) (response NewsletterInfoResponse, err error)
 	// Fork (elphant): publish one post to a channel.
 	Send(ctx context.Context, request SendRequest) (response SendResponse, err error)
+	// Fork (elphant): edit the text or caption of a post, and delete a post for everyone.
+	Edit(ctx context.Context, request EditRequest) (response EditResponse, err error)
+	Revoke(ctx context.Context, request RevokeRequest) (response EditResponse, err error)
 }
 
 type UnfollowRequest struct {
@@ -38,6 +41,10 @@ type Message struct {
 	ViewsCount     int            `json:"views_count"`
 	ReactionCounts map[string]int `json:"reaction_counts,omitempty"`
 	Text           string         `json:"text,omitempty"`
+	// Fork (elphant): forwards, kind of post and caption of media posts.
+	ForwardsCount int    `json:"forwards_count"`
+	MediaType     string `json:"media_type,omitempty"`
+	Caption       string `json:"caption,omitempty"`
 }
 
 type GetMessagesResponse struct {
@@ -121,4 +128,23 @@ type SendResponse struct {
 	MessageID string `json:"message_id"`
 	ServerID  int    `json:"server_id"`
 	Timestamp string `json:"timestamp"`
+}
+
+// EditRequest replaces the text (or caption) of a published post. MessageID comes from
+// the route.
+type EditRequest struct {
+	NewsletterID string `json:"newsletter_id" form:"newsletter_id"`
+	MessageID    string `json:"message_id" uri:"message_id"`
+	Text         string `json:"text" form:"text"`
+}
+
+// RevokeRequest deletes a published post for everyone. MessageID comes from the route.
+type RevokeRequest struct {
+	NewsletterID string `json:"newsletter_id" form:"newsletter_id"`
+	MessageID    string `json:"message_id" uri:"message_id"`
+}
+
+// EditResponse is the answer of edit and revoke: the message id of the post.
+type EditResponse struct {
+	MessageID string `json:"message_id"`
 }
