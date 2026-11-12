@@ -4,9 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"go/build"
 	"image"
 	"image/color"
 	"image/jpeg"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -368,4 +373,75 @@ func TestNewsletterSendGravaNoChatstorageSemBloquear(t *testing.T) {
 	_, err := service.Send(context.Background(), domainNewsletter.SendRequest{NewsletterID: sendTestJID, MessageID: "3EB0ABC", Type: "text", Text: "Olá"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"3EB0ABC|" + sendTestJID + "|Olá"}, stored)
+}
+
+func TestNewsletterSendVideoComPreviaEDuracao(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg ausente")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe ausente")
+	}
+	useTempSendItems(t)
+	path := filepath.Join(t.TempDir(), "v.mp4")
+	out, err := exec.Command("ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=duration=3:size=160x120:rate=10", "-pix_fmt", "yuv420p", path).CombinedOutput()
+	require.NoError(t, err, string(out))
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	api := &fakeNewsletterAPI{}
+	_, err = newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{
+		NewsletterID: sendTestJID, Type: "video", File: data, FileName: "v.mp4",
+	})
+	require.NoError(t, err)
+	video := api.sendMsg.GetVideoMessage()
+	assert.NotEmpty(t, video.GetJPEGThumbnail())
+	assert.Greater(t, video.GetSeconds(), uint32(0))
+	assert.Equal(t, uint32(160), video.GetWidth())
+	assert.Empty(t, video.GetThumbnailDirectPath())
+	assert.Empty(t, video.GetThumbnailSHA256())
+}
+
+func TestNewsletterSendVideoInvalidoEnviaSemPrevia(t *testing.T) {
+	useTempSendItems(t)
+	api := &fakeNewsletterAPI{}
+	_, err := newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{
+		NewsletterID: sendTestJID, Type: "video", File: []byte("nao e video"), FileName: "v.mp4",
+	})
+	require.NoError(t, err)
+	assert.Empty(t, api.sendMsg.GetVideoMessage().GetJPEGThumbnail())
+}
+
+func TestNewsletterUploadErroSoRecusaEmStatusDeArquivo(t *testing.T) {
+	for _, status := range []string{"400", "403", "413", "415", "422"} {
+		err := mapNewsletterUploadError(fmt.Errorf("upload failed with status code %s", status))
+		var generic pkgError.GenericError
+		require.True(t, errors.As(err, &generic), status)
+		assert.Equal(t, "MEDIA_REJECTED", generic.ErrCode())
+	}
+	for _, status := range []string{"429", "500", "503"} {
+		raw := fmt.Errorf("upload failed with status code %s", status)
+		assert.Equal(t, raw, mapNewsletterUploadError(raw), status)
+	}
+}
+
+func TestNewsletterUploadTextoDoWhatsmeowContinuaOMesmo(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join(build.Default.GOPATH, "pkg/mod/go.mau.fi/whatsmeow@v0.0.0-20261028111316-d24d079a3755/upload.go"))
+	if err != nil {
+		t.Skip("fonte do whatsmeow indisponível")
+	}
+	assert.Contains(t, string(src), `"`+newsletterUploadStatusText+` %d"`)
+}
+
+func TestNewsletterSendFigurinhaAnimadaRecusa(t *testing.T) {
+	animated := append([]byte("RIFF\x40\x00\x00\x00WEBPVP8X\x0a\x00\x00\x00\x12\x00\x00\x00\x00\x00\x00\x00\x00\x00ANIM"), make([]byte, 20)...)
+	api := &fakeNewsletterAPI{}
+	_, err := newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{
+		NewsletterID: sendTestJID, Type: "sticker", File: animated, FileName: "a.webp",
+	})
+	var generic pkgError.GenericError
+	require.True(t, errors.As(err, &generic))
+	assert.Equal(t, 400, generic.StatusCode())
+	assert.Contains(t, err.Error(), "animated WebP")
+	assert.Empty(t, api.calls)
 }

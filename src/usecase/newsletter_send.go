@@ -118,15 +118,16 @@ func (service serviceNewsletter) buildNewsletterMessage(ctx context.Context, api
 		if !strings.HasPrefix(mimeType, "video/") {
 			mimeType = "video/mp4"
 		}
-		msg := &waE2E.Message{VideoMessage: &waE2E.VideoMessage{
+		video := &waE2E.VideoMessage{
 			Caption:    proto.String(request.Text),
 			URL:        proto.String(uploaded.URL),
 			DirectPath: proto.String(uploaded.DirectPath),
 			Mimetype:   proto.String(mimeType),
 			FileSHA256: uploaded.FileSHA256,
 			FileLength: proto.Uint64(uploaded.FileLength),
-		}}
-		return msg, extra, newsletterContent(request.Text, "🎥 Video"), nil
+		}
+		applyNewsletterVideoPreview(ctx, video, request.File, request.FileName)
+		return &waE2E.Message{VideoMessage: video}, extra, newsletterContent(request.Text, "🎥 Video"), nil
 
 	case domainNewsletter.SendTypeDocument:
 		filename := request.Filename
@@ -233,7 +234,57 @@ func (service serviceNewsletter) buildNewsletterAudio(ctx context.Context, api n
 	return msg, extra, "🎵 Audio", nil
 }
 
+// applyNewsletterVideoPreview fills the JPEG preview, size and duration from ffmpeg and
+// ffprobe. Any failure is logged and the video goes out without them, never as an error.
+// Only the inline JPEGThumbnail is set: the thumbnail upload fields stay empty.
+func applyNewsletterVideoPreview(ctx context.Context, video *waE2E.VideoMessage, data []byte, filename string) {
+	if err := os.MkdirAll(config.PathSendItems, 0o755); err != nil {
+		logrus.Warnf("newsletter video preview skipped: %v", err)
+		return
+	}
+	id := fiberUtils.UUIDv4()
+	videoPath := filepath.Join(config.PathSendItems, "newsletter_video_"+id+filepath.Ext(filename))
+	pngPath := filepath.Join(config.PathSendItems, "newsletter_video_"+id+".png")
+	if err := os.WriteFile(videoPath, data, 0o644); err != nil {
+		logrus.Warnf("newsletter video preview skipped: %v", err)
+		return
+	}
+	defer os.Remove(videoPath)
+	defer os.Remove(pngPath)
+
+	if metadata := getVideoMetadata(videoPath); metadata.Seconds > 0 || metadata.Width > 0 {
+		if metadata.Width > 0 && metadata.Height > 0 {
+			video.Width = proto.Uint32(metadata.Width)
+			video.Height = proto.Uint32(metadata.Height)
+		}
+		if metadata.Seconds > 0 {
+			video.Seconds = proto.Uint32(metadata.Seconds)
+		}
+	}
+
+	frameCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if out, err := exec.CommandContext(frameCtx, "ffmpeg", append([]string{"-y"}, videoThumbnailFFmpegArgs(videoPath, pngPath)...)...).CombinedOutput(); err != nil {
+		logrus.Warnf("newsletter video thumbnail skipped: %v: %s", err, out)
+		return
+	}
+	thumb, err := openVideoThumbnail(pngPath)
+	if err != nil {
+		logrus.Warnf("newsletter video thumbnail skipped: %v", err)
+		return
+	}
+	var buffer bytes.Buffer
+	if err = imaging.Encode(&buffer, thumb, imaging.JPEG); err != nil {
+		logrus.Warnf("newsletter video thumbnail skipped: %v", err)
+		return
+	}
+	video.JPEGThumbnail = buffer.Bytes()
+}
+
 func writeNewsletterTempAudio(data []byte, filename string) string {
+	if err := os.MkdirAll(config.PathSendItems, 0o755); err != nil {
+		return ""
+	}
 	path := filepath.Join(config.PathSendItems, "newsletter_audio_"+fiberUtils.UUIDv4()+filepath.Ext(filename))
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return ""
@@ -280,6 +331,9 @@ func newsletterImageThumbnail(data []byte) []byte {
 // newsletterStickerWebP applies the conversion /send/sticker does for a still image:
 // fit in 512 px, PNG, then ffmpeg (or cwebp) to WebP.
 func newsletterStickerWebP(ctx context.Context, data []byte) ([]byte, uint32, uint32, error) {
+	if isAnimatedWebP(data) {
+		return nil, 0, 0, pkgError.ValidationError("file: animated WebP stickers are not supported in channels")
+	}
 	decoded, _, err := utils.DecodeImageWithinBudget(bytes.NewReader(data))
 	if err != nil {
 		return nil, 0, 0, pkgError.ValidationError("file: not a valid image")
@@ -342,11 +396,23 @@ func mapNewsletterSendError(err error, withMedia bool) error {
 	return err
 }
 
+// newsletterUploadStatusText is the text whatsmeow puts before the HTTP status of a failed
+// upload; a test pins it against the library. Only these statuses mean "file refused":
+// 429 and 5xx are transient and stay generic errors.
+const newsletterUploadStatusText = "upload failed with status code"
+
+var newsletterRejectedUploadStatuses = []string{"400", "403", "413", "415", "422"}
+
 // mapNewsletterUploadError reads a 4xx from the media upload as a refusal of the file.
 func mapNewsletterUploadError(err error) error {
 	text := err.Error()
-	if strings.Contains(text, "upload failed with status code 4") || errors.Is(err, whatsmeow.ErrIQBadRequest) {
+	if errors.Is(err, whatsmeow.ErrIQBadRequest) {
 		return pkgError.MediaRejected(text)
+	}
+	for _, status := range newsletterRejectedUploadStatuses {
+		if strings.Contains(text, newsletterUploadStatusText+" "+status) {
+			return pkgError.MediaRejected(text)
+		}
 	}
 	return err
 }
@@ -375,4 +441,12 @@ func defaultNewsletterLinkPreview(ctx context.Context, api newsletterAPI, recipi
 		return nil, errors.New("link preview needs the whatsmeow client")
 	}
 	return buildLinkPreviewMessage(ctx, client, recipient, text, link)
+}
+
+// isAnimatedWebP reports a WebP whose header carries an ANIM chunk.
+func isAnimatedWebP(data []byte) bool {
+	if len(data) < 16 || !bytes.HasPrefix(data, []byte("RIFF")) || string(data[8:12]) != "WEBP" {
+		return false
+	}
+	return bytes.Contains(data[12:min(len(data), 64)], []byte("ANIM"))
 }

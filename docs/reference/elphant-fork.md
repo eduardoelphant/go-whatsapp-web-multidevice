@@ -643,5 +643,8 @@ Both routes read `X-Device-Id` like the other newsletter routes; existing routes
   (`not-authorized`), 404 `NOT_FOUND` (`item-not-found`), 400 validation otherwise.
 - The post is stored in the device `chatstorage` like the other send routes, in a goroutine that does not hold the
   answer.
-- Known gap: animated WebP stickers are not supported on this route (the `/send/sticker` animated branch is not
-  reproduced); the file is decoded as a still image, so an animated input is refused with 400 or sent as a still.
+- Animated WebP stickers (ANIM chunk) are refused with 400 on this route; the `/send/sticker` animated branch is
+  not reproduced.
+- Debt: the message assembly (image, video, audio, document, sticker) is duplicated from the inline code of the
+  `/send/*` handlers, which were left untouched; a shared builder would remove the copy.
+- Video goes out with an inline JPEG preview, size and duration from ffmpeg/ffprobe; if they fail it goes without.
