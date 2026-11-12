@@ -111,6 +111,17 @@ type fakeNewsletterAPI struct {
 	created    *types.NewsletterMetadata
 	createArgs whatsmeow.CreateNewsletterParams
 	tosArgs    []string
+
+	// publish (newsletter_send_test.go)
+	uploadErr  error
+	uploads    []fakeUpload
+	sendErr    error
+	sendTo     types.JID
+	sendMsg    *waE2E.Message
+	sendExtra  whatsmeow.SendRequestExtra
+	sendResp   whatsmeow.SendResponse
+	pollCalls  []fakePollCall
+	handleSeed string
 }
 
 func (f *fakeNewsletterAPI) GetNewsletterInfo(_ context.Context, _ types.JID) (*types.NewsletterMetadata, error) {

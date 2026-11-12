@@ -174,3 +174,96 @@ func TestNewsletterInfoRouteRejectsIDWithoutSuffix(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 400, resp.StatusCode)
 }
+
+type newsletterSendStub struct {
+	domainNewsletter.INewsletterUsecase
+	err     error
+	request domainNewsletter.SendRequest
+}
+
+func (s *newsletterSendStub) Send(_ context.Context, request domainNewsletter.SendRequest) (domainNewsletter.SendResponse, error) {
+	s.request = request
+	return domainNewsletter.SendResponse{MessageID: "3EB0X", ServerID: 55, Timestamp: "2026-11-12T10:00:00Z"}, s.err
+}
+
+func TestNewsletterSendRouteMultipart(t *testing.T) {
+	service := &newsletterSendStub{}
+	app := newNewsletterDataApp(service)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range map[string]string{
+		"newsletter_id": "1@newsletter", "message_id": "3EB0X", "type": "poll", "poll_question": "Qual?",
+		"poll_max_answer": "2", "link_preview": "true", "filename": "a.pdf",
+	} {
+		require.NoError(t, writer.WriteField(key, value))
+	}
+	require.NoError(t, writer.WriteField("poll_options", "A"))
+	require.NoError(t, writer.WriteField("poll_options", "B"))
+	require.NoError(t, writer.WriteField("poll_options", "A"))
+	part, err := writer.CreateFormFile("file", "f.bin")
+	require.NoError(t, err)
+	_, err = part.Write([]byte{1, 2, 3})
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest("POST", "/newsletter/send", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode)
+
+	assert.Equal(t, "1@newsletter", service.request.NewsletterID)
+	assert.Equal(t, "3EB0X", service.request.MessageID)
+	assert.Equal(t, "poll", service.request.Type)
+	assert.Equal(t, 2, service.request.PollMaxAnswer)
+	assert.True(t, service.request.LinkPreview)
+	assert.Equal(t, "a.pdf", service.request.Filename)
+	assert.Equal(t, []string{"A", "B", "A"}, service.request.PollOptions)
+	assert.Equal(t, []byte{1, 2, 3}, service.request.File)
+	assert.Equal(t, "f.bin", service.request.FileName)
+
+	var out struct {
+		Code    string                        `json:"code"`
+		Results domainNewsletter.SendResponse `json:"results"`
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	require.NoError(t, json.Unmarshal(raw, &out))
+	assert.Equal(t, "SUCCESS", out.Code)
+	assert.Equal(t, 55, out.Results.ServerID)
+}
+
+func TestNewsletterSendRouteErrorCodes(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{"media rejected", pkgError.MediaRejected("bad media"), 400, "MEDIA_REJECTED"},
+		{"not authorized", pkgError.NotAuthorized("not-authorized"), 403, "NOT_AUTHORIZED"},
+		{"not found", pkgError.ErrNewsletterNotFound, 404, "NOT_FOUND"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := newNewsletterDataApp(&newsletterSendStub{err: tc.err})
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			require.NoError(t, writer.WriteField("newsletter_id", "1@newsletter"))
+			require.NoError(t, writer.WriteField("type", "text"))
+			require.NoError(t, writer.WriteField("text", "x"))
+			require.NoError(t, writer.Close())
+			req := httptest.NewRequest("POST", "/newsletter/send", &body)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			resp, err := app.Test(req)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantStatus, resp.StatusCode)
+			var out struct {
+				Code string `json:"code"`
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			require.NoError(t, json.Unmarshal(raw, &out))
+			assert.Equal(t, tc.wantCode, out.Code)
+		})
+	}
+}

@@ -20,6 +20,7 @@ func InitRestNewsletter(app fiber.Router, service domainNewsletter.INewsletterUs
 	app.Post("/newsletter/unfollow", rest.Unfollow)
 	app.Get("/newsletter/info", rest.Info)
 	app.Post("/newsletter/create", rest.Create)
+	app.Post("/newsletter/send", rest.Send)
 	app.Get("/newsletter/messages", rest.GetMessages)
 	app.Get("/newsletter/messages/:server_id/download", rest.DownloadMedia)
 	return rest
@@ -111,6 +112,42 @@ func (controller *Newsletter) Create(c fiber.Ctx) error {
 		Status:  200,
 		Code:    "SUCCESS",
 		Message: "Success create newsletter",
+		Results: response,
+	})
+}
+
+// Send publishes one post. The multipart "file" field is read as bytes, "poll_options"
+// is a repeated field.
+func (controller *Newsletter) Send(c fiber.Ctx) error {
+	var request domainNewsletter.SendRequest
+	err := c.Bind().Body(&request)
+	utils.PanicIfNeeded(err)
+
+	if form, formErr := c.MultipartForm(); formErr == nil && form != nil {
+		request.PollOptions = form.Value["poll_options"]
+	}
+	if len(request.PollOptions) == 0 {
+		request.PollOptions = nil
+	}
+
+	if file, fileErr := c.FormFile("file"); fileErr == nil {
+		handle, openErr := file.Open()
+		if openErr != nil {
+			utils.PanicIfNeeded(pkgError.ValidationError("file: unreadable file."))
+		}
+		defer handle.Close()
+		request.File, err = io.ReadAll(handle)
+		utils.PanicIfNeeded(err)
+		request.FileName = file.Filename
+	}
+
+	response, err := controller.Service.Send(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success send newsletter post",
 		Results: response,
 	})
 }

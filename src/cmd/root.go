@@ -851,7 +851,7 @@ func initApp() {
 	lidUsecase = usecase.NewLIDService(config.DBURI)
 	messageUsecase = usecase.NewMessageService(chatStorageRepo)
 	groupUsecase = usecase.NewGroupService()
-	newsletterUsecase = usecase.NewNewsletterService()
+	newsletterUsecase = usecase.NewNewsletterService(chatStorageRepo)
 	deviceUsecase = usecase.NewDeviceService(dm, appUsecase)
 	scheduleCtx, scheduleCancel := context.WithCancel(context.Background())
 	scheduleService.Start(scheduleCtx)

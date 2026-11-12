@@ -4407,6 +4407,92 @@ paths:
         '400':
           description: Validation error
 
+  /newsletter/send:
+    post:
+      operationId: sendNewsletterPost
+      tags:
+        - newsletter
+      summary: Publish a post in a channel
+      description: |
+        Fork (elphant). Publishes one post with the device as channel admin. Media goes up through
+        `UploadNewsletter` and its handle travels in the send request (`media_id`). `message_id`,
+        when given, is the WhatsApp message id (1 to 64 letters or digits); otherwise one is
+        generated. `CheckPermissions` and the reach-out guard are not applied. `text` is the text
+        (type `text`) or the caption. `link_preview` only applies to `text`; when the preview cannot
+        be fetched the plain text is sent. `audio` sent as OGG goes out as a voice note (PTT), any
+        other format as a file. `sticker` is converted to WebP like `/send/sticker`. `poll_options`
+        is a repeated field (2 to 12); `poll_max_answer` 0 or absent becomes 1.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [newsletter_id, type]
+              properties:
+                newsletter_id:
+                  type: string
+                  example: '120363024512399999@newsletter'
+                message_id:
+                  type: string
+                  example: '3EB0A1B2C3D4E5F6A7B8C9'
+                type:
+                  type: string
+                  enum: [text, image, video, audio, document, sticker, poll]
+                text:
+                  type: string
+                link_preview:
+                  type: boolean
+                file:
+                  type: string
+                  format: binary
+                  description: Required for image, video, audio, document and sticker
+                filename:
+                  type: string
+                  description: Document file name
+                poll_question:
+                  type: string
+                poll_options:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 2
+                  maxItems: 12
+                poll_max_answer:
+                  type: integer
+                  minimum: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: SUCCESS
+                  message:
+                    type: string
+                  results:
+                    type: object
+                    properties:
+                      message_id:
+                        type: string
+                      server_id:
+                        type: integer
+                      timestamp:
+                        type: string
+                        format: date-time
+        '400':
+          description: Validation error, or `MEDIA_REJECTED` when WhatsApp refused the media
+        '403':
+          description: '`NOT_AUTHORIZED`, the device is not admin of the channel'
+        '404':
+          description: '`NOT_FOUND`, the channel does not exist'
+
   /newsletter/messages:
     get:
       operationId: getNewsletterMessages

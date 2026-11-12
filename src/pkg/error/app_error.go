@@ -83,6 +83,34 @@ func (err notFoundError) StatusCode() int {
 	return http.StatusNotFound
 }
 
+// forbiddenError answers 403 when WhatsApp refuses an action for lack of role.
+type forbiddenError string
+
+func (err forbiddenError) Error() string { return string(err) }
+
+// ErrCode will return the error code based on the error data type
+func (err forbiddenError) ErrCode() string { return "NOT_AUTHORIZED" }
+
+// StatusCode will return the HTTP status code based on the error data type
+func (err forbiddenError) StatusCode() int { return http.StatusForbidden }
+
+// mediaRejectedError answers 400 when WhatsApp refuses the uploaded media.
+type mediaRejectedError string
+
+func (err mediaRejectedError) Error() string { return string(err) }
+
+// ErrCode will return the error code based on the error data type
+func (err mediaRejectedError) ErrCode() string { return "MEDIA_REJECTED" }
+
+// StatusCode will return the HTTP status code based on the error data type
+func (err mediaRejectedError) StatusCode() int { return http.StatusBadRequest }
+
+// MediaRejected builds the 400 MEDIA_REJECTED error carrying the server text.
+func MediaRejected(text string) error { return mediaRejectedError(text) }
+
+// NotAuthorized builds the 403 NOT_AUTHORIZED error carrying the server text.
+func NotAuthorized(text string) error { return forbiddenError(text) }
+
 var (
 	ErrAlreadyLoggedIn       = LoginError("you are already logged in.")
 	ErrNotConnected          = AuthError("you are not connect to services server, please reconnect")

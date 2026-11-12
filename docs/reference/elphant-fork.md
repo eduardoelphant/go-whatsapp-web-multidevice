@@ -622,3 +622,26 @@ route that returns channel data uses.
 calls `AcceptTOSNotice("20601218", "5")` and then `CreateNewsletter`, always in that order, and answers the same
 shape. The picture bytes are sent as is, no resizing, and no "terms accepted" state is kept.
 Both routes read `X-Device-Id` like the other newsletter routes; existing routes are unchanged.
+
+## Newsletter (channel) publishing
+
+`POST /newsletter/send` (multipart) publishes one post: `newsletter_id`, `message_id` (optional), `type`
+(`text`, `image`, `video`, `audio`, `document`, `sticker`, `poll`), `text` (text or caption), `link_preview`
+(only `text`), `file`, `filename` (document), `poll_question`, `poll_options` (repeated, 2 to 12) and
+`poll_max_answer` (0 or absent becomes 1). It answers `results: {message_id, server_id, timestamp}`.
+
+- Idempotency: a `message_id` from the caller becomes `SendRequestExtra.ID`; absent, whatsmeow generates one and
+  the answer carries it. `server_id` is `resp.ServerID`.
+- Media goes up through `UploadNewsletter` (channels take unencrypted media), and the `Handle` of that upload is
+  passed as `SendRequestExtra.MediaHandle`. The existing `/send/*` routes never passed it, so they cannot publish
+  media in a channel; they are unchanged.
+- `text` with `link_preview` uses `buildLinkPreviewMessage`; if the preview lookup fails the plain text is sent,
+  no error. `audio` as OGG is a voice note (`PTT`, `audio/ogg; codecs=opus`), anything else a file. `sticker` is
+  converted to WebP as `/send/sticker` does (512 px box, ffmpeg or cwebp). `poll` uses `BuildPollCreation`.
+- `CheckPermissions` and the reach-out guard are not applied; WhatsApp's own answer decides.
+- Errors: 400 `MEDIA_REJECTED` (upload 4xx or a 400 on a send that carried a media handle), 403 `NOT_AUTHORIZED`
+  (`not-authorized`), 404 `NOT_FOUND` (`item-not-found`), 400 validation otherwise.
+- The post is stored in the device `chatstorage` like the other send routes, in a goroutine that does not hold the
+  answer.
+- Known gap: animated WebP stickers are not supported on this route (the `/send/sticker` animated branch is not
+  reproduced); the file is decoded as a still image, so an animated input is refused with 400 or sent as a still.

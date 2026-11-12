@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	domainNewsletter "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/newsletter"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
@@ -26,21 +27,36 @@ type newsletterAPI interface {
 	GetNewsletterInfo(ctx context.Context, jid types.JID) (*types.NewsletterMetadata, error)
 	CreateNewsletter(ctx context.Context, params whatsmeow.CreateNewsletterParams) (*types.NewsletterMetadata, error)
 	AcceptTOSNotice(ctx context.Context, noticeID, stage string) error
+	UploadNewsletter(ctx context.Context, data []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error)
+	SendMessage(ctx context.Context, to types.JID, message *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
+	BuildPollCreation(name string, optionNames []string, selectableOptionCount int) *waE2E.Message
 }
 
 type serviceNewsletter struct {
 	// apiFromContext resolves the device client of the request; nil when logged out.
 	apiFromContext func(ctx context.Context) newsletterAPI
+	// chatStorageRepo keeps published posts in the device chat history; nil skips it.
+	chatStorageRepo domainChatStorage.IChatStorageRepository
+	// linkPreview builds a text message with a link preview; tests replace it.
+	linkPreview func(ctx context.Context, api newsletterAPI, recipient types.JID, text, link string) (*waE2E.Message, error)
+	// storeSent records a published post; nil in tests.
+	storeSent func(ctx context.Context, api newsletterAPI, id string, recipient types.JID, content string, sentAt time.Time, msg *waE2E.Message)
 }
 
-func NewNewsletterService() domainNewsletter.INewsletterUsecase {
-	return &serviceNewsletter{apiFromContext: func(ctx context.Context) newsletterAPI {
-		client := whatsapp.ClientFromContext(ctx)
-		if client == nil {
-			return nil
-		}
-		return client
-	}}
+func NewNewsletterService(chatStorageRepo domainChatStorage.IChatStorageRepository) domainNewsletter.INewsletterUsecase {
+	service := &serviceNewsletter{
+		apiFromContext: func(ctx context.Context) newsletterAPI {
+			client := whatsapp.ClientFromContext(ctx)
+			if client == nil {
+				return nil
+			}
+			return client
+		},
+		chatStorageRepo: chatStorageRepo,
+		linkPreview:     defaultNewsletterLinkPreview,
+	}
+	service.storeSent = service.storeNewsletterSent
+	return service
 }
 
 const (

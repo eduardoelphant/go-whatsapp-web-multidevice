@@ -9,6 +9,8 @@ type INewsletterUsecase interface {
 	// Fork (elphant): channel data and creation.
 	Info(ctx context.Context, request InfoRequest) (response NewsletterInfoResponse, err error)
 	Create(ctx context.Context, request CreateRequest) (response NewsletterInfoResponse, err error)
+	// Fork (elphant): publish one post to a channel.
+	Send(ctx context.Context, request SendRequest) (response SendResponse, err error)
 }
 
 type UnfollowRequest struct {
@@ -83,4 +85,40 @@ type NewsletterInfoResponse struct {
 	Role             string `json:"role"`
 	Verification     string `json:"verification"`
 	PictureURL       string `json:"picture_url"`
+}
+
+// Post types accepted by POST /newsletter/send.
+const (
+	SendTypeText     = "text"
+	SendTypeImage    = "image"
+	SendTypeVideo    = "video"
+	SendTypeAudio    = "audio"
+	SendTypeDocument = "document"
+	SendTypeSticker  = "sticker"
+	SendTypePoll     = "poll"
+)
+
+// SendRequest publishes one post to a channel. File carries the raw bytes of the
+// multipart "file" field; MessageID, when set, becomes the WhatsApp message id so the
+// caller can find the post again after an uncertain answer.
+type SendRequest struct {
+	NewsletterID  string   `json:"newsletter_id" form:"newsletter_id"`
+	MessageID     string   `json:"message_id" form:"message_id"`
+	Type          string   `json:"type" form:"type"`
+	Text          string   `json:"text" form:"text"`
+	LinkPreview   bool     `json:"link_preview" form:"link_preview"`
+	Filename      string   `json:"filename" form:"filename"`
+	PollQuestion  string   `json:"poll_question" form:"poll_question"`
+	PollOptions   []string `json:"poll_options" form:"-"`
+	PollMaxAnswer int      `json:"poll_max_answer" form:"poll_max_answer"`
+	File          []byte   `json:"-" form:"-"`
+	FileName      string   `json:"-" form:"-"`
+}
+
+// SendResponse is what WhatsApp confirmed: the message id, the server id of the post
+// in the channel and the server timestamp (RFC 3339).
+type SendResponse struct {
+	MessageID string `json:"message_id"`
+	ServerID  int    `json:"server_id"`
+	Timestamp string `json:"timestamp"`
 }

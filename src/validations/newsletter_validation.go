@@ -5,6 +5,8 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
@@ -117,6 +119,44 @@ func validateNewsletterPicture(value any) error {
 	}
 	if http.DetectContentType(picture) != "image/jpeg" {
 		return errors.New("must be image/jpeg")
+	}
+
+	return nil
+}
+
+var newsletterMessageIDShape = regexp.MustCompile(`^[0-9A-Za-z]{1,64}$`)
+
+// ValidateSendNewsletter checks a publish request and normalises poll_max_answer
+// (0 becomes 1). It does not decode the media: the usecase does that.
+func ValidateSendNewsletter(ctx context.Context, request *domainNewsletter.SendRequest) error {
+	request.Type = strings.ToLower(strings.TrimSpace(request.Type))
+	if request.Type == domainNewsletter.SendTypePoll && request.PollMaxAnswer == 0 {
+		request.PollMaxAnswer = 1
+	}
+
+	mediaType := slices.Contains([]string{
+		domainNewsletter.SendTypeImage, domainNewsletter.SendTypeVideo, domainNewsletter.SendTypeAudio,
+		domainNewsletter.SendTypeDocument, domainNewsletter.SendTypeSticker,
+	}, request.Type)
+
+	err := validation.ValidateStructWithContext(ctx, request,
+		validation.Field(&request.NewsletterID, validation.Required, validation.By(validateNewsletterJIDShape)),
+		validation.Field(&request.MessageID, validation.Match(newsletterMessageIDShape).Error("must be 1 to 64 letters or digits")),
+		validation.Field(&request.Type, validation.Required, validation.In(
+			domainNewsletter.SendTypeText, domainNewsletter.SendTypeImage, domainNewsletter.SendTypeVideo,
+			domainNewsletter.SendTypeAudio, domainNewsletter.SendTypeDocument, domainNewsletter.SendTypeSticker,
+			domainNewsletter.SendTypePoll,
+		)),
+		validation.Field(&request.Text, validation.When(request.Type == domainNewsletter.SendTypeText, validation.Required)),
+		validation.Field(&request.File, validation.When(mediaType, validation.Required.Error("cannot be blank"))),
+		validation.Field(&request.PollQuestion, validation.When(request.Type == domainNewsletter.SendTypePoll, validation.Required)),
+		validation.Field(&request.PollOptions, validation.When(request.Type == domainNewsletter.SendTypePoll,
+			validation.Length(2, 12), validation.Each(validation.Required))),
+		validation.Field(&request.PollMaxAnswer, validation.When(request.Type == domainNewsletter.SendTypePoll,
+			validation.Min(1), validation.Max(max(len(request.PollOptions), 1)))),
+	)
+	if err != nil {
+		return pkgError.ValidationError(err.Error())
 	}
 
 	return nil
