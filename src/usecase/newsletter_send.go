@@ -341,17 +341,17 @@ func newsletterStickerWebP(ctx context.Context, data []byte) ([]byte, uint32, ui
 	} else if _, lookErr := exec.LookPath("cwebp"); lookErr == nil {
 		command = exec.CommandContext(convCtx, "cwebp", "-q", "60", "-o", webpPath, pngPath)
 	} else {
-		return nil, 0, 0, pkgError.InternalServerError("neither ffmpeg nor cwebp is installed for WebP conversion")
+		return nil, 0, 0, pkgError.MediaBuildFailed("neither ffmpeg nor cwebp is installed for WebP conversion")
 	}
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	if err = command.Run(); err != nil {
-		return nil, 0, 0, pkgError.InternalServerError(fmt.Sprintf("failed to convert sticker to WebP: %v, stderr: %s", err, stderr.String()))
+		return nil, 0, 0, pkgError.MediaBuildFailed(fmt.Sprintf("failed to convert sticker to WebP: %v, stderr: %s", err, stderr.String()))
 	}
 
 	webp, err := os.ReadFile(webpPath)
 	if err != nil {
-		return nil, 0, 0, pkgError.InternalServerError(fmt.Sprintf("failed to read WebP sticker: %v", err))
+		return nil, 0, 0, pkgError.MediaBuildFailed(fmt.Sprintf("failed to read WebP sticker: %v", err))
 	}
 	bounds := decoded.Bounds()
 	return webp, uint32(bounds.Dx()), uint32(bounds.Dy()), nil
