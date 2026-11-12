@@ -6,6 +6,9 @@ type INewsletterUsecase interface {
 	Unfollow(ctx context.Context, request UnfollowRequest) (err error)
 	GetMessages(ctx context.Context, request GetMessagesRequest) (response GetMessagesResponse, err error)
 	DownloadMedia(ctx context.Context, request DownloadMediaRequest) (response DownloadMediaResponse, err error)
+	// Fork (elphant): channel data and creation.
+	Info(ctx context.Context, request InfoRequest) (response NewsletterInfoResponse, err error)
+	Create(ctx context.Context, request CreateRequest) (response NewsletterInfoResponse, err error)
 }
 
 type UnfollowRequest struct {
@@ -54,4 +57,30 @@ type DownloadMediaResponse struct {
 	FilePath  string `json:"file_path"`
 	FileURL   string `json:"file_url,omitempty"`
 	FileSize  int64  `json:"file_size"`
+}
+
+// InfoRequest reads one channel the device is joined to.
+type InfoRequest struct {
+	NewsletterID string `json:"newsletter_id" query:"newsletter_id"`
+}
+
+// CreateRequest creates a channel. Picture carries the raw JPEG bytes, sent as is.
+type CreateRequest struct {
+	Name        string `json:"name" form:"name"`
+	Description string `json:"description" form:"description"`
+	Picture     []byte `json:"-" form:"-"`
+}
+
+// NewsletterInfoResponse is the channel shape shared by every newsletter route
+// that returns channel data.
+type NewsletterInfoResponse struct {
+	NewsletterID     string `json:"newsletter_id"`
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	Invite           string `json:"invite"`
+	SubscribersCount int    `json:"subscribers_count"`
+	State            string `json:"state"`
+	Role             string `json:"role"`
+	Verification     string `json:"verification"`
+	PictureURL       string `json:"picture_url"`
 }

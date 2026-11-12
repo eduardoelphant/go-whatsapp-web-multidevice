@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,10 +20,122 @@ import (
 	"go.mau.fi/whatsmeow/types"
 )
 
-type serviceNewsletter struct{}
+// newsletterAPI is the slice of whatsmeow.Client the channel data and creation
+// routes use; tests replace it with a fake.
+type newsletterAPI interface {
+	GetNewsletterInfo(ctx context.Context, jid types.JID) (*types.NewsletterMetadata, error)
+	CreateNewsletter(ctx context.Context, params whatsmeow.CreateNewsletterParams) (*types.NewsletterMetadata, error)
+	AcceptTOSNotice(ctx context.Context, noticeID, stage string) error
+}
+
+type serviceNewsletter struct {
+	// apiFromContext resolves the device client of the request; nil when logged out.
+	apiFromContext func(ctx context.Context) newsletterAPI
+}
 
 func NewNewsletterService() domainNewsletter.INewsletterUsecase {
-	return &serviceNewsletter{}
+	return &serviceNewsletter{apiFromContext: func(ctx context.Context) newsletterAPI {
+		client := whatsapp.ClientFromContext(ctx)
+		if client == nil {
+			return nil
+		}
+		return client
+	}}
+}
+
+const (
+	newsletterCreateTOSNotice = "20601218"
+	newsletterCreateTOSStage  = "5"
+)
+
+func (service serviceNewsletter) Info(ctx context.Context, request domainNewsletter.InfoRequest) (response domainNewsletter.NewsletterInfoResponse, err error) {
+	if err = validations.ValidateNewsletterInfo(ctx, request); err != nil {
+		return response, err
+	}
+
+	api := service.apiFromContext(ctx)
+	if api == nil {
+		return response, pkgError.ErrWaCLI
+	}
+
+	JID, err := types.ParseJID(request.NewsletterID)
+	if err != nil {
+		return response, pkgError.ValidationError("newsletter_id: invalid JID")
+	}
+
+	metadata, err := api.GetNewsletterInfo(ctx, JID)
+	if err != nil {
+		if isNewsletterNotFound(err) {
+			return response, pkgError.ErrNewsletterNotFound
+		}
+		return response, err
+	}
+	if metadata == nil {
+		return response, pkgError.ErrNewsletterNotFound
+	}
+
+	return newsletterInfoResponse(metadata), nil
+}
+
+func (service serviceNewsletter) Create(ctx context.Context, request domainNewsletter.CreateRequest) (response domainNewsletter.NewsletterInfoResponse, err error) {
+	if err = validations.ValidateCreateNewsletter(ctx, request); err != nil {
+		return response, err
+	}
+
+	api := service.apiFromContext(ctx)
+	if api == nil {
+		return response, pkgError.ErrWaCLI
+	}
+
+	if err = api.AcceptTOSNotice(ctx, newsletterCreateTOSNotice, newsletterCreateTOSStage); err != nil {
+		return response, fmt.Errorf("failed to accept newsletter terms: %w", err)
+	}
+
+	metadata, err := api.CreateNewsletter(ctx, whatsmeow.CreateNewsletterParams{
+		Name:        request.Name,
+		Description: request.Description,
+		Picture:     request.Picture,
+	})
+	if err != nil {
+		return response, err
+	}
+	if metadata == nil {
+		return response, fmt.Errorf("newsletter creation returned no data")
+	}
+
+	return newsletterInfoResponse(metadata), nil
+}
+
+// isNewsletterNotFound reads the GraphQL error code 404 WhatsApp answers for an unknown channel.
+func isNewsletterNotFound(err error) bool {
+	var gqlErrors types.GraphQLErrors
+	if errors.As(err, &gqlErrors) {
+		for _, gqlErr := range gqlErrors {
+			if gqlErr.Extensions.ErrorCode == 404 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func newsletterInfoResponse(metadata *types.NewsletterMetadata) domainNewsletter.NewsletterInfoResponse {
+	response := domainNewsletter.NewsletterInfoResponse{
+		NewsletterID:     metadata.ID.String(),
+		Name:             metadata.ThreadMeta.Name.Text,
+		Description:      metadata.ThreadMeta.Description.Text,
+		Invite:           metadata.ThreadMeta.InviteCode,
+		SubscribersCount: metadata.ThreadMeta.SubscriberCount,
+		State:            string(metadata.State.Type),
+		Verification:     string(metadata.ThreadMeta.VerificationState),
+	}
+	if metadata.ViewerMeta != nil {
+		response.Role = string(metadata.ViewerMeta.Role)
+	}
+	if metadata.ThreadMeta.Picture != nil {
+		response.PictureURL = metadata.ThreadMeta.Picture.URL
+	}
+	return response
 }
 
 func (service serviceNewsletter) Unfollow(ctx context.Context, request domainNewsletter.UnfollowRequest) (err error) {

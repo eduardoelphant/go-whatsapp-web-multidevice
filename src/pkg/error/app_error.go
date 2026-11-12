@@ -97,4 +97,6 @@ var (
 	// Fork (elphant): voting on a poll the device does not know answers 404.
 	ErrPollNotFound = notFoundError("poll not found for this device and chat")
 	ErrAvatarNotSet = notFoundError("that user or group does not have a profile picture")
+	// Fork (elphant): newsletter (channel) lookups that find nothing answer 404.
+	ErrNewsletterNotFound = notFoundError("that newsletter does not exist")
 )

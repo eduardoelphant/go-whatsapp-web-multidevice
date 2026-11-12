@@ -4336,6 +4336,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorInternalServer'
+  /newsletter/info:
+    get:
+      operationId: getNewsletterInfo
+      tags:
+        - newsletter
+      summary: Get channel data
+      description: |
+        Fork (elphant). Reads one channel the device is joined to: name, description,
+        invite code, subscriber count, state, the device's role, verification and picture URL.
+        Answers 404 `NOT_FOUND` when the channel does not exist.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - name: newsletter_id
+          in: query
+          required: true
+          description: Channel JID, ending with `@newsletter`
+          schema:
+            type: string
+          example: '120363024512399999@newsletter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsletterInfoResponse'
+        '400':
+          description: Invalid newsletter_id
+        '404':
+          description: Channel not found (`NOT_FOUND`)
+  /newsletter/create:
+    post:
+      operationId: createNewsletter
+      tags:
+        - newsletter
+      summary: Create a channel
+      description: |
+        Fork (elphant). Accepts the channel-creation terms notice (`20601218`, stage `5`) and then
+        creates the channel. The picture is sent to WhatsApp as is, without resizing. No state of
+        "terms accepted" is kept.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                description:
+                  type: string
+                  maxLength: 1024
+                picture:
+                  type: string
+                  format: binary
+                  description: Optional, `image/jpeg`
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsletterInfoResponse'
+        '400':
+          description: Validation error
+
   /newsletter/messages:
     get:
       operationId: getNewsletterMessages
@@ -5993,6 +6064,26 @@ components:
             role:
               type: string
               example: "subscriber"
+    NewsletterInfoResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          example: SUCCESS
+        message:
+          type: string
+        results:
+          type: object
+          properties:
+            newsletter_id: {type: string, example: '120363024512399999@newsletter'}
+            name: {type: string}
+            description: {type: string}
+            invite: {type: string}
+            subscribers_count: {type: integer}
+            state: {type: string, example: active}
+            role: {type: string, example: owner}
+            verification: {type: string, example: verified}
+            picture_url: {type: string}
     NewsletterMessagesResponse:
       type: object
       properties:

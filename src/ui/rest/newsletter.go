@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"io"
 	"strconv"
 
 	domainNewsletter "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/newsletter"
@@ -17,6 +18,8 @@ type Newsletter struct {
 func InitRestNewsletter(app fiber.Router, service domainNewsletter.INewsletterUsecase) Newsletter {
 	rest := Newsletter{Service: service}
 	app.Post("/newsletter/unfollow", rest.Unfollow)
+	app.Get("/newsletter/info", rest.Info)
+	app.Post("/newsletter/create", rest.Create)
 	app.Get("/newsletter/messages", rest.GetMessages)
 	app.Get("/newsletter/messages/:server_id/download", rest.DownloadMedia)
 	return rest
@@ -75,4 +78,55 @@ func (controller *Newsletter) DownloadMedia(c fiber.Ctx) error {
 		Message: response.Status,
 		Results: response,
 	})
+}
+
+func (controller *Newsletter) Info(c fiber.Ctx) error {
+	var request domainNewsletter.InfoRequest
+	err := c.Bind().Query(&request)
+	utils.PanicIfNeeded(err)
+
+	response, err := controller.Service.Info(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success get newsletter info",
+		Results: response,
+	})
+}
+
+func (controller *Newsletter) Create(c fiber.Ctx) error {
+	var request domainNewsletter.CreateRequest
+	err := c.Bind().Body(&request)
+	utils.PanicIfNeeded(err)
+
+	request.Picture, err = readNewsletterPicture(c)
+	utils.PanicIfNeeded(err)
+
+	response, err := controller.Service.Create(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success create newsletter",
+		Results: response,
+	})
+}
+
+// readNewsletterPicture returns the raw bytes of the optional multipart "picture"
+// field; the usecase validation checks they are a JPEG.
+func readNewsletterPicture(c fiber.Ctx) ([]byte, error) {
+	file, err := c.FormFile("picture")
+	if err != nil {
+		return nil, nil
+	}
+	handle, err := file.Open()
+	if err != nil {
+		return nil, pkgError.ValidationError("picture: unreadable file.")
+	}
+	defer handle.Close()
+
+	return io.ReadAll(handle)
 }

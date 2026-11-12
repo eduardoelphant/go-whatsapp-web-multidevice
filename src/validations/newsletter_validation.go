@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"net/http"
 	"strings"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
@@ -81,5 +82,42 @@ func validateNewsletterJIDShape(value any) error {
 	if !strings.HasSuffix(id, config.WhatsappTypeNewsletter) {
 		return pkgError.ValidationError("must end with " + config.WhatsappTypeNewsletter)
 	}
+	return nil
+}
+
+func ValidateNewsletterInfo(ctx context.Context, request domainNewsletter.InfoRequest) error {
+	err := validation.ValidateStructWithContext(ctx, &request,
+		validation.Field(&request.NewsletterID, validation.Required, validation.By(validateNewsletterJIDShape)),
+	)
+	if err != nil {
+		return pkgError.ValidationError(err.Error())
+	}
+
+	return nil
+}
+
+func ValidateCreateNewsletter(ctx context.Context, request domainNewsletter.CreateRequest) error {
+	err := validation.ValidateStructWithContext(ctx, &request,
+		validation.Field(&request.Name, validation.Required, validation.RuneLength(1, 100)),
+		validation.Field(&request.Description, validation.RuneLength(0, 1024)),
+		validation.Field(&request.Picture, validation.By(validateNewsletterPicture)),
+	)
+	if err != nil {
+		return pkgError.ValidationError(err.Error())
+	}
+
+	return nil
+}
+
+// validateNewsletterPicture accepts an absent picture or one whose bytes sniff as JPEG.
+func validateNewsletterPicture(value any) error {
+	picture, ok := value.([]byte)
+	if !ok || len(picture) == 0 {
+		return nil
+	}
+	if http.DetectContentType(picture) != "image/jpeg" {
+		return errors.New("must be image/jpeg")
+	}
+
 	return nil
 }

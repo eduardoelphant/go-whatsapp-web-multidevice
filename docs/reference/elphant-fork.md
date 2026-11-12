@@ -609,3 +609,16 @@ The `group.info` `value` of `invite_link_reset` is the SHA-256 of the new invite
 `https://chat.whatsapp.com/` removed), never the code: the code is the credential to join, so it does not
 travel in a webhook. The consumer hashes the code it holds and compares, to tell a reset it did from one
 done elsewhere. The `value` of the other `group.info` types is unchanged.
+
+## Newsletter (channel) data and creation
+
+`GET /newsletter/info?newsletter_id=` returns one channel the device is joined to as
+`results: {newsletter_id, name, description, invite, subscribers_count, state, role, verification, picture_url}`
+(`role` comes from the viewer metadata, `state` from `state.type`). A channel that does not exist answers
+404 `NOT_FOUND` (GraphQL error code 404 or empty metadata). `NewsletterInfoResponse` is the shape every newsletter
+route that returns channel data uses.
+
+`POST /newsletter/create` (multipart `name` 1 to 100, `description` up to 1024, `picture` optional `image/jpeg`)
+calls `AcceptTOSNotice("20601218", "5")` and then `CreateNewsletter`, always in that order, and answers the same
+shape. The picture bytes are sent as is, no resizing, and no "terms accepted" state is kept.
+Both routes read `X-Device-Id` like the other newsletter routes; existing routes are unchanged.

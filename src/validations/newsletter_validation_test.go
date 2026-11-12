@@ -3,6 +3,7 @@ package validations
 import (
 	"context"
 	"math"
+	"strings"
 	"testing"
 
 	domainNewsletter "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/newsletter"
@@ -172,6 +173,58 @@ func TestValidateDownloadNewsletterMedia(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateDownloadNewsletterMedia(context.Background(), tt.request)
 			assert.Equal(t, tt.err, err)
+		})
+	}
+}
+
+func TestValidateNewsletterInfo(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+		ok   bool
+	}{
+		{"valid", "120363123456789@newsletter", true},
+		{"empty", "", false},
+		{"group jid", "120363123456789@g.us", false},
+		{"phone jid", "5511999999999@s.whatsapp.net", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateNewsletterInfo(context.Background(), domainNewsletter.InfoRequest{NewsletterID: tt.id})
+			if tt.ok {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateCreateNewsletter(t *testing.T) {
+	jpeg := append([]byte{0xFF, 0xD8, 0xFF, 0xE0}, make([]byte, 32)...)
+	png := append([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, make([]byte, 32)...)
+	tests := []struct {
+		name    string
+		request domainNewsletter.CreateRequest
+		ok      bool
+	}{
+		{"name only", domainNewsletter.CreateRequest{Name: "Canal"}, true},
+		{"name 100 runes", domainNewsletter.CreateRequest{Name: strings.Repeat("é", 100)}, true},
+		{"name 101 runes", domainNewsletter.CreateRequest{Name: strings.Repeat("a", 101)}, false},
+		{"name empty", domainNewsletter.CreateRequest{}, false},
+		{"description 1024", domainNewsletter.CreateRequest{Name: "C", Description: strings.Repeat("a", 1024)}, true},
+		{"description 1025", domainNewsletter.CreateRequest{Name: "C", Description: strings.Repeat("a", 1025)}, false},
+		{"jpeg picture", domainNewsletter.CreateRequest{Name: "C", Picture: jpeg}, true},
+		{"png picture", domainNewsletter.CreateRequest{Name: "C", Picture: png}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateCreateNewsletter(context.Background(), tt.request)
+			if tt.ok {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+			}
 		})
 	}
 }
