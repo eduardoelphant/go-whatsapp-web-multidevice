@@ -147,12 +147,13 @@ func isNewsletterNotFound(err error) bool {
 }
 
 func newsletterInfoResponse(metadata *types.NewsletterMetadata) domainNewsletter.NewsletterInfoResponse {
+	subscribers := metadata.ThreadMeta.SubscriberCount
 	response := domainNewsletter.NewsletterInfoResponse{
 		NewsletterID:     metadata.ID.String(),
 		Name:             metadata.ThreadMeta.Name.Text,
 		Description:      metadata.ThreadMeta.Description.Text,
 		Invite:           metadata.ThreadMeta.InviteCode,
-		SubscribersCount: metadata.ThreadMeta.SubscriberCount,
+		SubscribersCount: &subscribers,
 		State:            string(metadata.State.Type),
 		Verification:     string(metadata.ThreadMeta.VerificationState),
 	}
@@ -161,6 +162,7 @@ func newsletterInfoResponse(metadata *types.NewsletterMetadata) domainNewsletter
 	}
 	if metadata.ThreadMeta.Picture != nil {
 		response.PictureURL = metadata.ThreadMeta.Picture.URL
+		response.PictureID = metadata.ThreadMeta.Picture.ID
 	}
 	return response
 }

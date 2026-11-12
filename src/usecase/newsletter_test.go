@@ -189,8 +189,19 @@ func TestNewsletterInfoMapeiaNoveCampos(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domainNewsletter.NewsletterInfoResponse{
 		NewsletterID: "120363000000000001@newsletter", Name: "Canal", Description: "Descrição", Invite: "0029VaABC",
-		SubscribersCount: 42, State: "active", Role: "owner", Verification: "verified", PictureURL: "https://pps.whatsapp.net/x.jpg",
+		SubscribersCount: intPtr(42), State: "active", Role: "owner", Verification: "verified", PictureURL: "https://pps.whatsapp.net/x.jpg",
 	}, got)
+}
+
+func intPtr(i int) *int { return &i }
+
+func TestNewsletterInfoSerializaZeroSeguidores(t *testing.T) {
+	meta := sampleNewsletterMetadata()
+	meta.ThreadMeta.SubscriberCount = 0
+	got, err := newTestNewsletterService(&fakeNewsletterAPI{info: meta}).Info(context.Background(), domainNewsletter.InfoRequest{NewsletterID: "1@newsletter"})
+	require.NoError(t, err)
+	out, _ := json.Marshal(got)
+	assert.Contains(t, string(out), `"subscribers_count":0`)
 }
 
 func TestNewsletterInfoSemViewerNemFoto(t *testing.T) {
