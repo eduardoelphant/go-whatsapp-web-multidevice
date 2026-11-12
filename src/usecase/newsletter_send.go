@@ -109,24 +109,24 @@ func (service serviceNewsletter) buildNewsletterMessage(ctx context.Context, api
 		return msg, extra, newsletterContent(request.Text, "🖼️ Image"), nil
 
 	case domainNewsletter.SendTypeVideo:
-		uploaded, err := uploadNewsletterMedia(ctx, api, whatsmeow.MediaVideo, request.File)
+		transcoded, err := transcodeNewsletterVideo(ctx, request.File, request.FileName)
+		if err != nil {
+			return nil, extra, "", err
+		}
+		uploaded, err := uploadNewsletterMedia(ctx, api, whatsmeow.MediaVideo, transcoded)
 		if err != nil {
 			return nil, extra, "", err
 		}
 		extra.MediaHandle = uploaded.Handle
-		mimeType := http.DetectContentType(request.File)
-		if !strings.HasPrefix(mimeType, "video/") {
-			mimeType = "video/mp4"
-		}
 		video := &waE2E.VideoMessage{
 			Caption:    proto.String(request.Text),
 			URL:        proto.String(uploaded.URL),
 			DirectPath: proto.String(uploaded.DirectPath),
-			Mimetype:   proto.String(mimeType),
+			Mimetype:   proto.String("video/mp4"),
 			FileSHA256: uploaded.FileSHA256,
 			FileLength: proto.Uint64(uploaded.FileLength),
 		}
-		applyNewsletterVideoPreview(ctx, video, request.File, request.FileName)
+		applyNewsletterVideoPreview(ctx, video, transcoded, "video.mp4")
 		return &waE2E.Message{VideoMessage: video}, extra, newsletterContent(request.Text, "🎥 Video"), nil
 
 	case domainNewsletter.SendTypeAudio:
@@ -467,6 +467,38 @@ func convertNewsletterAudioToOpus(ctx context.Context, data []byte, filename str
 	converted, err := os.ReadFile(outputPath)
 	if err != nil {
 		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to read converted audio: %v", err))
+	}
+	return converted, nil
+}
+
+// transcodeNewsletterVideo re-encodes the video with the same HD recipe as SendVideo
+// (H.264 yuv420p, AAC, faststart), so the channel player can start it. Failure answers
+// 422 MEDIA_BUILD_FAILED with the ffmpeg stderr; the raw file is never sent (fork: elphant).
+func transcodeNewsletterVideo(ctx context.Context, data []byte, filename string) ([]byte, error) {
+	if err := os.MkdirAll(config.PathSendItems, 0o755); err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to prepare video folder: %v", err))
+	}
+	id := fiberUtils.UUIDv4()
+	inputPath := filepath.Join(config.PathSendItems, "newsletter_video_in_"+id+filepath.Ext(filename))
+	outputPath := filepath.Join(config.PathSendItems, "newsletter_video_out_"+id+".mp4")
+	defer os.Remove(inputPath)
+	defer os.Remove(outputPath)
+
+	if err := os.WriteFile(inputPath, data, 0o644); err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to save video for conversion: %v", err))
+	}
+
+	convCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(convCtx, "ffmpeg", buildHDVideoFFmpegArgs(inputPath, outputPath)...)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, pkgError.MediaBuildFailed(fmt.Sprintf("failed to convert video to MP4: %v: %s", err, strings.TrimSpace(stderr.String())))
+	}
+	converted, err := os.ReadFile(outputPath)
+	if err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to read converted video: %v", err))
 	}
 	return converted, nil
 }
