@@ -162,6 +162,38 @@ func ValidateSendNewsletter(ctx context.Context, request *domainNewsletter.SendR
 	return nil
 }
 
+// ValidateUpdateNewsletter checks a channel edit: JID, at least one field, and the same
+// limits as creation for the fields sent.
+func ValidateUpdateNewsletter(ctx context.Context, request domainNewsletter.UpdateRequest) error {
+	if request.Name == nil && request.Description == nil && len(request.Picture) == 0 && !request.RemovePicture {
+		return pkgError.ValidationError("at least one of name, description, picture or remove_picture is required")
+	}
+	if len(request.Picture) > 0 && request.RemovePicture {
+		return pkgError.ValidationError("picture and remove_picture cannot be sent together")
+	}
+	err := validation.ValidateStructWithContext(ctx, &request,
+		validation.Field(&request.NewsletterID, validation.Required, validation.By(validateNewsletterJIDShape)),
+		validation.Field(&request.Picture, validation.By(validateNewsletterPicture)),
+	)
+	if err == nil && request.Name != nil {
+		err = validation.Validate(*request.Name, validation.Required, validation.RuneLength(1, 100))
+		if err != nil {
+			err = errors.New("name: " + err.Error())
+		}
+	}
+	if err == nil && request.Description != nil {
+		err = validation.Validate(*request.Description, validation.RuneLength(0, 1024))
+		if err != nil {
+			err = errors.New("description: " + err.Error())
+		}
+	}
+	if err != nil {
+		return pkgError.ValidationError(err.Error())
+	}
+
+	return nil
+}
+
 // ValidateEditNewsletter checks an edit request: channel JID, message id and a text.
 func ValidateEditNewsletter(ctx context.Context, request domainNewsletter.EditRequest) error {
 	err := validation.ValidateStructWithContext(ctx, &request,

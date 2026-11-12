@@ -206,6 +206,9 @@ func initEnvConfig() {
 	if viper.IsSet("whatsapp_user_check_min_interval_ms") {
 		config.WhatsappUserCheckMinIntervalMs = viper.GetInt("whatsapp_user_check_min_interval_ms")
 	}
+	if viper.IsSet("whatsapp_newsletter_update_query_id") {
+		config.WhatsappNewsletterUpdateQueryID = viper.GetString("whatsapp_newsletter_update_query_id")
+	}
 	if viper.IsSet("whatsapp_reachout_guard") {
 		config.WhatsappReachoutGuard = viper.GetBool("whatsapp_reachout_guard")
 	}

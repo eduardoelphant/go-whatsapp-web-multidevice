@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -130,6 +131,12 @@ type fakeNewsletterAPI struct {
 	revokeChat   types.JID
 	revokeSender types.JID
 	revokeID     types.MessageID
+
+	// channel update (newsletter_update_test.go)
+	mexQueryID string
+	mexVars    any
+	mexData    json.RawMessage
+	mexErr     error
 }
 
 func (f *fakeNewsletterAPI) GetNewsletterInfo(_ context.Context, _ types.JID) (*types.NewsletterMetadata, error) {

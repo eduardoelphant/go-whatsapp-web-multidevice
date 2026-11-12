@@ -14,7 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Edit replaces the text or caption of a published post with the admin edit
+// Edit replaces the text of a text post with the admin edit
 // (fork: elphant). Neither CheckPermissions nor the reach-out guard applies.
 func (service serviceNewsletter) Edit(ctx context.Context, request domainNewsletter.EditRequest) (response domainNewsletter.EditResponse, err error) {
 	if err = validations.ValidateEditNewsletter(ctx, request); err != nil {

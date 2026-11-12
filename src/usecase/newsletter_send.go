@@ -419,7 +419,7 @@ func mapNewsletterUploadError(err error) error {
 
 // storeNewsletterSent keeps the post in the device chat history without blocking the answer.
 func (service serviceNewsletter) storeNewsletterSent(ctx context.Context, api newsletterAPI, id string, recipient types.JID, content string, sentAt time.Time, msg *waE2E.Message) {
-	client, ok := api.(*whatsmeow.Client)
+	client, ok := realNewsletterClient(api)
 	if !ok || service.chatStorageRepo == nil {
 		return
 	}
@@ -436,7 +436,7 @@ func (service serviceNewsletter) storeNewsletterSent(ctx context.Context, api ne
 
 // defaultNewsletterLinkPreview builds the preview with the real client.
 func defaultNewsletterLinkPreview(ctx context.Context, api newsletterAPI, recipient types.JID, text, link string) (*waE2E.Message, error) {
-	client, ok := api.(*whatsmeow.Client)
+	client, ok := realNewsletterClient(api)
 	if !ok {
 		return nil, errors.New("link preview needs the whatsmeow client")
 	}

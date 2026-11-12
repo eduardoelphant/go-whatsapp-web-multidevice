@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -32,6 +33,8 @@ type newsletterAPI interface {
 	BuildPollCreation(name string, optionNames []string, selectableOptionCount int) *waE2E.Message
 	BuildEdit(chat types.JID, id types.MessageID, newContent *waE2E.Message) *waE2E.Message
 	BuildRevoke(chat, sender types.JID, id types.MessageID) *waE2E.Message
+	// SendMexIQ is the whatsmeow DangerousInternals call; the real client needs newsletterClient.
+	SendMexIQ(ctx context.Context, queryID string, variables any) (json.RawMessage, error)
 }
 
 type serviceNewsletter struct {
@@ -52,7 +55,7 @@ func NewNewsletterService(chatStorageRepo domainChatStorage.IChatStorageReposito
 			if client == nil {
 				return nil
 			}
-			return client
+			return newsletterClient{Client: client}
 		},
 		chatStorageRepo: chatStorageRepo,
 		linkPreview:     defaultNewsletterLinkPreview,

@@ -4407,6 +4407,64 @@ paths:
         '400':
           description: Validation error
 
+  /newsletter/update:
+    post:
+      operationId: updateNewsletter
+      tags:
+        - newsletter
+      summary: Edit name, description and picture of a channel
+      description: |
+        Fork (elphant). Edits the channel itself through the channel update mutation
+        (`DangerousInternals().SendMexIQ`), in the Baileys format
+        `{newsletter_id, updates: {name?, description?, picture?, settings: null}}`; only the fields
+        sent go into `updates`. The picture is a JPEG sent as is (no resizing) and travels as base64;
+        `remove_picture` writes an empty picture. At least one field is required; `picture` and
+        `remove_picture` do not go together. An empty `description` clears it. The query id is
+        `7150902998257522` (whatsmeow) unless `WHATSAPP_NEWSLETTER_UPDATE_QUERY_ID` is set. The answer
+        is the channel read from `xwa2_newsletter_update`, completed with a channel info read when the
+        answer lacks a field. Needs a channel role that may edit (owner or admin).
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [newsletter_id]
+              properties:
+                newsletter_id:
+                  type: string
+                  example: '120363024512399999@newsletter'
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                description:
+                  type: string
+                  maxLength: 1024
+                picture:
+                  type: string
+                  format: binary
+                  description: Optional, `image/jpeg`
+                remove_picture:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsletterInfoResponse'
+        '400':
+          description: Validation error (nothing to update, bad JID, picture not JPEG, limits)
+        '403':
+          description: '`NOT_AUTHORIZED`, the device has no role that may edit the channel'
+        '404':
+          description: '`NOT_FOUND`, the channel does not exist'
+        '422':
+          description: '`UPDATE_REFUSED`, WhatsApp refused the update; `message` carries the server text'
+
   /newsletter/send:
     post:
       operationId: sendNewsletterPost
@@ -4554,7 +4612,7 @@ paths:
         - newsletter
       summary: Edit the text of a channel post
       description: |
-        Fork (elphant). Admin edit of the text or caption of a published post. Does not reuse `/message/{message_id}/update`. WhatsApp refusing the edit answers 422 `EDIT_REFUSED` with the server text.
+        Fork (elphant). Admin edit that replaces the text of a text post (a media caption is not editable). Does not reuse `/message/{message_id}/update`. WhatsApp refusing the edit answers 422 `EDIT_REFUSED` with the server text.
       parameters:
         - $ref: '#/components/parameters/DeviceIdHeader'
         - name: message_id

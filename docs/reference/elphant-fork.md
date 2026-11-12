@@ -668,3 +668,25 @@ the `@newsletter` JID; whatsmeow turns it into the admin edit. `POST /newsletter
   `audio`, `document`, `sticker`, `poll`; absent on text) and `caption` (image, video, document). Every existing key
   is unchanged, `text` included; `count` default (50) and cap (100) are unchanged. `GetMessages` still uses the
   real client directly, so its mapping is tested through `newsletterMessageResponse`.
+
+## Newsletter (channel) edit of name, description and picture
+
+`POST /newsletter/update` (multipart `newsletter_id`, `name`, `description`, `picture` JPEG, `remove_picture`) edits
+the channel itself and answers the same `NewsletterInfoResponse` as `GET /newsletter/info`. A field is sent only when
+its multipart key is present (an empty `description` clears it); at least one is required, and `picture` with
+`remove_picture` is a validation error. The picture is validated by byte sniff (JPEG) and is not resized.
+
+- Call: `cli.DangerousInternals().SendMexIQ(ctx, queryID, variables)`, reached through `newsletterClient` (a wrapper
+  that gives the real client the `SendMexIQ` method the `newsletterAPI` seam declares; the type assertions that need
+  the bare client go through `realNewsletterClient`). whatsmeow is not changed.
+- Variables (Baileys format): `{"newsletter_id": "<jid>", "updates": {"name"?, "description"?, "picture"? (base64),
+  "settings": null}}`. `settings` is always present and `null`; `remove_picture` writes `"picture": ""`. Response path
+  `xwa2_newsletter_update` (a `NewsletterMetadata`).
+- Query id: `7150902998257522`, copied from `mutationUpdateNewsletter` (`newsletter.go:123` of go.mau.fi/whatsmeow, not
+  exported); `sendMexIQ` swaps it for the desktop id. Env `WHATSAPP_NEWSLETTER_UPDATE_QUERY_ID` overrides it (plan B:
+  the Baileys id `24250201037901610`), no new image needed. Which id the server accepts is unverified until the live test.
+- Answer completion: when the mutation answer has no id, no name, or no picture after one was set, the usecase reads
+  `GetNewsletterInfo` and answers from that.
+- Errors (`GraphQLErrorExtensions.ErrorCode`): 401 or 403 is 403 `NOT_AUTHORIZED`, 404 is 404 `NOT_FOUND`, any other
+  GraphQL error is 422 `UPDATE_REFUSED` carrying the server text. Non-GraphQL errors use the send mapping.
+- `POST /newsletter/messages/:message_id/edit` replaces the text of a text post; a media caption is not editable.

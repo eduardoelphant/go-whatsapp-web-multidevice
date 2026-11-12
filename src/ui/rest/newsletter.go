@@ -21,6 +21,7 @@ func InitRestNewsletter(app fiber.Router, service domainNewsletter.INewsletterUs
 	app.Get("/newsletter/info", rest.Info)
 	app.Post("/newsletter/create", rest.Create)
 	app.Post("/newsletter/send", rest.Send)
+	app.Post("/newsletter/update", rest.Update)
 	app.Get("/newsletter/messages", rest.GetMessages)
 	app.Get("/newsletter/messages/:server_id/download", rest.DownloadMedia)
 	app.Post("/newsletter/messages/:message_id/edit", rest.Edit)
@@ -202,6 +203,36 @@ func (controller *Newsletter) Revoke(c fiber.Ctx) error {
 		Status:  200,
 		Code:    "SUCCESS",
 		Message: "Success revoke newsletter post",
+		Results: response,
+	})
+}
+
+// Update edits name, description and picture of the channel. A field is only sent when
+// its multipart key is present, so an empty description clears it.
+func (controller *Newsletter) Update(c fiber.Ctx) error {
+	var request domainNewsletter.UpdateRequest
+	err := c.Bind().Body(&request)
+	utils.PanicIfNeeded(err)
+
+	if form, formErr := c.MultipartForm(); formErr == nil && form != nil {
+		if values, ok := form.Value["name"]; ok && len(values) > 0 {
+			request.Name = &values[0]
+		}
+		if values, ok := form.Value["description"]; ok && len(values) > 0 {
+			request.Description = &values[0]
+		}
+	}
+
+	request.Picture, err = readNewsletterPicture(c)
+	utils.PanicIfNeeded(err)
+
+	response, err := controller.Service.Update(whatsapp.ContextWithDevice(c.Context(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Success update newsletter",
 		Results: response,
 	})
 }

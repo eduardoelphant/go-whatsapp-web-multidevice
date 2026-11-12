@@ -342,3 +342,82 @@ func TestNewsletterDownloadAndEditRoutesDoNotShadowEachOther(t *testing.T) {
 	assert.Equal(t, 200, resp.StatusCode)
 	assert.Equal(t, "8872", stub.edited.MessageID)
 }
+
+type newsletterUpdateStub struct {
+	domainNewsletter.INewsletterUsecase
+	updated domainNewsletter.UpdateRequest
+	err     error
+}
+
+func (s *newsletterUpdateStub) Update(_ context.Context, request domainNewsletter.UpdateRequest) (domainNewsletter.NewsletterInfoResponse, error) {
+	s.updated = request
+	return domainNewsletter.NewsletterInfoResponse{NewsletterID: request.NewsletterID, Name: "Novo"}, s.err
+}
+
+func postNewsletterUpdate(t *testing.T, app *fiber.App, fields map[string]string, picture []byte) *http.Response {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range fields {
+		require.NoError(t, writer.WriteField(key, value))
+	}
+	if picture != nil {
+		part, err := writer.CreateFormFile("picture", "p.jpg")
+		require.NoError(t, err)
+		_, err = part.Write(picture)
+		require.NoError(t, err)
+	}
+	require.NoError(t, writer.Close())
+	req := httptest.NewRequest("POST", "/newsletter/update", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	return resp
+}
+
+func TestNewsletterUpdateRoutePassesOnlyTheFieldsSent(t *testing.T) {
+	stub := &newsletterUpdateStub{}
+	app := newNewsletterDataApp(stub)
+
+	resp := postNewsletterUpdate(t, app, map[string]string{"newsletter_id": "1@newsletter", "description": ""}, nil)
+	require.Equal(t, 200, resp.StatusCode)
+	assert.Nil(t, stub.updated.Name)
+	require.NotNil(t, stub.updated.Description)
+	assert.Equal(t, "", *stub.updated.Description)
+	assert.Empty(t, stub.updated.Picture)
+	assert.False(t, stub.updated.RemovePicture)
+
+	resp = postNewsletterUpdate(t, app, map[string]string{"newsletter_id": "1@newsletter", "name": "Novo", "remove_picture": "true"}, nil)
+	require.Equal(t, 200, resp.StatusCode)
+	require.NotNil(t, stub.updated.Name)
+	assert.Equal(t, "Novo", *stub.updated.Name)
+	assert.True(t, stub.updated.RemovePicture)
+
+	resp = postNewsletterUpdate(t, app, map[string]string{"newsletter_id": "1@newsletter"}, []byte{0xFF, 0xD8, 0xFF, 0xE0, 9})
+	require.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, []byte{0xFF, 0xD8, 0xFF, 0xE0, 9}, stub.updated.Picture)
+}
+
+func TestNewsletterUpdateRouteErrorCodes(t *testing.T) {
+	cases := map[string]struct {
+		err    error
+		status int
+		code   string
+	}{
+		"sem papel":     {pkgError.NotAuthorized("forbidden"), 403, "NOT_AUTHORIZED"},
+		"canal ausente": {pkgError.ErrNewsletterNotFound, 404, "NOT_FOUND"},
+		"recusa":        {pkgError.UpdateRefused("refused"), 422, "UPDATE_REFUSED"},
+	}
+	for label, tc := range cases {
+		t.Run(label, func(t *testing.T) {
+			app := newNewsletterDataApp(&newsletterUpdateStub{err: tc.err})
+			resp := postNewsletterUpdate(t, app, map[string]string{"newsletter_id": "1@newsletter", "name": "x"}, nil)
+			require.Equal(t, tc.status, resp.StatusCode)
+			var out struct {
+				Code string `json:"code"`
+			}
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
+			assert.Equal(t, tc.code, out.Code)
+		})
+	}
+}

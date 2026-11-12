@@ -11,9 +11,11 @@ type INewsletterUsecase interface {
 	Create(ctx context.Context, request CreateRequest) (response NewsletterInfoResponse, err error)
 	// Fork (elphant): publish one post to a channel.
 	Send(ctx context.Context, request SendRequest) (response SendResponse, err error)
-	// Fork (elphant): edit the text or caption of a post, and delete a post for everyone.
+	// Fork (elphant): edit the text of a text post, and delete a post for everyone.
 	Edit(ctx context.Context, request EditRequest) (response EditResponse, err error)
 	Revoke(ctx context.Context, request RevokeRequest) (response EditResponse, err error)
+	// Fork (elphant): edit name, description and picture of the channel.
+	Update(ctx context.Context, request UpdateRequest) (response NewsletterInfoResponse, err error)
 }
 
 type UnfollowRequest struct {
@@ -130,7 +132,7 @@ type SendResponse struct {
 	Timestamp string `json:"timestamp"`
 }
 
-// EditRequest replaces the text (or caption) of a published post. MessageID comes from
+// EditRequest replaces the text of a published text post. MessageID comes from
 // the route.
 type EditRequest struct {
 	NewsletterID string `json:"newsletter_id" form:"newsletter_id"`
@@ -147,4 +149,14 @@ type RevokeRequest struct {
 // EditResponse is the answer of edit and revoke: the message id of the post.
 type EditResponse struct {
 	MessageID string `json:"message_id"`
+}
+
+// UpdateRequest edits the channel itself. A nil Name or Description is not sent; an empty
+// Description clears it. Picture carries raw JPEG bytes; RemovePicture clears the picture.
+type UpdateRequest struct {
+	NewsletterID  string  `json:"newsletter_id" form:"newsletter_id"`
+	Name          *string `json:"name" form:"-"`
+	Description   *string `json:"description" form:"-"`
+	Picture       []byte  `json:"-" form:"-"`
+	RemovePicture bool    `json:"remove_picture" form:"remove_picture"`
 }
