@@ -163,15 +163,6 @@ func TestNewsletterSendMidiaSobePorUploadNewsletterEHandleVaiNoExtra(t *testing.
 				assert.Equal(t, "video/mp4", msg.GetVideoMessage().GetMimetype())
 			},
 		},
-		{
-			name:      "document",
-			request:   domainNewsletter.SendRequest{Type: "document", Text: "doc", Filename: "tabela.pdf", File: []byte("%PDF-1.4"), FileName: "upload.bin"},
-			mediaType: whatsmeow.MediaDocument,
-			check: func(t *testing.T, msg *waE2E.Message) {
-				assert.Equal(t, "tabela.pdf", msg.GetDocumentMessage().GetFileName())
-				assert.Equal(t, "application/pdf", msg.GetDocumentMessage().GetMimetype())
-			},
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -347,7 +338,6 @@ func TestNewsletterSendInvalidoNaoChamaOCliente(t *testing.T) {
 		{"imagem sem arquivo", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "image"}},
 		{"video sem arquivo", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "video"}},
 		{"audio sem arquivo", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "audio"}},
-		{"documento sem arquivo", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "document"}},
 		{"figurinha sem arquivo", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "sticker"}},
 		{"imagem que nao e imagem", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "image", File: []byte("nada")}},
 		{"enquete sem pergunta", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "poll", PollOptions: []string{"a", "b"}}},
@@ -473,4 +463,16 @@ func TestNewsletterServerReturnedErrorTextoDoWhatsmeowContinuaOMesmo(t *testing.
 		t.Skip("fonte do whatsmeow indisponível")
 	}
 	assert.Contains(t, string(src), `errors.New("server returned error")`)
+}
+
+func TestNewsletterSendDocumentoRecusadoComTypeUnsupportedSemChamarOCliente(t *testing.T) {
+	api := &fakeNewsletterAPI{}
+	_, err := newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{
+		NewsletterID: sendTestJID, Type: " Document ", Filename: "tabela.pdf", File: []byte("%PDF-1.4"),
+	})
+	var generic pkgError.GenericError
+	require.True(t, errors.As(err, &generic), "got %v", err)
+	assert.Equal(t, 422, generic.StatusCode())
+	assert.Equal(t, "TYPE_UNSUPPORTED", generic.ErrCode())
+	assert.Empty(t, api.calls)
 }

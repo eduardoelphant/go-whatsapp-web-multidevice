@@ -129,28 +129,6 @@ func (service serviceNewsletter) buildNewsletterMessage(ctx context.Context, api
 		applyNewsletterVideoPreview(ctx, video, request.File, request.FileName)
 		return &waE2E.Message{VideoMessage: video}, extra, newsletterContent(request.Text, "🎥 Video"), nil
 
-	case domainNewsletter.SendTypeDocument:
-		filename := request.Filename
-		if filename == "" {
-			filename = request.FileName
-		}
-		uploaded, err := uploadNewsletterMedia(ctx, api, whatsmeow.MediaDocument, request.File)
-		if err != nil {
-			return nil, extra, "", err
-		}
-		extra.MediaHandle = uploaded.Handle
-		msg := &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
-			Caption:    proto.String(request.Text),
-			FileName:   proto.String(filename),
-			Title:      proto.String(filename),
-			URL:        proto.String(uploaded.URL),
-			DirectPath: proto.String(uploaded.DirectPath),
-			Mimetype:   proto.String(resolveDocumentMIME(filename, request.File)),
-			FileSHA256: uploaded.FileSHA256,
-			FileLength: proto.Uint64(uploaded.FileLength),
-		}}
-		return msg, extra, newsletterContent(request.Text, "📄 "+filename), nil
-
 	case domainNewsletter.SendTypeAudio:
 		return service.buildNewsletterAudio(ctx, api, request)
 

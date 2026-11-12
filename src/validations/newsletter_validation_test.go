@@ -2,6 +2,7 @@ package validations
 
 import (
 	"context"
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	domainNewsletter "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/newsletter"
 	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidateUnfollowNewsletter(t *testing.T) {
@@ -227,4 +229,14 @@ func TestValidateCreateNewsletter(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateSendNewsletterDocumentoVira422TypeUnsupported(t *testing.T) {
+	err := ValidateSendNewsletter(context.Background(), &domainNewsletter.SendRequest{
+		NewsletterID: "120363000000000000@newsletter", Type: "Document", File: []byte("x"),
+	})
+	var generic pkgError.GenericError
+	require.True(t, errors.As(err, &generic), "got %v", err)
+	assert.Equal(t, 422, generic.StatusCode())
+	assert.Equal(t, "TYPE_UNSUPPORTED", generic.ErrCode())
 }
