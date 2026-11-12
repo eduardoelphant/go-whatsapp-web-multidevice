@@ -70,7 +70,7 @@ func (service serviceNewsletter) Revoke(ctx context.Context, request domainNewsl
 // answers go through the send mapping.
 func mapNewsletterEditError(err error) error {
 	text := err.Error()
-	if errors.Is(err, whatsmeow.ErrIQBadRequest) || strings.Contains(text, "bad-request") || strings.Contains(text, "not-acceptable") {
+	if errors.Is(err, whatsmeow.ErrIQBadRequest) || errors.Is(err, whatsmeow.ErrServerReturnedError) || strings.Contains(text, "bad-request") || strings.Contains(text, "not-acceptable") {
 		return pkgError.EditRefused(text)
 	}
 	return mapNewsletterSendError(err, false)

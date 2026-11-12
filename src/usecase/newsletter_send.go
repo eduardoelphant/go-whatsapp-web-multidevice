@@ -392,6 +392,8 @@ func mapNewsletterSendError(err error, withMedia bool) error {
 		return pkgError.ErrNewsletterNotFound
 	case withMedia && (errors.Is(err, whatsmeow.ErrIQBadRequest) || strings.Contains(text, "bad-request")):
 		return pkgError.MediaRejected(text)
+	case errors.Is(err, whatsmeow.ErrServerReturnedError):
+		return pkgError.SendRefused(text)
 	}
 	return err
 }

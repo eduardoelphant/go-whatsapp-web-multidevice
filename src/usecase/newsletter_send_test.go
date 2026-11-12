@@ -308,6 +308,7 @@ func TestNewsletterSendMapeiaErrosDoWhatsApp(t *testing.T) {
 		{"item-not-found", whatsmeow.ErrIQNotFound, nil, domainNewsletter.SendRequest{Type: "text", Text: "x"}, 404, "NOT_FOUND"},
 		{"midia recusada no envio", whatsmeow.ErrIQBadRequest, nil, domainNewsletter.SendRequest{Type: "video", File: []byte("x")}, 400, "MEDIA_REJECTED"},
 		{"midia recusada no upload", nil, errors.New("upload failed with status code 413"), domainNewsletter.SendRequest{Type: "video", File: []byte("x")}, 400, "MEDIA_REJECTED"},
+		{"recusa do servidor", fmt.Errorf("%w %d", whatsmeow.ErrServerReturnedError, 479), nil, domainNewsletter.SendRequest{Type: "text", Text: "x"}, 422, "SEND_REFUSED"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -456,4 +457,20 @@ func TestNewsletterSendFigurinhaAnimadaRecusa(t *testing.T) {
 	assert.Equal(t, 400, generic.StatusCode())
 	assert.Contains(t, err.Error(), "animated WebP")
 	assert.Empty(t, api.calls)
+}
+
+func TestNewsletterSendRecusaDoServidorTrazOTexto(t *testing.T) {
+	api := &fakeNewsletterAPI{sendErr: fmt.Errorf("%w %d", whatsmeow.ErrServerReturnedError, 479)}
+	_, err := newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "text", Text: "x"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "server returned error 479")
+}
+
+func TestNewsletterServerReturnedErrorTextoDoWhatsmeowContinuaOMesmo(t *testing.T) {
+	assert.Equal(t, "server returned error", whatsmeow.ErrServerReturnedError.Error())
+	src, err := os.ReadFile(filepath.Join(build.Default.GOPATH, "pkg/mod/go.mau.fi/whatsmeow@v0.0.0-20261028111316-d24d079a3755/errors.go"))
+	if err != nil {
+		t.Skip("fonte do whatsmeow indisponível")
+	}
+	assert.Contains(t, string(src), `errors.New("server returned error")`)
 }
