@@ -1537,17 +1537,7 @@ func (service serviceSend) SendAudio(ctx context.Context, request domainSend.Aud
 			convCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 			defer cancel()
 
-			cmdConvert := exec.CommandContext(convCtx, "ffmpeg",
-				"-i", inputPath,
-				"-c:a", "libopus",
-				"-b:a", "64k",
-				"-vbr", "on",
-				"-application", "voip",
-				"-ar", "48000",
-				"-ac", "1",
-				"-y", // Overwrite output if exists
-				outputPath,
-			)
+			cmdConvert := exec.CommandContext(convCtx, "ffmpeg", voiceNoteOpusFFmpegArgs(inputPath, outputPath)...)
 
 			var stderr bytes.Buffer
 			cmdConvert.Stderr = &stderr
@@ -2244,53 +2234,11 @@ func (service serviceSend) SendSticker(ctx context.Context, request domainSend.S
 		logrus.Info("Fallback conversion successful")
 	}
 
-	// Fit inside 512x512. Both edges are capped; a narrow source is not
-	// stretched by deriving an unbounded height from a fixed width.
-	srcImage = utils.FitBox(srcImage, stickerMaxEdge, stickerMaxEdge)
-
-	// Convert to WebP using external command (ffmpeg or cwebp)
-	webpPath := filepath.Join(absBaseDir, fmt.Sprintf("sticker_%s.webp", fiberUtils.UUIDv4()))
-	deletedItems = append(deletedItems, webpPath)
-
-	// First save as PNG temporarily
-	pngPath := filepath.Join(absBaseDir, fmt.Sprintf("temp_%s.png", fiberUtils.UUIDv4()))
-	deletedItems = append(deletedItems, pngPath)
-
-	err = imaging.Save(srcImage, pngPath)
+	// Fit inside 512x512 and convert to a static WebP (shared with the channel sticker).
+	var stickerWidth, stickerHeight uint32
+	stickerBytes, stickerWidth, stickerHeight, err = encodeStillStickerWebP(ctx, srcImage, absBaseDir, "sticker")
 	if err != nil {
-		return response, pkgError.InternalServerError(fmt.Sprintf("failed to save temporary PNG: %v", err))
-	}
-
-	// Try to use ffmpeg first (most common), then cwebp
-	var convertCmd *exec.Cmd
-
-	// Add execution timeout for conversion
-	convCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
-
-	// Check if ffmpeg is available
-	if _, err := exec.LookPath("ffmpeg"); err == nil {
-		// Use ffmpeg to convert to WebP with transparency support, overwrite if exists
-		convertCmd = exec.CommandContext(convCtx, "ffmpeg", buildStickerWebPFFmpegArgs(pngPath, webpPath)...)
-	} else if _, err := exec.LookPath("cwebp"); err == nil {
-		// Use cwebp as fallback
-		convertCmd = exec.CommandContext(convCtx, "cwebp", "-q", "60", "-o", webpPath, pngPath)
-	} else {
-		// If neither tool is available, return error
-		return response, pkgError.InternalServerError("neither ffmpeg nor cwebp is installed for WebP conversion")
-	}
-
-	var stderr bytes.Buffer
-	convertCmd.Stderr = &stderr
-
-	if err := convertCmd.Run(); err != nil {
-		return response, pkgError.InternalServerError(fmt.Sprintf("failed to convert sticker to WebP: %v, stderr: %s", err, stderr.String()))
-	}
-
-	// Read the WebP file
-	stickerBytes, err = os.ReadFile(webpPath)
-	if err != nil {
-		return response, pkgError.InternalServerError(fmt.Sprintf("failed to read WebP sticker: %v", err))
+		return response, stickerErrorToAttendance(err)
 	}
 
 	// Upload sticker to WhatsApp servers
@@ -2309,8 +2257,8 @@ func (service serviceSend) SendSticker(ctx context.Context, request domainSend.S
 			FileSHA256:    stickerUploaded.FileSHA256,
 			FileEncSHA256: stickerUploaded.FileEncSHA256,
 			MediaKey:      stickerUploaded.MediaKey,
-			Width:         proto.Uint32(uint32(srcImage.Bounds().Dx())),
-			Height:        proto.Uint32(uint32(srcImage.Bounds().Dy())),
+			Width:         proto.Uint32(stickerWidth),
+			Height:        proto.Uint32(stickerHeight),
 			IsAnimated:    proto.Bool(false),
 		},
 	}
