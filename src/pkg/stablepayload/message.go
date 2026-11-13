@@ -33,7 +33,11 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 		}
 	}
 	if rm := msg.GetReactionMessage(); rm != nil {
-		return EventReaction, Reaction{Base: b, TargetID: rm.GetKey().GetID(), Emoji: strPtr(rm.GetText())}
+		r := Reaction{Base: b, TargetID: rm.GetKey().GetID(), Emoji: strPtr(rm.GetText())}
+		if evt.Info.Chat.User == "status" && evt.Info.Chat.Server == types.BroadcastServer && rm.GetKey().GetFromMe() {
+			r.Status = &StatusRef{IsOwn: true, TargetID: r.TargetID}
+		}
+		return EventReaction, r
 	}
 
 	content, nestedViewOnce := unwrap(msg)
@@ -256,7 +260,7 @@ func quoted(ctx context.Context, ci *waE2E.ContextInfo, r Resolver) *Quoted {
 	}
 	quotedMsg, _ := unwrap(ci.GetQuotedMessage())
 	typ, text, _, _, _ := classify(quotedMsg, ci.GetStanzaID())
-	q := &Quoted{ID: ci.GetStanzaID(), Type: typ, Text: text}
+	q := &Quoted{ID: ci.GetStanzaID(), Type: typ, Text: text, IsStatus: ci.GetRemoteJID() == types.StatusBroadcastJID.String()}
 	if participant, err := types.ParseJID(ci.GetParticipant()); err == nil && ci.GetParticipant() != "" {
 		q.Sender.PN, q.Sender.LID = resolve(ctx, participant, types.JID{}, r)
 	}

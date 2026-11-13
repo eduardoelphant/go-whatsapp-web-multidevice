@@ -163,7 +163,7 @@ func TestBuildMessageQuotedAndForwarded(t *testing.T) {
 	}}
 	m := buildMessage(t, newMessageEvent(raw))
 	got := toJSON(t, m.Quoted)
-	want := `{"id":"ORIGINAL1","type":"text","text":"question","sender":{"pn":"5511900000001@s.whatsapp.net","lid":"100000000000001@lid"}}`
+	want := `{"id":"ORIGINAL1","type":"text","text":"question","sender":{"pn":"5511900000001@s.whatsapp.net","lid":"100000000000001@lid"},"is_status":false}`
 	if got != want || !m.Forwarded {
 		t.Fatalf("quoted = %s forwarded=%v, want %s forwarded=true", got, m.Forwarded, want)
 	}

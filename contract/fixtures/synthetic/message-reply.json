@@ -27,7 +27,8 @@
       "sender": {
         "pn": "5511900000001@s.whatsapp.net",
         "lid": "100000000000001@lid"
-      }
+      },
+      "is_status": false
     },
     "forwarded": false,
     "view_once": false,

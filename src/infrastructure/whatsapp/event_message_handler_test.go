@@ -517,3 +517,54 @@ func TestHandleMessageSkipsSenderKeyDistributionOnly(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 }
+
+// Fork (elphant): D5112, a reaction to a status of this number reaches webhooks.
+func TestStatusReactionToOwnStatusIsForwarded(t *testing.T) {
+	originalWebhookURLs := config.WhatsappWebhook
+	originalWebhookEvents := config.WhatsappWebhookEvents
+	originalSubmit := submitWebhookFn
+	originalLog := log
+	defer func() {
+		config.WhatsappWebhook = originalWebhookURLs
+		config.WhatsappWebhookEvents = originalWebhookEvents
+		submitWebhookFn = originalSubmit
+		log = originalLog
+	}()
+	log = waLog.Noop
+	config.WhatsappWebhook = []string{"https://example.test/webhook"}
+	config.WhatsappWebhookEvents = nil
+	delivered := make(chan map[string]any, 8)
+	submitWebhookFn = func(_ context.Context, payload map[string]any, _ string, _ *domainChatStorage.DeviceWebhookConfig) error {
+		delivered <- payload
+		return nil
+	}
+
+	reaction := func(id string, fromMe, isFromMe bool) *events.Message {
+		evt := textEventForTest(id, types.NewJID("status", types.BroadcastServer))
+		evt.Info.IsFromMe = isFromMe
+		evt.Message = &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{
+			Key:  &waCommon.MessageKey{ID: protoString("STATUS-1"), FromMe: &fromMe},
+			Text: protoString("❤"),
+		}}
+		return evt
+	}
+	handleWebhookForward(context.Background(), reaction("react-other-status", false, false), nil) // status alheio
+	handleWebhookForward(context.Background(), reaction("react-by-me", true, true), nil)          // reação nossa
+	handleWebhookForward(context.Background(), reaction("react-own-status", true, false), nil)
+
+	select {
+	case payload := <-delivered:
+		eventPayload := payload["payload"].(map[string]any)
+		if eventPayload["id"] != "react-own-status" {
+			t.Fatalf("unexpected forwarded event: %v", eventPayload["id"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for own status reaction webhook")
+	}
+	time.Sleep(200 * time.Millisecond)
+	select {
+	case payload := <-delivered:
+		t.Fatalf("extra event forwarded: %+v", payload)
+	default:
+	}
+}

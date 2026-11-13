@@ -1,0 +1,25 @@
+{
+  "event": "message.reaction",
+  "stable": {
+    "schema": 1,
+    "id": "3EB0000000000000000001",
+    "timestamp": "2026-09-25T12:00:00Z",
+    "is_from_me": false,
+    "chat": {
+      "pn": "status@broadcast",
+      "lid": null,
+      "is_group": false
+    },
+    "sender": {
+      "pn": "5511900000001@s.whatsapp.net",
+      "lid": "100000000000001@lid",
+      "push_name": "Contact One"
+    },
+    "target_id": "2A60C0911F97477494C916D52693BBE3",
+    "emoji": "❤",
+    "status": {
+      "is_own": true,
+      "target_id": "2A60C0911F97477494C916D52693BBE3"
+    }
+  }
+}

@@ -234,7 +234,9 @@ func handleWebhookForward(ctx context.Context, evt *events.Message, client *what
 	// the Chatwoot pipeline rejects status@broadcast (a relayed status post
 	// would only spawn a noise "Status" contact), and plain webhook consumers
 	// must not receive broadcast noise just because Chatwoot is enabled.
-	if strings.Contains(evt.Info.SourceString(), "broadcast") {
+	// Fork (elphant): the one exception is a reaction to a status posted by this
+	// number (D5112), so the CRM can show who reacted to it.
+	if strings.Contains(evt.Info.SourceString(), "broadcast") && !isReactionToOwnStatus(evt) {
 		return
 	}
 
@@ -257,6 +259,17 @@ func handleWebhookForward(ctx context.Context, evt *events.Message, client *what
 			logrus.Error("Failed forward to webhook: ", err)
 		}
 	}(evt, client, pollPayload)
+}
+
+// isReactionToOwnStatus reports whether evt is someone else reacting to a status
+// this number posted: chat status@broadcast, a ReactionMessage whose key is
+// ours (FromMe), sent by another account. Fork (elphant).
+func isReactionToOwnStatus(evt *events.Message) bool {
+	if evt.Info.Chat.User != "status" || evt.Info.Chat.Server != types.BroadcastServer || evt.Info.IsFromMe {
+		return false
+	}
+	rm := evt.Message.GetReactionMessage()
+	return rm != nil && rm.GetKey().GetFromMe()
 }
 
 // isProtocolOnlyMessage reports whether msg carries only a sender key distribution message,
