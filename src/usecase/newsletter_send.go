@@ -343,8 +343,6 @@ func newsletterStickerWebP(ctx context.Context, data []byte) ([]byte, uint32, ui
 	if err != nil {
 		return nil, 0, 0, pkgError.ValidationError("file: not a valid image")
 	}
-	decoded = utils.FitBox(decoded, stickerMaxEdge, stickerMaxEdge)
-
 	absBaseDir, err := filepath.Abs(config.PathSendItems)
 	if err != nil {
 		return nil, 0, 0, pkgError.InternalServerError(fmt.Sprintf("failed to resolve base directory: %v", err))
@@ -352,38 +350,11 @@ func newsletterStickerWebP(ctx context.Context, data []byte) ([]byte, uint32, ui
 	if err = os.MkdirAll(absBaseDir, 0o755); err != nil {
 		return nil, 0, 0, pkgError.InternalServerError(fmt.Sprintf("failed to create send directory: %v", err))
 	}
-	id := fiberUtils.UUIDv4()
-	pngPath := filepath.Join(absBaseDir, fmt.Sprintf("newsletter_sticker_%s.png", id))
-	webpPath := filepath.Join(absBaseDir, fmt.Sprintf("newsletter_sticker_%s.webp", id))
-	defer os.Remove(pngPath)
-	defer os.Remove(webpPath)
-
-	if err = imaging.Save(decoded, pngPath); err != nil {
-		return nil, 0, 0, pkgError.InternalServerError(fmt.Sprintf("failed to save temporary PNG: %v", err))
-	}
-
-	convCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
-	var command *exec.Cmd
-	if _, lookErr := exec.LookPath("ffmpeg"); lookErr == nil {
-		command = exec.CommandContext(convCtx, "ffmpeg", buildStickerWebPFFmpegArgs(pngPath, webpPath)...)
-	} else if _, lookErr := exec.LookPath("cwebp"); lookErr == nil {
-		command = exec.CommandContext(convCtx, "cwebp", "-q", "60", "-o", webpPath, pngPath)
-	} else {
-		return nil, 0, 0, pkgError.MediaBuildFailed("neither ffmpeg nor cwebp is installed for WebP conversion")
-	}
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	if err = command.Run(); err != nil {
-		return nil, 0, 0, pkgError.MediaBuildFailed(fmt.Sprintf("failed to convert sticker to WebP: %v, stderr: %s", err, stderr.String()))
-	}
-
-	webp, err := os.ReadFile(webpPath)
+	webp, width, height, err := encodeStillStickerWebP(ctx, decoded, absBaseDir, "newsletter_sticker")
 	if err != nil {
-		return nil, 0, 0, pkgError.MediaBuildFailed(fmt.Sprintf("failed to read WebP sticker: %v", err))
+		return nil, 0, 0, stickerErrorToChannel(err)
 	}
-	bounds := decoded.Bounds()
-	return webp, uint32(bounds.Dx()), uint32(bounds.Dy()), nil
+	return webp, width, height, nil
 }
 
 // mapNewsletterSendError turns the WhatsApp answer into the codes the CRM reads.
@@ -478,17 +449,7 @@ func convertNewsletterAudioToOpus(ctx context.Context, data []byte, filename str
 	convCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(convCtx, "ffmpeg",
-		"-i", inputPath,
-		"-c:a", "libopus",
-		"-b:a", "64k",
-		"-vbr", "on",
-		"-application", "voip",
-		"-ar", "48000",
-		"-ac", "1",
-		"-y",
-		outputPath,
-	)
+	cmd := exec.CommandContext(convCtx, "ffmpeg", voiceNoteOpusFFmpegArgs(inputPath, outputPath)...)
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return nil, pkgError.MediaBuildFailed(fmt.Sprintf("failed to convert audio to OGG Opus: %v: %s", err, strings.TrimSpace(stderr.String())))
@@ -517,7 +478,7 @@ func transcodeNewsletterVideo(ctx context.Context, data []byte, filename string)
 		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to save video for conversion: %v", err))
 	}
 
-	convCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	convCtx, cancel := context.WithTimeout(ctx, newsletterVideoTranscodeTimeout)
 	defer cancel()
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(convCtx, "ffmpeg", buildHDVideoFFmpegArgs(inputPath, outputPath)...)
@@ -531,3 +492,7 @@ func transcodeNewsletterVideo(ctx context.Context, data []byte, filename string)
 	}
 	return converted, nil
 }
+
+// newsletterVideoTranscodeTimeout bounds the channel video conversion. It must stay below
+// the 280 s the CRM waits for a video send, so a slow conversion fails here first (WN-25).
+const newsletterVideoTranscodeTimeout = 4 * time.Minute

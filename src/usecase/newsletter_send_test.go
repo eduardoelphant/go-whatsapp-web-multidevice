@@ -587,3 +587,26 @@ func TestConvertNewsletterAudioToOpus(t *testing.T) {
 		assert.Equal(t, "MEDIA_BUILD_FAILED", generic.ErrCode())
 	})
 }
+
+func TestConvertNewsletterAudioToOpusDevolveOggOpus(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg ausente")
+	}
+	useTempSendItems(t)
+	srcPath := filepath.Join(t.TempDir(), "tone.wav")
+	out, err := exec.Command("ffmpeg", "-y", "-f", "lavfi", "-i", "sine=duration=1", srcPath).CombinedOutput()
+	require.NoError(t, err, string(out))
+	data, err := os.ReadFile(srcPath)
+	require.NoError(t, err)
+
+	got, err := convertNewsletterAudioToOpus(context.Background(), data, "tone.wav")
+	require.NoError(t, err)
+	require.Greater(t, len(got), 64)
+	assert.Equal(t, "OggS", string(got[0:4]))
+	assert.Contains(t, string(got[:64]), "OpusHead")
+}
+
+func TestNewsletterVideoTranscodeTimeoutFicaAbaixoDoPrazoDoCRM(t *testing.T) {
+	// The CRM waits 280 s for a video send; the conversion must give up before that (WN-25).
+	assert.Equal(t, 4*time.Minute, newsletterVideoTranscodeTimeout)
+}

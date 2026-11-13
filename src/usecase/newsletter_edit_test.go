@@ -161,3 +161,72 @@ func TestNewsletterRevokeServerReturnedErrorBecomesSendRefused(t *testing.T) {
 	require.ErrorAs(t, err, &coded)
 	assert.Equal(t, "SEND_REFUSED", coded.ErrCode())
 }
+
+func codedNewsletterError(t *testing.T, err error) (string, int) {
+	t.Helper()
+	var coded interface {
+		ErrCode() string
+		StatusCode() int
+	}
+	require.ErrorAs(t, err, &coded)
+	return coded.ErrCode(), coded.StatusCode()
+}
+
+func countNewsletterInfoCalls(api *fakeNewsletterAPI) int {
+	count := 0
+	for _, call := range api.calls {
+		if call == "info" {
+			count++
+		}
+	}
+	return count
+}
+
+func TestNewsletterMissingPostDistinguishesPostFromChannel(t *testing.T) {
+	existing := &types.NewsletterMetadata{ID: types.NewJID("1", types.NewsletterServer)}
+	cases := map[string]struct {
+		api  *fakeNewsletterAPI
+		code string
+	}{
+		"canal existe":      {&fakeNewsletterAPI{sendErr: whatsmeow.ErrIQNotFound, info: existing}, "MESSAGE_NOT_FOUND"},
+		"canal inexistente": {&fakeNewsletterAPI{sendErr: whatsmeow.ErrIQNotFound}, "NOT_FOUND"},
+		"leitura falha":     {&fakeNewsletterAPI{sendErr: whatsmeow.ErrIQNotFound, infoErr: fmt.Errorf("boom")}, "NOT_FOUND"},
+	}
+	for name, c := range cases {
+		t.Run("editar "+name, func(t *testing.T) {
+			_, err := newTestNewsletterService(c.api).Edit(context.Background(), domainNewsletter.EditRequest{
+				NewsletterID: sendTestJID, MessageID: editTestMessageID, Text: "x",
+			})
+			code, status := codedNewsletterError(t, err)
+			assert.Equal(t, c.code, code)
+			assert.Equal(t, 404, status)
+		})
+		t.Run("apagar "+name, func(t *testing.T) {
+			api := *c.api
+			_, err := newTestNewsletterService(&api).Revoke(context.Background(), domainNewsletter.RevokeRequest{
+				NewsletterID: sendTestJID, MessageID: editTestMessageID,
+			})
+			code, status := codedNewsletterError(t, err)
+			assert.Equal(t, c.code, code)
+			assert.Equal(t, 404, status)
+		})
+	}
+}
+
+func TestNewsletterEditAndRevokeOtherErrorsDoNotReadTheChannel(t *testing.T) {
+	for name, sendErr := range map[string]error{"refused": whatsmeow.ErrIQBadRequest, "not authorized": whatsmeow.ErrIQNotAuthorized} {
+		api := &fakeNewsletterAPI{sendErr: sendErr}
+		_, err := newTestNewsletterService(api).Edit(context.Background(), domainNewsletter.EditRequest{
+			NewsletterID: sendTestJID, MessageID: editTestMessageID, Text: "x",
+		})
+		require.Error(t, err, name)
+		assert.Zero(t, countNewsletterInfoCalls(api), name)
+
+		api = &fakeNewsletterAPI{sendErr: sendErr}
+		_, err = newTestNewsletterService(api).Revoke(context.Background(), domainNewsletter.RevokeRequest{
+			NewsletterID: sendTestJID, MessageID: editTestMessageID,
+		})
+		require.Error(t, err, name)
+		assert.Zero(t, countNewsletterInfoCalls(api), name)
+	}
+}

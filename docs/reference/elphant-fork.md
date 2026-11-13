@@ -636,24 +636,27 @@ Both routes read `X-Device-Id` like the other newsletter routes; existing routes
   passed as `SendRequestExtra.MediaHandle`. The existing `/send/*` routes never passed it, so they cannot publish
   media in a channel; they are unchanged.
 - `text` with `link_preview` uses `buildLinkPreviewMessage`; if the preview lookup fails the plain text is sent,
-  no error. `audio` as OGG is a voice note (`PTT`, `audio/ogg; codecs=opus`), anything else a file. `sticker` is
-  converted to WebP as `/send/sticker` does (512 px box, ffmpeg or cwebp). `poll` uses `BuildPollCreation`.
+  no error. `audio` as OGG is a voice note (`PTT`, `audio/ogg; codecs=opus`), anything else a file; the voice note is
+  built by `voiceNoteOpusFFmpegArgs` (`usecase/media_build.go`), the same builder `/send/audio` uses. `sticker` is
+  converted to WebP by `encodeStillStickerWebP` (same file, 512 px box, ffmpeg or cwebp), the builder `/send/sticker`
+  uses. `poll` uses `BuildPollCreation`.
 - `CheckPermissions` and the reach-out guard are not applied; WhatsApp's own answer decides.
 - Errors: 400 `MEDIA_REJECTED` (upload 4xx or a 400 on a send that carried a media handle), 403 `NOT_AUTHORIZED`
   (`not-authorized`), 404 `NOT_FOUND` (`item-not-found`), 400 validation otherwise. Live findings (`.9`): a send
   WhatsApp refuses (`bad-request`, `not-acceptable`, `ErrIQBadRequest`, `ErrServerReturnedError`) is 422
-  `SEND_REFUSED` carrying the server text; a media build failure (video transcode, sticker conversion) is 422
-  `MEDIA_BUILD_FAILED`; `type=document` is refused with 422 `TYPE_UNSUPPORTED` (channels do not take it).
+  `SEND_REFUSED` carrying the server text; a media build failure (video transcode, voice note or sticker
+  conversion) is 422 `MEDIA_BUILD_FAILED`, where `/send/audio` and `/send/sticker` answer 500 for the same failure;
+  `type=document` is refused with 422 `TYPE_UNSUPPORTED` (channels do not take it).
 - The post is stored in the device `chatstorage` like the other send routes, in a goroutine that does not hold the
   answer.
 - Animated WebP stickers (ANIM chunk) are refused with 400 on this route; the `/send/sticker` animated branch is
   not reproduced.
-- Debt: the message assembly (image, video, audio, document, sticker) is duplicated from the inline code of the
-  `/send/*` handlers, which were left untouched; a shared builder would remove the copy.
 - Video goes out with an inline JPEG preview, size and duration from ffmpeg/ffprobe; if they fail it goes without.
 - Live findings (`.9`): every channel `audio` is converted to ogg/opus and sent as a voice note (`PTT`), whatever the
   input format. `video` is always transcoded to H.264 yuv420p with faststart; a failed transcode is 422
-  `MEDIA_BUILD_FAILED` (no raw fallback). A sticker that cannot be built is also 422 `MEDIA_BUILD_FAILED`.
+  `MEDIA_BUILD_FAILED` (no raw fallback). The transcode gives up after 4 minutes (`newsletterVideoTranscodeTimeout`),
+  below the 280 s the CRM waits for a video send, so a slow conversion fails here first. A sticker that cannot be
+  built is also 422 `MEDIA_BUILD_FAILED`.
 - Poll: the message goes without `MessageContextInfo` (no `messageSecret`). `WHATSAPP_NEWSLETTER_POLL_MODE` picks
   the wire form: `plain` (default) sends the poll as a regular message; `node` sends a node with `type=poll` and a
   meta `polltype` (`creation`; V3 when the poll has a single answer allowed).
@@ -667,8 +670,10 @@ the `@newsletter` JID; whatsmeow turns it into the admin edit. `POST /newsletter
 `message_id` is validated like on send (1 to 64 letters or digits).
 
 - Errors: edit refused by WhatsApp (`bad-request`, `not-acceptable`, `ErrIQBadRequest`) is 422 `EDIT_REFUSED` carrying
-  the server text; `not-authorized` is 403 `NOT_AUTHORIZED`; `item-not-found` is 404 `NOT_FOUND`. Revoke uses the
-  send mapping (no 422).
+  the server text; `not-authorized` is 403 `NOT_AUTHORIZED`. `item-not-found` is not enough to tell a missing post
+  from a missing channel, so the channel is read: channel exists is 404 `MESSAGE_NOT_FOUND` (the post is gone);
+  channel does not exist, or the read fails, is 404 `NOT_FOUND`. Revoke uses the same resolution and the send
+  mapping otherwise (no 422).
 - Revoke passes the empty JID as sender, the form whatsmeow documents for the device's own posts (the key gets
   `FromMe`); the seam has no own-JID accessor.
 - Routing: `/newsletter/messages/:server_id/download` is GET and the new ones are POST with a different suffix, so

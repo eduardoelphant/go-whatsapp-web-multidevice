@@ -34,7 +34,7 @@ func (service serviceNewsletter) Edit(ctx context.Context, request domainNewslet
 	content := &waE2E.Message{Conversation: proto.String(request.Text)}
 	msg := api.BuildEdit(recipient, types.MessageID(request.MessageID), content)
 	if _, err = api.SendMessage(ctx, recipient, msg); err != nil {
-		return response, mapNewsletterEditError(err)
+		return response, resolveMissingNewsletterTarget(ctx, api, recipient, mapNewsletterEditError(err))
 	}
 
 	return domainNewsletter.EditResponse{MessageID: request.MessageID}, nil
@@ -59,7 +59,7 @@ func (service serviceNewsletter) Revoke(ctx context.Context, request domainNewsl
 
 	msg := api.BuildRevoke(recipient, types.EmptyJID, types.MessageID(request.MessageID))
 	if _, err = api.SendMessage(ctx, recipient, msg); err != nil {
-		return response, mapNewsletterSendError(err, false)
+		return response, resolveMissingNewsletterTarget(ctx, api, recipient, mapNewsletterSendError(err, false))
 	}
 
 	return domainNewsletter.EditResponse{MessageID: request.MessageID}, nil
@@ -74,4 +74,18 @@ func mapNewsletterEditError(err error) error {
 		return pkgError.EditRefused(text)
 	}
 	return mapNewsletterSendError(err, false)
+}
+
+// resolveMissingNewsletterTarget tells a missing post from a missing channel: the server
+// answers item-not-found for both, so the channel is read to decide. Only a channel with
+// metadata makes the post the missing part; any failure to read keeps the channel answer.
+func resolveMissingNewsletterTarget(ctx context.Context, api newsletterAPI, recipient types.JID, err error) error {
+	if !errors.Is(err, pkgError.ErrNewsletterNotFound) {
+		return err
+	}
+	metadata, infoErr := api.GetNewsletterInfo(ctx, recipient)
+	if infoErr != nil || metadata == nil {
+		return pkgError.ErrNewsletterNotFound
+	}
+	return pkgError.ErrNewsletterMessageNotFound
 }

@@ -4664,7 +4664,7 @@ paths:
         '403':
           description: '`NOT_AUTHORIZED`, the device is not admin of the channel'
         '404':
-          description: '`NOT_FOUND`, the channel or the post does not exist'
+          description: '`MESSAGE_NOT_FOUND`, the channel exists but the post does not; `NOT_FOUND`, the channel does not exist'
 
   /newsletter/messages/{message_id}/revoke:
     post:
@@ -4714,7 +4714,7 @@ paths:
         '403':
           description: '`NOT_AUTHORIZED`, the device is not admin of the channel'
         '404':
-          description: '`NOT_FOUND`, the channel or the post does not exist'
+          description: '`MESSAGE_NOT_FOUND`, the channel exists but the post does not; `NOT_FOUND`, the channel does not exist'
 
   /newsletter/messages/{server_id}/download:
     get:
