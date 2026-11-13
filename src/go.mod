@@ -31,7 +31,7 @@ require (
 	github.com/valyala/fasthttp v1.72.0
 	go.mau.fi/libsignal v0.2.2
 	go.mau.fi/util v0.11.0
-	go.mau.fi/whatsmeow v0.0.0-20261028111316-d24d079a3755
+	go.mau.fi/whatsmeow v0.0.0-20261105212532-307a2edf117d
 	golang.org/x/image v0.44.0
 	golang.org/x/net v0.61.0
 	google.golang.org/protobuf v1.36.12
