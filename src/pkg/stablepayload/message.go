@@ -33,8 +33,7 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 		}
 	}
 	// Fork (elphant): a reaction wrapped in an ephemeral/future-proof container is still a reaction.
-	content, nestedViewOnce := unwrap(msg)
-	if rm := content.GetReactionMessage(); rm != nil {
+	if rm := unwrapLikeGOWA(msg).GetReactionMessage(); rm != nil {
 		react := Reaction{Base: b, TargetID: rm.GetKey().GetID(), Emoji: strPtr(rm.GetText())}
 		var own []types.JID
 		if sa, ok := r.(SelfAware); ok {
@@ -46,6 +45,7 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 		return EventReaction, react
 	}
 
+	content, nestedViewOnce := unwrap(msg)
 	typ, text, media, loc, contact := classify(content, evt.Info.ID)
 	m := Message{Base: b, Type: typ, Text: text, Media: media, Location: loc, Contact: contact, ViewOnce: evt.IsViewOnce || nestedViewOnce, Mentions: []string{}}
 	switch typ {
@@ -306,8 +306,7 @@ func IsReactionToOwnStatus(evt *events.Message, msg *waE2E.Message, own []types.
 	if msg == nil {
 		msg = evt.Message
 	}
-	content, _ := unwrap(msg)
-	key := content.GetReactionMessage().GetKey()
+	key := unwrapLikeGOWA(msg).GetReactionMessage().GetKey()
 	if key == nil {
 		return false
 	}
@@ -324,4 +323,26 @@ func IsReactionToOwnStatus(evt *events.Message, msg *waE2E.Message, own []types.
 		}
 	}
 	return false
+}
+
+// unwrapLikeGOWA peels only the containers GOWA's buildEventPayload peels
+// (utils.UnwrapMessage: ephemeral and view-once), so the reaction event name
+// here stays equal to the webhook "event". A reaction under a device-sent
+// envelope is still a "message" there. Fork (elphant).
+func unwrapLikeGOWA(msg *waE2E.Message) *waE2E.Message {
+	for i := 0; i < 3 && msg != nil; i++ {
+		switch {
+		case msg.GetViewOnceMessage().GetMessage() != nil:
+			msg = msg.GetViewOnceMessage().GetMessage()
+		case msg.GetEphemeralMessage().GetMessage() != nil:
+			msg = msg.GetEphemeralMessage().GetMessage()
+		case msg.GetViewOnceMessageV2().GetMessage() != nil:
+			msg = msg.GetViewOnceMessageV2().GetMessage()
+		case msg.GetViewOnceMessageV2Extension().GetMessage() != nil:
+			msg = msg.GetViewOnceMessageV2Extension().GetMessage()
+		default:
+			return msg
+		}
+	}
+	return msg
 }
