@@ -32,7 +32,9 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 			return EventEdited, Edited{Base: b, TargetID: pm.GetKey().GetID(), Text: text}
 		}
 	}
-	if rm := msg.GetReactionMessage(); rm != nil {
+	// Fork (elphant): a reaction wrapped in an ephemeral/future-proof container is still a reaction.
+	content, nestedViewOnce := unwrap(msg)
+	if rm := content.GetReactionMessage(); rm != nil {
 		react := Reaction{Base: b, TargetID: rm.GetKey().GetID(), Emoji: strPtr(rm.GetText())}
 		var own []types.JID
 		if sa, ok := r.(SelfAware); ok {
@@ -44,7 +46,6 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 		return EventReaction, react
 	}
 
-	content, nestedViewOnce := unwrap(msg)
 	typ, text, media, loc, contact := classify(content, evt.Info.ID)
 	m := Message{Base: b, Type: typ, Text: text, Media: media, Location: loc, Contact: contact, ViewOnce: evt.IsViewOnce || nestedViewOnce, Mentions: []string{}}
 	switch typ {
