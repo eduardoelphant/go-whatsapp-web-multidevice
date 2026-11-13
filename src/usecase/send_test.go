@@ -738,3 +738,20 @@ func TestApplyMentionsSetsNonJIDMentionsForEveryMessageKind(t *testing.T) {
 	assert.Zero(t, plain.GetNonJIDMentions())
 	applyMentions(nil, nil, true)
 }
+
+func TestNewsletterStickerWebPPrendeReceitaDaFigurinha(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg ausente")
+	}
+	useTempSendItems(t)
+	var src bytes.Buffer
+	require.NoError(t, png.Encode(&src, image.NewNRGBA(image.Rect(0, 0, 800, 400))))
+
+	webp, width, height, err := newsletterStickerWebP(context.Background(), src.Bytes())
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(webp), 12)
+	assert.Equal(t, "RIFF", string(webp[0:4]))
+	assert.Equal(t, "WEBP", string(webp[8:12]))
+	assert.Equal(t, uint32(512), width)
+	assert.Equal(t, uint32(256), height)
+}
