@@ -347,6 +347,9 @@
         },
         "sender": {
           "$ref": "#/$defs/party"
+        },
+        "is_status": {
+          "type": "boolean"
         }
       }
     },
@@ -566,6 +569,29 @@
         },
         "emoji": {
           "$ref": "#/$defs/nstr"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "is_own",
+                "target_id"
+              ],
+              "properties": {
+                "is_own": {
+                  "type": "boolean"
+                },
+                "target_id": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
         }
       }
     },

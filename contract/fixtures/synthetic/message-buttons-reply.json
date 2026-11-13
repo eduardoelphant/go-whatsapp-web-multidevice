@@ -27,7 +27,8 @@
       "sender": {
         "pn": null,
         "lid": null
-      }
+      },
+      "is_status": false
     },
     "forwarded": false,
     "view_once": false,

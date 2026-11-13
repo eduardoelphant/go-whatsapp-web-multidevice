@@ -109,6 +109,15 @@ type Quoted struct {
 	Type   string  `json:"type"`
 	Text   *string `json:"text"`
 	Sender Party   `json:"sender"`
+	// IsStatus is true when the quoted message is a status (ContextInfo.RemoteJID
+	// is status@broadcast). Fork (elphant).
+	IsStatus bool `json:"is_status"`
+}
+
+// StatusRef marks an event aimed at a status this number posted.
+type StatusRef struct {
+	IsOwn    bool   `json:"is_own"`
+	TargetID string `json:"target_id"`
 }
 
 type Message struct {
@@ -252,6 +261,8 @@ type Reaction struct {
 	Base
 	TargetID string  `json:"target_id"`
 	Emoji    *string `json:"emoji"`
+	// Status is set when the reaction targets a status of this number, else null.
+	Status *StatusRef `json:"status"`
 }
 
 type Revoked struct {
