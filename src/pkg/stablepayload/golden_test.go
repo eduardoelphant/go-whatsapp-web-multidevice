@@ -24,7 +24,9 @@ var fixtureDir = filepath.Join("..", "..", "..", "contract", "fixtures", "synthe
 func goldenCases() map[string]func() (string, any) {
 	ctx := context.Background()
 	msg := func(raw *waE2E.Message, mods ...func(*events.Message)) func() (string, any) {
-		return func() (string, any) { return Build(ctx, newMessageEvent(raw, mods...), nil, resolver) }
+		return func() (string, any) {
+			return Build(ctx, newMessageEvent(raw, mods...), nil, selfResolver{resolver, []types.JID{pnMe, lidMe}})
+		}
 	}
 	group := func(e *events.Message) {
 		e.Info.Chat = groupJID
@@ -78,7 +80,7 @@ func goldenCases() map[string]func() (string, any) {
 		"message-edited":              msg(&waE2E.Message{EditedMessage: &waE2E.FutureProofMessage{Message: &waE2E.Message{ProtocolMessage: &waE2E.ProtocolMessage{Type: waE2E.ProtocolMessage_MESSAGE_EDIT.Enum(), Key: key, EditedMessage: &waE2E.Message{Conversation: proto.String("fixed")}}}}}),
 		"message-reaction":            msg(&waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: key, Text: proto.String("👍")}}),
 		"message-reaction-removed":    msg(&waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: key, Text: proto.String("")}}),
-		"message-reaction-own-status": msg(&waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: &waCommon.MessageKey{ID: proto.String("2A60C0911F97477494C916D52693BBE3"), FromMe: proto.Bool(true), RemoteJID: proto.String("status@broadcast")}, Text: proto.String("❤")}}, func(e *events.Message) { e.Info.Chat = types.StatusBroadcastJID }),
+		"message-reaction-own-status": msg(&waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: &waCommon.MessageKey{ID: proto.String("2A60C0911F97477494C916D52693BBE3"), FromMe: proto.Bool(false), RemoteJID: proto.String("status@broadcast"), Participant: proto.String(pnMe.String())}, Text: proto.String("❤")}}, func(e *events.Message) { e.Info.Chat = types.StatusBroadcastJID }),
 		"message-reply-status":        msg(&waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("Teste"), ContextInfo: &waE2E.ContextInfo{StanzaID: proto.String("2A60C0911F97477494C916D52693BBE3"), RemoteJID: proto.String("status@broadcast"), Participant: proto.String(pnMe.String())}}}),
 		"message-revoked":             msg(&waE2E.Message{ProtocolMessage: &waE2E.ProtocolMessage{Type: waE2E.ProtocolMessage_REVOKE.Enum(), Key: key}}),
 		"message-buttons":             msg(&waE2E.Message{ButtonsMessage: &waE2E.ButtonsMessage{Header: &waE2E.ButtonsMessage_Text{Text: "Loja X"}, ContentText: proto.String("Escolha"), FooterText: proto.String("Rodapé"), Buttons: []*waE2E.ButtonsMessage_Button{{ButtonID: proto.String("b1"), ButtonText: &waE2E.ButtonsMessage_Button_ButtonText{DisplayText: proto.String("Atendente")}}}}}),

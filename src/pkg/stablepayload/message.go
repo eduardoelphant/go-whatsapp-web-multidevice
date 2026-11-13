@@ -33,11 +33,15 @@ func Build(ctx context.Context, evt *events.Message, msg *waE2E.Message, r Resol
 		}
 	}
 	if rm := msg.GetReactionMessage(); rm != nil {
-		r := Reaction{Base: b, TargetID: rm.GetKey().GetID(), Emoji: strPtr(rm.GetText())}
-		if evt.Info.Chat.User == "status" && evt.Info.Chat.Server == types.BroadcastServer && rm.GetKey().GetFromMe() {
-			r.Status = &StatusRef{IsOwn: true, TargetID: r.TargetID}
+		react := Reaction{Base: b, TargetID: rm.GetKey().GetID(), Emoji: strPtr(rm.GetText())}
+		var own []types.JID
+		if sa, ok := r.(SelfAware); ok {
+			own = sa.OwnJIDs()
 		}
-		return EventReaction, r
+		if IsReactionToOwnStatus(evt, msg, own) {
+			react.Status = &StatusRef{IsOwn: true, TargetID: react.TargetID}
+		}
+		return EventReaction, react
 	}
 
 	content, nestedViewOnce := unwrap(msg)
@@ -288,4 +292,35 @@ func hexPtr(b []byte) *string {
 		return nil
 	}
 	return strPtr(hex.EncodeToString(b))
+}
+
+// IsReactionToOwnStatus reports whether evt is someone else reacting to a status
+// posted by this account. The key is built from the reactor's side, so a contact
+// reacting to our status sends FromMe=false and Participant=our JID (pn or LID);
+// FromMe=true is also accepted. Shared by the webhook guard and stable. Fork (elphant).
+func IsReactionToOwnStatus(evt *events.Message, msg *waE2E.Message, own []types.JID) bool {
+	if evt == nil || evt.Info.IsFromMe || evt.Info.Chat.User != "status" || evt.Info.Chat.Server != types.BroadcastServer {
+		return false
+	}
+	if msg == nil {
+		msg = evt.Message
+	}
+	content, _ := unwrap(msg)
+	key := content.GetReactionMessage().GetKey()
+	if key == nil {
+		return false
+	}
+	if key.GetFromMe() {
+		return true
+	}
+	participant, err := types.ParseJID(key.GetParticipant())
+	if err != nil || participant.User == "" {
+		return false
+	}
+	for _, j := range own {
+		if !j.IsEmpty() && j.User == participant.User {
+			return true
+		}
+	}
+	return false
 }

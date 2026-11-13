@@ -10,8 +10,10 @@ import (
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -539,27 +541,41 @@ func TestStatusReactionToOwnStatusIsForwarded(t *testing.T) {
 		return nil
 	}
 
-	reaction := func(id string, fromMe, isFromMe bool) *events.Message {
+	ownPN := types.NewJID("5511900000009", types.DefaultUserServer)
+	ownLID := types.NewJID("100000000000009", types.HiddenUserServer)
+	client := &whatsmeow.Client{Store: &store.Device{ID: &ownPN, LID: ownLID}}
+	reaction := func(id string, isFromMe bool, participant string) *events.Message {
 		evt := textEventForTest(id, types.NewJID("status", types.BroadcastServer))
 		evt.Info.IsFromMe = isFromMe
-		evt.Message = &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{
-			Key:  &waCommon.MessageKey{ID: protoString("STATUS-1"), FromMe: &fromMe},
-			Text: protoString("❤"),
-		}}
+		key := &waCommon.MessageKey{ID: protoString("STATUS-1"), RemoteJID: protoString("status@broadcast"), FromMe: protoBool(false)}
+		if participant != "" {
+			key.Participant = &participant
+		}
+		evt.Message = &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: key, Text: protoString("❤")}}
 		return evt
 	}
-	handleWebhookForward(context.Background(), reaction("react-other-status", false, false), nil) // status alheio
-	handleWebhookForward(context.Background(), reaction("react-by-me", true, true), nil)          // reação nossa
-	handleWebhookForward(context.Background(), reaction("react-own-status", true, false), nil)
+	handleWebhookForward(context.Background(), reaction("react-other-status", false, "5511911111111@s.whatsapp.net"), client) // status alheio
+	handleWebhookForward(context.Background(), reaction("react-by-me", true, ownPN.String()), client)                         // reação nossa
+	handleWebhookForward(context.Background(), textEventForTest("status-post", types.NewJID("status", types.BroadcastServer)), client)
+	handleWebhookForward(context.Background(), reaction("react-own-pn", false, ownPN.String()), client)
+	handleWebhookForward(context.Background(), reaction("react-own-lid", false, ownLID.String()), client)
+	wrapped := reaction("react-own-wrapped", false, ownPN.String())
+	wrapped.Message = &waE2E.Message{EphemeralMessage: &waE2E.FutureProofMessage{Message: wrapped.Message}}
+	handleWebhookForward(context.Background(), wrapped, client)
 
-	select {
-	case payload := <-delivered:
-		eventPayload := payload["payload"].(map[string]any)
-		if eventPayload["id"] != "react-own-status" {
-			t.Fatalf("unexpected forwarded event: %v", eventPayload["id"])
+	got := map[string]bool{}
+	for i := 0; i < 3; i++ {
+		select {
+		case payload := <-delivered:
+			got[payload["payload"].(map[string]any)["id"].(string)] = true
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out; got %v", got)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for own status reaction webhook")
+	}
+	for _, id := range []string{"react-own-pn", "react-own-lid", "react-own-wrapped"} {
+		if !got[id] {
+			t.Fatalf("missing %s in %v", id, got)
+		}
 	}
 	time.Sleep(200 * time.Millisecond)
 	select {

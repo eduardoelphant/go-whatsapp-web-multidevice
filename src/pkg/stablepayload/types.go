@@ -52,6 +52,12 @@ type Resolver interface {
 	LIDForPN(ctx context.Context, pn types.JID) (lid types.JID, ok bool)
 }
 
+// SelfAware is an optional Resolver extension: the JIDs (phone number and LID)
+// of the connected account, used to tell which statuses are ours. Fork (elphant).
+type SelfAware interface {
+	OwnJIDs() []types.JID
+}
+
 type Chat struct {
 	PN      *string `json:"pn"`
 	LID     *string `json:"lid"`

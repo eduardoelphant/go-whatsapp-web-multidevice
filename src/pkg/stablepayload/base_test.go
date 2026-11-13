@@ -114,3 +114,13 @@ func TestResolveStripsDeviceSuffix(t *testing.T) {
 		t.Fatalf("resolve = (%v, %v), want (5511900000001@s.whatsapp.net, nil)", pn, lid)
 	}
 }
+
+var lidMe = types.NewJID("100000000000009", types.HiddenUserServer)
+
+// selfResolver adds OwnJIDs to the fake resolver.
+type selfResolver struct {
+	fakeResolver
+	own []types.JID
+}
+
+func (s selfResolver) OwnJIDs() []types.JID { return s.own }
