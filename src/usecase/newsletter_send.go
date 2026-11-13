@@ -478,7 +478,7 @@ func transcodeNewsletterVideo(ctx context.Context, data []byte, filename string)
 		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to save video for conversion: %v", err))
 	}
 
-	convCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	convCtx, cancel := context.WithTimeout(ctx, newsletterVideoTranscodeTimeout)
 	defer cancel()
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(convCtx, "ffmpeg", buildHDVideoFFmpegArgs(inputPath, outputPath)...)
@@ -492,3 +492,7 @@ func transcodeNewsletterVideo(ctx context.Context, data []byte, filename string)
 	}
 	return converted, nil
 }
+
+// newsletterVideoTranscodeTimeout bounds the channel video conversion. It must stay below
+// the 280 s the CRM waits for a video send, so a slow conversion fails here first (WN-25).
+const newsletterVideoTranscodeTimeout = 4 * time.Minute

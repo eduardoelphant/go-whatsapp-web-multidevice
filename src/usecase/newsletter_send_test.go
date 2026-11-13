@@ -605,3 +605,8 @@ func TestConvertNewsletterAudioToOpusDevolveOggOpus(t *testing.T) {
 	assert.Equal(t, "OggS", string(got[0:4]))
 	assert.Contains(t, string(got[:64]), "OpusHead")
 }
+
+func TestNewsletterVideoTranscodeTimeoutFicaAbaixoDoPrazoDoCRM(t *testing.T) {
+	// The CRM waits 280 s for a video send; the conversion must give up before that (WN-25).
+	assert.Equal(t, 4*time.Minute, newsletterVideoTranscodeTimeout)
+}
