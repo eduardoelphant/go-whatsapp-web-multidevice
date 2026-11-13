@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -135,4 +136,28 @@ func TestNewsletterMessageResponseNewFields(t *testing.T) {
 			assert.NotEmpty(t, got.Text, name)
 		}
 	}
+}
+
+func TestNewsletterEditServerReturnedErrorBecomesEditRefused(t *testing.T) {
+	api := &fakeNewsletterAPI{sendErr: fmt.Errorf("%w %d", whatsmeow.ErrServerReturnedError, 479)}
+	_, err := newTestNewsletterService(api).Edit(context.Background(), domainNewsletter.EditRequest{
+		NewsletterID: sendTestJID, MessageID: editTestMessageID, Text: "x",
+	})
+	var coded interface {
+		ErrCode() string
+		StatusCode() int
+	}
+	require.ErrorAs(t, err, &coded)
+	assert.Equal(t, "EDIT_REFUSED", coded.ErrCode())
+	assert.Equal(t, 422, coded.StatusCode())
+}
+
+func TestNewsletterRevokeServerReturnedErrorBecomesSendRefused(t *testing.T) {
+	api := &fakeNewsletterAPI{sendErr: fmt.Errorf("%w %d", whatsmeow.ErrServerReturnedError, 479)}
+	_, err := newTestNewsletterService(api).Revoke(context.Background(), domainNewsletter.RevokeRequest{
+		NewsletterID: sendTestJID, MessageID: editTestMessageID,
+	})
+	var coded interface{ ErrCode() string }
+	require.ErrorAs(t, err, &coded)
+	assert.Equal(t, "SEND_REFUSED", coded.ErrCode())
 }

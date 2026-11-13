@@ -56,6 +56,10 @@ func (service serviceNewsletter) Send(ctx context.Context, request domainNewslet
 	}
 	extra.ID = types.MessageID(request.MessageID)
 
+	if request.Type == domainNewsletter.SendTypePoll && newsletterPollMode() == newsletterPollModeNode {
+		return service.sendNewsletterPollNode(ctx, api, recipient, request, content)
+	}
+
 	sent, err := api.SendMessage(ctx, recipient, msg, extra)
 	if err != nil {
 		return response, mapNewsletterSendError(err, extra.MediaHandle != "")
@@ -72,6 +76,31 @@ func (service serviceNewsletter) Send(ctx context.Context, request domainNewslet
 	}, nil
 }
 
+// sendNewsletterPollNode publishes the poll as a raw node with meta polltype (node mode).
+func (service serviceNewsletter) sendNewsletterPollNode(ctx context.Context, api newsletterAPI, recipient types.JID, request domainNewsletter.SendRequest, content string) (domainNewsletter.SendResponse, error) {
+	id := types.MessageID(request.MessageID)
+	if id == "" {
+		id = api.GenerateMessageID()
+	}
+	msg := newsletterNodePollMessage(request.PollQuestion, request.PollOptions, request.PollMaxAnswer)
+	node, err := buildNewsletterPollNode(recipient, id, msg)
+	if err != nil {
+		return domainNewsletter.SendResponse{}, err
+	}
+	serverID, sentAt, err := api.SendNewsletterNode(ctx, id, node)
+	if err != nil {
+		return domainNewsletter.SendResponse{}, mapNewsletterSendError(err, false)
+	}
+	if service.storeSent != nil {
+		service.storeSent(ctx, api, id, recipient, content, sentAt, msg)
+	}
+	return domainNewsletter.SendResponse{
+		MessageID: id,
+		ServerID:  int(serverID),
+		Timestamp: sentAt.Format(time.RFC3339),
+	}, nil
+}
+
 // buildNewsletterMessage returns the message, the send extra (only MediaHandle is
 // filled here) and the text stored in the chat history.
 func (service serviceNewsletter) buildNewsletterMessage(ctx context.Context, api newsletterAPI, recipient types.JID, request domainNewsletter.SendRequest) (*waE2E.Message, whatsmeow.SendRequestExtra, string, error) {
@@ -82,7 +111,7 @@ func (service serviceNewsletter) buildNewsletterMessage(ctx context.Context, api
 		return service.buildNewsletterText(ctx, api, recipient, request), extra, request.Text, nil
 
 	case domainNewsletter.SendTypePoll:
-		msg := api.BuildPollCreation(request.PollQuestion, request.PollOptions, request.PollMaxAnswer)
+		msg := buildNewsletterPoll(request.PollQuestion, request.PollOptions, request.PollMaxAnswer)
 		return msg, extra, "📊 " + request.PollQuestion, nil
 
 	case domainNewsletter.SendTypeImage:
@@ -109,47 +138,25 @@ func (service serviceNewsletter) buildNewsletterMessage(ctx context.Context, api
 		return msg, extra, newsletterContent(request.Text, "🖼️ Image"), nil
 
 	case domainNewsletter.SendTypeVideo:
-		uploaded, err := uploadNewsletterMedia(ctx, api, whatsmeow.MediaVideo, request.File)
+		transcoded, err := transcodeNewsletterVideo(ctx, request.File, request.FileName)
+		if err != nil {
+			return nil, extra, "", err
+		}
+		uploaded, err := uploadNewsletterMedia(ctx, api, whatsmeow.MediaVideo, transcoded)
 		if err != nil {
 			return nil, extra, "", err
 		}
 		extra.MediaHandle = uploaded.Handle
-		mimeType := http.DetectContentType(request.File)
-		if !strings.HasPrefix(mimeType, "video/") {
-			mimeType = "video/mp4"
-		}
 		video := &waE2E.VideoMessage{
 			Caption:    proto.String(request.Text),
 			URL:        proto.String(uploaded.URL),
 			DirectPath: proto.String(uploaded.DirectPath),
-			Mimetype:   proto.String(mimeType),
+			Mimetype:   proto.String("video/mp4"),
 			FileSHA256: uploaded.FileSHA256,
 			FileLength: proto.Uint64(uploaded.FileLength),
 		}
-		applyNewsletterVideoPreview(ctx, video, request.File, request.FileName)
+		applyNewsletterVideoPreview(ctx, video, transcoded, "video.mp4")
 		return &waE2E.Message{VideoMessage: video}, extra, newsletterContent(request.Text, "🎥 Video"), nil
-
-	case domainNewsletter.SendTypeDocument:
-		filename := request.Filename
-		if filename == "" {
-			filename = request.FileName
-		}
-		uploaded, err := uploadNewsletterMedia(ctx, api, whatsmeow.MediaDocument, request.File)
-		if err != nil {
-			return nil, extra, "", err
-		}
-		extra.MediaHandle = uploaded.Handle
-		msg := &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
-			Caption:    proto.String(request.Text),
-			FileName:   proto.String(filename),
-			Title:      proto.String(filename),
-			URL:        proto.String(uploaded.URL),
-			DirectPath: proto.String(uploaded.DirectPath),
-			Mimetype:   proto.String(resolveDocumentMIME(filename, request.File)),
-			FileSHA256: uploaded.FileSHA256,
-			FileLength: proto.Uint64(uploaded.FileLength),
-		}}
-		return msg, extra, newsletterContent(request.Text, "📄 "+filename), nil
 
 	case domainNewsletter.SendTypeAudio:
 		return service.buildNewsletterAudio(ctx, api, request)
@@ -195,28 +202,26 @@ func (service serviceNewsletter) buildNewsletterText(ctx context.Context, api ne
 	return &waE2E.Message{Conversation: proto.String(request.Text)}
 }
 
-// buildNewsletterAudio sends OGG as a voice note (PTT) and any other format as a file.
+// buildNewsletterAudio sends every audio as a voice note (PTT). The file is always
+// converted to OGG Opus first (WhatsApp channels only play voice notes in that format),
+// and duration and waveform are measured on the converted file that gets uploaded.
 func (service serviceNewsletter) buildNewsletterAudio(ctx context.Context, api newsletterAPI, request domainNewsletter.SendRequest) (*waE2E.Message, whatsmeow.SendRequestExtra, string, error) {
 	var extra whatsmeow.SendRequestExtra
 
-	filename := request.FileName
-	mimeType := resolveAudioMIME(filename, request.File)
-	isOgg := strings.HasPrefix(mimeType, "audio/ogg") || strings.HasPrefix(mimeType, "application/ogg") || bytes.HasPrefix(request.File, []byte("OggS"))
-	if isOgg {
-		mimeType = "audio/ogg; codecs=opus"
+	converted, err := convertNewsletterAudioToOpus(ctx, request.File, request.FileName)
+	if err != nil {
+		return nil, extra, "", err
 	}
 
 	var seconds uint32
 	var waveform []byte
-	if tempPath := writeNewsletterTempAudio(request.File, filename); tempPath != "" {
+	if tempPath := writeNewsletterTempAudio(converted, "voice.ogg"); tempPath != "" {
 		defer os.Remove(tempPath)
 		seconds = getAudioDuration(tempPath)
-		if isOgg {
-			waveform = generateWaveform(tempPath, seconds)
-		}
+		waveform = generateWaveform(tempPath, seconds)
 	}
 
-	uploaded, err := uploadNewsletterMedia(ctx, api, whatsmeow.MediaAudio, request.File)
+	uploaded, err := uploadNewsletterMedia(ctx, api, whatsmeow.MediaAudio, converted)
 	if err != nil {
 		return nil, extra, "", err
 	}
@@ -224,10 +229,10 @@ func (service serviceNewsletter) buildNewsletterAudio(ctx context.Context, api n
 	msg := &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
 		URL:        proto.String(uploaded.URL),
 		DirectPath: proto.String(uploaded.DirectPath),
-		Mimetype:   proto.String(mimeType),
+		Mimetype:   proto.String("audio/ogg; codecs=opus"),
 		FileSHA256: uploaded.FileSHA256,
 		FileLength: proto.Uint64(uploaded.FileLength),
-		PTT:        proto.Bool(isOgg),
+		PTT:        proto.Bool(true),
 		Seconds:    proto.Uint32(seconds),
 		Waveform:   waveform,
 	}}
@@ -365,17 +370,17 @@ func newsletterStickerWebP(ctx context.Context, data []byte) ([]byte, uint32, ui
 	} else if _, lookErr := exec.LookPath("cwebp"); lookErr == nil {
 		command = exec.CommandContext(convCtx, "cwebp", "-q", "60", "-o", webpPath, pngPath)
 	} else {
-		return nil, 0, 0, pkgError.InternalServerError("neither ffmpeg nor cwebp is installed for WebP conversion")
+		return nil, 0, 0, pkgError.MediaBuildFailed("neither ffmpeg nor cwebp is installed for WebP conversion")
 	}
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	if err = command.Run(); err != nil {
-		return nil, 0, 0, pkgError.InternalServerError(fmt.Sprintf("failed to convert sticker to WebP: %v, stderr: %s", err, stderr.String()))
+		return nil, 0, 0, pkgError.MediaBuildFailed(fmt.Sprintf("failed to convert sticker to WebP: %v, stderr: %s", err, stderr.String()))
 	}
 
 	webp, err := os.ReadFile(webpPath)
 	if err != nil {
-		return nil, 0, 0, pkgError.InternalServerError(fmt.Sprintf("failed to read WebP sticker: %v", err))
+		return nil, 0, 0, pkgError.MediaBuildFailed(fmt.Sprintf("failed to read WebP sticker: %v", err))
 	}
 	bounds := decoded.Bounds()
 	return webp, uint32(bounds.Dx()), uint32(bounds.Dy()), nil
@@ -392,6 +397,8 @@ func mapNewsletterSendError(err error, withMedia bool) error {
 		return pkgError.ErrNewsletterNotFound
 	case withMedia && (errors.Is(err, whatsmeow.ErrIQBadRequest) || strings.Contains(text, "bad-request")):
 		return pkgError.MediaRejected(text)
+	case errors.Is(err, whatsmeow.ErrServerReturnedError):
+		return pkgError.SendRefused(text)
 	}
 	return err
 }
@@ -449,4 +456,78 @@ func isAnimatedWebP(data []byte) bool {
 		return false
 	}
 	return bytes.Contains(data[12:min(len(data), 64)], []byte("ANIM"))
+}
+
+// convertNewsletterAudioToOpus converts any audio to OGG/Opus mono, the same
+// recipe SendAudio uses for PTT. Failure answers 422 MEDIA_BUILD_FAILED with the
+// ffmpeg stderr (fork: elphant).
+func convertNewsletterAudioToOpus(ctx context.Context, data []byte, filename string) ([]byte, error) {
+	if err := os.MkdirAll(config.PathSendItems, 0o755); err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to prepare audio folder: %v", err))
+	}
+	id := fiberUtils.UUIDv4()
+	inputPath := filepath.Join(config.PathSendItems, "newsletter_audio_in_"+id+filepath.Ext(filename))
+	outputPath := filepath.Join(config.PathSendItems, "newsletter_audio_out_"+id+".ogg")
+	defer os.Remove(inputPath)
+	defer os.Remove(outputPath)
+
+	if err := os.WriteFile(inputPath, data, 0o644); err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to save audio for conversion: %v", err))
+	}
+
+	convCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(convCtx, "ffmpeg",
+		"-i", inputPath,
+		"-c:a", "libopus",
+		"-b:a", "64k",
+		"-vbr", "on",
+		"-application", "voip",
+		"-ar", "48000",
+		"-ac", "1",
+		"-y",
+		outputPath,
+	)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, pkgError.MediaBuildFailed(fmt.Sprintf("failed to convert audio to OGG Opus: %v: %s", err, strings.TrimSpace(stderr.String())))
+	}
+	converted, err := os.ReadFile(outputPath)
+	if err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to read converted audio: %v", err))
+	}
+	return converted, nil
+}
+
+// transcodeNewsletterVideo re-encodes the video with the same HD recipe as SendVideo
+// (H.264 yuv420p, AAC, faststart), so the channel player can start it. Failure answers
+// 422 MEDIA_BUILD_FAILED with the ffmpeg stderr; the raw file is never sent (fork: elphant).
+func transcodeNewsletterVideo(ctx context.Context, data []byte, filename string) ([]byte, error) {
+	if err := os.MkdirAll(config.PathSendItems, 0o755); err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to prepare video folder: %v", err))
+	}
+	id := fiberUtils.UUIDv4()
+	inputPath := filepath.Join(config.PathSendItems, "newsletter_video_in_"+id+filepath.Ext(filename))
+	outputPath := filepath.Join(config.PathSendItems, "newsletter_video_out_"+id+".mp4")
+	defer os.Remove(inputPath)
+	defer os.Remove(outputPath)
+
+	if err := os.WriteFile(inputPath, data, 0o644); err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to save video for conversion: %v", err))
+	}
+
+	convCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(convCtx, "ffmpeg", buildHDVideoFFmpegArgs(inputPath, outputPath)...)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, pkgError.MediaBuildFailed(fmt.Sprintf("failed to convert video to MP4: %v: %s", err, strings.TrimSpace(stderr.String())))
+	}
+	converted, err := os.ReadFile(outputPath)
+	if err != nil {
+		return nil, pkgError.InternalServerError(fmt.Sprintf("failed to read converted video: %v", err))
+	}
+	return converted, nil
 }

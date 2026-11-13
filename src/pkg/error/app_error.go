@@ -122,6 +122,48 @@ func (err editRefusedError) StatusCode() int { return http.StatusUnprocessableEn
 // EditRefused builds the 422 EDIT_REFUSED error carrying the server text.
 func EditRefused(text string) error { return editRefusedError(text) }
 
+// sendRefusedError answers 422 when WhatsApp refuses a channel post or revoke.
+type sendRefusedError string
+
+func (err sendRefusedError) Error() string { return string(err) }
+
+// ErrCode will return the error code based on the error data type
+func (err sendRefusedError) ErrCode() string { return "SEND_REFUSED" }
+
+// StatusCode will return the HTTP status code based on the error data type
+func (err sendRefusedError) StatusCode() int { return http.StatusUnprocessableEntity }
+
+// SendRefused builds the 422 SEND_REFUSED error carrying the server text.
+func SendRefused(text string) error { return sendRefusedError(text) }
+
+// typeUnsupportedError answers 422 when the channel post type is not supported.
+type typeUnsupportedError string
+
+func (err typeUnsupportedError) Error() string { return string(err) }
+
+// ErrCode will return the error code based on the error data type
+func (err typeUnsupportedError) ErrCode() string { return "TYPE_UNSUPPORTED" }
+
+// StatusCode will return the HTTP status code based on the error data type
+func (err typeUnsupportedError) StatusCode() int { return http.StatusUnprocessableEntity }
+
+// TypeUnsupported builds the 422 TYPE_UNSUPPORTED error carrying the server text.
+func TypeUnsupported(text string) error { return typeUnsupportedError(text) }
+
+// mediaBuildFailedError answers 422 when building the media message fails.
+type mediaBuildFailedError string
+
+func (err mediaBuildFailedError) Error() string { return string(err) }
+
+// ErrCode will return the error code based on the error data type
+func (err mediaBuildFailedError) ErrCode() string { return "MEDIA_BUILD_FAILED" }
+
+// StatusCode will return the HTTP status code based on the error data type
+func (err mediaBuildFailedError) StatusCode() int { return http.StatusUnprocessableEntity }
+
+// MediaBuildFailed builds the 422 MEDIA_BUILD_FAILED error carrying the server text.
+func MediaBuildFailed(text string) error { return mediaBuildFailedError(text) }
+
 // updateRefusedError answers 422 when WhatsApp refuses to edit the channel itself.
 type updateRefusedError string
 

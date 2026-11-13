@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	waBinary "go.mau.fi/whatsmeow/binary"
 	"os"
 	"path/filepath"
 	"time"
@@ -30,11 +31,13 @@ type newsletterAPI interface {
 	AcceptTOSNotice(ctx context.Context, noticeID, stage string) error
 	UploadNewsletter(ctx context.Context, data []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error)
 	SendMessage(ctx context.Context, to types.JID, message *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
-	BuildPollCreation(name string, optionNames []string, selectableOptionCount int) *waE2E.Message
 	BuildEdit(chat types.JID, id types.MessageID, newContent *waE2E.Message) *waE2E.Message
 	BuildRevoke(chat, sender types.JID, id types.MessageID) *waE2E.Message
 	// SendMexIQ is the whatsmeow DangerousInternals call; the real client needs newsletterClient.
 	SendMexIQ(ctx context.Context, queryID string, variables any) (json.RawMessage, error)
+	// GenerateMessageID and SendNewsletterNode serve the node poll mode (WHATSAPP_NEWSLETTER_POLL_MODE=node).
+	GenerateMessageID() types.MessageID
+	SendNewsletterNode(ctx context.Context, id types.MessageID, node waBinary.Node) (types.MessageServerID, time.Time, error)
 }
 
 type serviceNewsletter struct {
@@ -144,12 +147,13 @@ func isNewsletterNotFound(err error) bool {
 }
 
 func newsletterInfoResponse(metadata *types.NewsletterMetadata) domainNewsletter.NewsletterInfoResponse {
+	subscribers := metadata.ThreadMeta.SubscriberCount
 	response := domainNewsletter.NewsletterInfoResponse{
 		NewsletterID:     metadata.ID.String(),
 		Name:             metadata.ThreadMeta.Name.Text,
 		Description:      metadata.ThreadMeta.Description.Text,
 		Invite:           metadata.ThreadMeta.InviteCode,
-		SubscribersCount: metadata.ThreadMeta.SubscriberCount,
+		SubscribersCount: &subscribers,
 		State:            string(metadata.State.Type),
 		Verification:     string(metadata.ThreadMeta.VerificationState),
 	}
@@ -158,6 +162,7 @@ func newsletterInfoResponse(metadata *types.NewsletterMetadata) domainNewsletter
 	}
 	if metadata.ThreadMeta.Picture != nil {
 		response.PictureURL = metadata.ThreadMeta.Picture.URL
+		response.PictureID = metadata.ThreadMeta.Picture.ID
 	}
 	return response
 }

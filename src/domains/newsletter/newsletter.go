@@ -89,11 +89,13 @@ type NewsletterInfoResponse struct {
 	Name             string `json:"name"`
 	Description      string `json:"description"`
 	Invite           string `json:"invite"`
-	SubscribersCount int    `json:"subscribers_count"`
+	SubscribersCount *int   `json:"subscribers_count,omitempty"`
 	State            string `json:"state"`
 	Role             string `json:"role"`
 	Verification     string `json:"verification"`
 	PictureURL       string `json:"picture_url"`
+	PictureID        string `json:"picture_id,omitempty"`
+	PictureChecked   bool   `json:"picture_checked,omitempty"`
 }
 
 // Post types accepted by POST /newsletter/send.

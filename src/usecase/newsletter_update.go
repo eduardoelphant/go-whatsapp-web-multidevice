@@ -99,7 +99,9 @@ func (service serviceNewsletter) Update(ctx context.Context, request domainNewsl
 		}
 	}
 
+	pictureChecked := false
 	if newsletterUpdateIncomplete(parsed.Metadata, request) {
+		pictureChecked = len(request.Picture) > 0 || request.RemovePicture
 		metadata, infoErr := api.GetNewsletterInfo(ctx, jid)
 		if infoErr != nil {
 			return response, mapNewsletterUpdateError(infoErr)
@@ -110,16 +112,21 @@ func (service serviceNewsletter) Update(ctx context.Context, request domainNewsl
 		parsed.Metadata = metadata
 	}
 
-	return newsletterInfoResponse(parsed.Metadata), nil
+	response = newsletterInfoResponse(parsed.Metadata)
+	response.PictureChecked = pictureChecked
+	// A mutation answer comes without the subscriber count, so zero would be a lie.
+	response.SubscribersCount = nil
+	return response, nil
 }
 
 // newsletterUpdateIncomplete says the mutation answer lacks something the caller needs: no
-// metadata at all, no id or name, or no picture after one was set.
+// metadata at all, no id or name, or any picture change (the answer never carries the
+// picture state, so it is reread).
 func newsletterUpdateIncomplete(metadata *types.NewsletterMetadata, request domainNewsletter.UpdateRequest) bool {
 	if metadata == nil || metadata.ID.IsEmpty() || metadata.ThreadMeta.Name.Text == "" {
 		return true
 	}
-	return len(request.Picture) > 0 && metadata.ThreadMeta.Picture == nil
+	return len(request.Picture) > 0 || request.RemovePicture
 }
 
 // mapNewsletterUpdateError reads the GraphQL error code: missing role is 403, unknown

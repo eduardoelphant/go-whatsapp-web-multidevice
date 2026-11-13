@@ -130,13 +130,16 @@ var newsletterMessageIDShape = regexp.MustCompile(`^[0-9A-Za-z]{1,64}$`)
 // (0 becomes 1). It does not decode the media: the usecase does that.
 func ValidateSendNewsletter(ctx context.Context, request *domainNewsletter.SendRequest) error {
 	request.Type = strings.ToLower(strings.TrimSpace(request.Type))
+	if request.Type == domainNewsletter.SendTypeDocument {
+		return pkgError.TypeUnsupported("type: document is not available in channels")
+	}
 	if request.Type == domainNewsletter.SendTypePoll && request.PollMaxAnswer == 0 {
 		request.PollMaxAnswer = 1
 	}
 
 	mediaType := slices.Contains([]string{
 		domainNewsletter.SendTypeImage, domainNewsletter.SendTypeVideo, domainNewsletter.SendTypeAudio,
-		domainNewsletter.SendTypeDocument, domainNewsletter.SendTypeSticker,
+		domainNewsletter.SendTypeSticker,
 	}, request.Type)
 
 	err := validation.ValidateStructWithContext(ctx, request,
@@ -144,7 +147,7 @@ func ValidateSendNewsletter(ctx context.Context, request *domainNewsletter.SendR
 		validation.Field(&request.MessageID, validation.Match(newsletterMessageIDShape).Error("must be 1 to 64 letters or digits")),
 		validation.Field(&request.Type, validation.Required, validation.In(
 			domainNewsletter.SendTypeText, domainNewsletter.SendTypeImage, domainNewsletter.SendTypeVideo,
-			domainNewsletter.SendTypeAudio, domainNewsletter.SendTypeDocument, domainNewsletter.SendTypeSticker,
+			domainNewsletter.SendTypeAudio, domainNewsletter.SendTypeSticker,
 			domainNewsletter.SendTypePoll,
 		)),
 		validation.Field(&request.Text, validation.When(request.Type == domainNewsletter.SendTypeText, validation.Required)),

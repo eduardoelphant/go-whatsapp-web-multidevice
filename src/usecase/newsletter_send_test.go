@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,17 +29,12 @@ import (
 type fakeUpload struct {
 	size      int
 	mediaType whatsmeow.MediaType
-}
-
-type fakePollCall struct {
-	name    string
-	options []string
-	max     int
+	data      []byte
 }
 
 func (f *fakeNewsletterAPI) UploadNewsletter(_ context.Context, data []byte, mediaType whatsmeow.MediaType) (whatsmeow.UploadResponse, error) {
 	f.calls = append(f.calls, "upload")
-	f.uploads = append(f.uploads, fakeUpload{size: len(data), mediaType: mediaType})
+	f.uploads = append(f.uploads, fakeUpload{size: len(data), mediaType: mediaType, data: data})
 	if f.uploadErr != nil {
 		return whatsmeow.UploadResponse{}, f.uploadErr
 	}
@@ -66,11 +62,6 @@ func (f *fakeNewsletterAPI) SendMessage(_ context.Context, to types.JID, message
 		resp.ID = "3EB0GENERATED"
 	}
 	return resp, nil
-}
-
-func (f *fakeNewsletterAPI) BuildPollCreation(name string, options []string, max int) *waE2E.Message {
-	f.pollCalls = append(f.pollCalls, fakePollCall{name, options, max})
-	return &waE2E.Message{PollCreationMessage: &waE2E.PollCreationMessage{Name: &name}}
 }
 
 func (f *fakeNewsletterAPI) BuildEdit(chat types.JID, id types.MessageID, content *waE2E.Message) *waE2E.Message {
@@ -156,25 +147,19 @@ func TestNewsletterSendMidiaSobePorUploadNewsletterEHandleVaiNoExtra(t *testing.
 		},
 		{
 			name:      "video",
-			request:   domainNewsletter.SendRequest{Type: "video", Text: "v", File: []byte("\x00\x00\x00\x18ftypmp42"), FileName: "a.mp4"},
+			request:   domainNewsletter.SendRequest{Type: "video", Text: "v", FileName: "a.mp4"},
 			mediaType: whatsmeow.MediaVideo,
 			check: func(t *testing.T, msg *waE2E.Message) {
 				assert.Equal(t, "v", msg.GetVideoMessage().GetCaption())
 				assert.Equal(t, "video/mp4", msg.GetVideoMessage().GetMimetype())
 			},
 		},
-		{
-			name:      "document",
-			request:   domainNewsletter.SendRequest{Type: "document", Text: "doc", Filename: "tabela.pdf", File: []byte("%PDF-1.4"), FileName: "upload.bin"},
-			mediaType: whatsmeow.MediaDocument,
-			check: func(t *testing.T, msg *waE2E.Message) {
-				assert.Equal(t, "tabela.pdf", msg.GetDocumentMessage().GetFileName())
-				assert.Equal(t, "application/pdf", msg.GetDocumentMessage().GetMimetype())
-			},
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.request.Type == "video" {
+				tc.request.File = realTestMP4(t)
+			}
 			api := &fakeNewsletterAPI{handleSeed: tc.name}
 			tc.request.NewsletterID = sendTestJID
 			_, err := newSendService(api).Send(context.Background(), tc.request)
@@ -188,28 +173,41 @@ func TestNewsletterSendMidiaSobePorUploadNewsletterEHandleVaiNoExtra(t *testing.
 	}
 }
 
-func TestNewsletterSendAudioOggSaiComoVozEMp3ComoArquivo(t *testing.T) {
+func TestNewsletterSendAudioOggEMp3SaemComoVoz(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg ausente")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe ausente")
+	}
 	useTempSendItems(t)
 	cases := []struct {
 		name     string
 		filename string
-		data     []byte
-		wantPTT  bool
-		wantMime string
+		ext      string
 	}{
-		{"ogg", "voz.ogg", []byte("OggS\x00\x02rest"), true, "audio/ogg; codecs=opus"},
-		{"ogg sem extensao", "voz", []byte("OggS\x00\x02rest"), true, "audio/ogg; codecs=opus"},
-		{"mp3", "musica.mp3", []byte("ID3\x03\x00rest"), false, "audio/mpeg"},
+		{"ogg", "voz.ogg", "ogg"},
+		{"ogg sem extensao", "voz", "ogg"},
+		{"mp3", "musica.mp3", "mp3"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			srcPath := filepath.Join(t.TempDir(), "tone."+tc.ext)
+			out, err := exec.Command("ffmpeg", "-y", "-f", "lavfi", "-i", "sine=duration=2", srcPath).CombinedOutput()
+			require.NoError(t, err, string(out))
+			data, err := os.ReadFile(srcPath)
+			require.NoError(t, err)
+
 			api := &fakeNewsletterAPI{}
-			_, err := newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{
-				NewsletterID: sendTestJID, Type: "audio", File: tc.data, FileName: tc.filename,
+			_, err = newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{
+				NewsletterID: sendTestJID, Type: "audio", File: data, FileName: tc.filename,
 			})
 			require.NoError(t, err)
-			assert.Equal(t, tc.wantPTT, api.sendMsg.GetAudioMessage().GetPTT())
-			assert.Equal(t, tc.wantMime, api.sendMsg.GetAudioMessage().GetMimetype())
+			audio := api.sendMsg.GetAudioMessage()
+			assert.True(t, audio.GetPTT())
+			assert.Equal(t, "audio/ogg; codecs=opus", audio.GetMimetype())
+			assert.NotEmpty(t, audio.GetWaveform())
+			assert.Greater(t, audio.GetSeconds(), uint32(0))
 			assert.Equal(t, whatsmeow.MediaAudio, api.uploads[0].mediaType)
 			assert.NotEmpty(t, api.sendExtra.MediaHandle)
 		})
@@ -235,11 +233,11 @@ func TestNewsletterSendFigurinhaConvertePraWebP(t *testing.T) {
 	assert.Equal(t, uint32(8), sticker.GetWidth())
 }
 
-func TestNewsletterSendEnqueteMontaBuildPollCreation(t *testing.T) {
+func TestNewsletterSendEnqueteSemMessageSecret(t *testing.T) {
 	cases := []struct {
 		name    string
 		max     int
-		wantMax int
+		wantMax uint32
 	}{
 		{"ausente vira 1", 0, 1},
 		{"informado", 2, 2},
@@ -252,10 +250,16 @@ func TestNewsletterSendEnqueteMontaBuildPollCreation(t *testing.T) {
 				PollOptions: []string{"A", "B", "A"}, PollMaxAnswer: tc.max,
 			})
 			require.NoError(t, err)
-			require.Len(t, api.pollCalls, 1)
-			assert.Equal(t, "Qual?", api.pollCalls[0].name)
-			assert.Equal(t, []string{"A", "B", "A"}, api.pollCalls[0].options, "opções repetidas seguem")
-			assert.Equal(t, tc.wantMax, api.pollCalls[0].max)
+			poll := api.sendMsg.GetPollCreationMessage()
+			require.NotNil(t, poll)
+			assert.Nil(t, api.sendMsg.GetMessageContextInfo(), "canal não leva messageSecret")
+			assert.Equal(t, "Qual?", poll.GetName())
+			assert.Equal(t, tc.wantMax, poll.GetSelectableOptionsCount())
+			var names []string
+			for _, o := range poll.GetOptions() {
+				names = append(names, o.GetOptionName())
+			}
+			assert.Equal(t, []string{"A", "B", "A"}, names, "opções repetidas seguem")
 			assert.Empty(t, api.uploads)
 			assert.Empty(t, api.sendExtra.MediaHandle)
 		})
@@ -306,11 +310,15 @@ func TestNewsletterSendMapeiaErrosDoWhatsApp(t *testing.T) {
 		{"not-authorized", whatsmeow.ErrIQNotAuthorized, nil, domainNewsletter.SendRequest{Type: "text", Text: "x"}, 403, "NOT_AUTHORIZED"},
 		{"not-authorized embrulhado", errors.New("failed to send message node: info query returned status 401: not-authorized"), nil, domainNewsletter.SendRequest{Type: "text", Text: "x"}, 403, "NOT_AUTHORIZED"},
 		{"item-not-found", whatsmeow.ErrIQNotFound, nil, domainNewsletter.SendRequest{Type: "text", Text: "x"}, 404, "NOT_FOUND"},
-		{"midia recusada no envio", whatsmeow.ErrIQBadRequest, nil, domainNewsletter.SendRequest{Type: "video", File: []byte("x")}, 400, "MEDIA_REJECTED"},
-		{"midia recusada no upload", nil, errors.New("upload failed with status code 413"), domainNewsletter.SendRequest{Type: "video", File: []byte("x")}, 400, "MEDIA_REJECTED"},
+		{"midia recusada no envio", whatsmeow.ErrIQBadRequest, nil, domainNewsletter.SendRequest{Type: "video"}, 400, "MEDIA_REJECTED"},
+		{"midia recusada no upload", nil, errors.New("upload failed with status code 413"), domainNewsletter.SendRequest{Type: "video"}, 400, "MEDIA_REJECTED"},
+		{"recusa do servidor", fmt.Errorf("%w %d", whatsmeow.ErrServerReturnedError, 479), nil, domainNewsletter.SendRequest{Type: "text", Text: "x"}, 422, "SEND_REFUSED"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.request.Type == "video" {
+				tc.request.File = realTestMP4(t)
+			}
 			api := &fakeNewsletterAPI{sendErr: tc.sendErr, uploadErr: tc.uploadErr}
 			tc.request.NewsletterID = sendTestJID
 			_, err := newSendService(api).Send(context.Background(), tc.request)
@@ -346,7 +354,6 @@ func TestNewsletterSendInvalidoNaoChamaOCliente(t *testing.T) {
 		{"imagem sem arquivo", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "image"}},
 		{"video sem arquivo", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "video"}},
 		{"audio sem arquivo", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "audio"}},
-		{"documento sem arquivo", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "document"}},
 		{"figurinha sem arquivo", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "sticker"}},
 		{"imagem que nao e imagem", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "image", File: []byte("nada")}},
 		{"enquete sem pergunta", domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "poll", PollOptions: []string{"a", "b"}}},
@@ -387,6 +394,21 @@ func TestNewsletterSendGravaNoChatstorageSemBloquear(t *testing.T) {
 	assert.Equal(t, []string{"3EB0ABC|" + sendTestJID + "|Olá"}, stored)
 }
 
+// realTestMP4 generates a tiny real mp4 (video send now transcodes with ffmpeg).
+func realTestMP4(t *testing.T) []byte {
+	t.Helper()
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg ausente")
+	}
+	useTempSendItems(t)
+	path := filepath.Join(t.TempDir(), "r.mp4")
+	out, err := exec.Command("ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64:rate=5", "-pix_fmt", "yuv420p", path).CombinedOutput()
+	require.NoError(t, err, string(out))
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return data
+}
+
 func TestNewsletterSendVideoComPreviaEDuracao(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg ausente")
@@ -414,14 +436,53 @@ func TestNewsletterSendVideoComPreviaEDuracao(t *testing.T) {
 	assert.Empty(t, video.GetThumbnailSHA256())
 }
 
-func TestNewsletterSendVideoInvalidoEnviaSemPrevia(t *testing.T) {
+func TestNewsletterSendVideoInvalidoDevolveMediaBuildFailed(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg ausente")
+	}
 	useTempSendItems(t)
 	api := &fakeNewsletterAPI{}
 	_, err := newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{
 		NewsletterID: sendTestJID, Type: "video", File: []byte("nao e video"), FileName: "v.mp4",
 	})
+	var generic pkgError.GenericError
+	require.True(t, errors.As(err, &generic))
+	assert.Equal(t, "MEDIA_BUILD_FAILED", generic.ErrCode())
+	assert.Empty(t, api.calls)
+}
+
+func TestNewsletterSendVideoTranscodificaComFaststartEYuv420p(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg ausente")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe ausente")
+	}
+	useTempSendItems(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v.mp4")
+	out, err := exec.Command("ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=duration=2:size=160x120:rate=10", "-c:v", "libx264", "-pix_fmt", "yuv444p", path).CombinedOutput()
+	require.NoError(t, err, string(out))
+	data, err := os.ReadFile(path)
 	require.NoError(t, err)
-	assert.Empty(t, api.sendMsg.GetVideoMessage().GetJPEGThumbnail())
+	require.Less(t, bytes.Index(data, []byte("mdat")), bytes.Index(data, []byte("moov")), "entrada deve ser sem faststart")
+
+	api := &fakeNewsletterAPI{}
+	_, err = newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{
+		NewsletterID: sendTestJID, Type: "video", File: data, FileName: "v.mp4",
+	})
+	require.NoError(t, err)
+	require.Len(t, api.uploads, 1)
+	sent := api.uploads[0].data
+	moov, mdat := bytes.Index(sent, []byte("moov")), bytes.Index(sent, []byte("mdat"))
+	require.GreaterOrEqual(t, moov, 0)
+	assert.Less(t, moov, mdat)
+	outPath := filepath.Join(dir, "sent.mp4")
+	require.NoError(t, os.WriteFile(outPath, sent, 0o644))
+	probe, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt", "-of", "default=nw=1:nk=1", outPath).Output()
+	require.NoError(t, err)
+	assert.Equal(t, "yuv420p", strings.TrimSpace(string(probe)))
+	assert.Equal(t, "video/mp4", api.sendMsg.GetVideoMessage().GetMimetype())
 }
 
 func TestNewsletterUploadErroSoRecusaEmStatusDeArquivo(t *testing.T) {
@@ -456,4 +517,73 @@ func TestNewsletterSendFigurinhaAnimadaRecusa(t *testing.T) {
 	assert.Equal(t, 400, generic.StatusCode())
 	assert.Contains(t, err.Error(), "animated WebP")
 	assert.Empty(t, api.calls)
+}
+
+func TestNewsletterSendRecusaDoServidorTrazOTexto(t *testing.T) {
+	api := &fakeNewsletterAPI{sendErr: fmt.Errorf("%w %d", whatsmeow.ErrServerReturnedError, 479)}
+	_, err := newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{NewsletterID: sendTestJID, Type: "text", Text: "x"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "server returned error 479")
+}
+
+func TestNewsletterServerReturnedErrorTextoDoWhatsmeowContinuaOMesmo(t *testing.T) {
+	assert.Equal(t, "server returned error", whatsmeow.ErrServerReturnedError.Error())
+	src, err := os.ReadFile(filepath.Join(build.Default.GOPATH, "pkg/mod/go.mau.fi/whatsmeow@v0.0.0-20261028111316-d24d079a3755/errors.go"))
+	if err != nil {
+		t.Skip("fonte do whatsmeow indisponível")
+	}
+	assert.Contains(t, string(src), `errors.New("server returned error")`)
+}
+
+func TestNewsletterSendDocumentoRecusadoComTypeUnsupportedSemChamarOCliente(t *testing.T) {
+	api := &fakeNewsletterAPI{}
+	_, err := newSendService(api).Send(context.Background(), domainNewsletter.SendRequest{
+		NewsletterID: sendTestJID, Type: " Document ", Filename: "tabela.pdf", File: []byte("%PDF-1.4"),
+	})
+	var generic pkgError.GenericError
+	require.True(t, errors.As(err, &generic), "got %v", err)
+	assert.Equal(t, 422, generic.StatusCode())
+	assert.Equal(t, "TYPE_UNSUPPORTED", generic.ErrCode())
+	assert.Empty(t, api.calls)
+}
+
+func TestConvertNewsletterAudioToOpus(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg ausente")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe ausente")
+	}
+	previous := config.PathSendItems
+	config.PathSendItems = t.TempDir()
+	t.Cleanup(func() { config.PathSendItems = previous })
+
+	t.Run("mp3 vira ogg opus", func(t *testing.T) {
+		mp3Path := filepath.Join(t.TempDir(), "tone.mp3")
+		out, err := exec.Command("ffmpeg", "-y", "-f", "lavfi", "-i", "sine=duration=2", mp3Path).CombinedOutput()
+		require.NoError(t, err, string(out))
+		mp3, err := os.ReadFile(mp3Path)
+		require.NoError(t, err)
+
+		got, err := convertNewsletterAudioToOpus(context.Background(), mp3, "tone.mp3")
+		require.NoError(t, err)
+		assert.True(t, bytes.HasPrefix(got, []byte("OggS")))
+
+		oggPath := filepath.Join(t.TempDir(), "out.ogg")
+		require.NoError(t, os.WriteFile(oggPath, got, 0o644))
+		probe, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", oggPath).CombinedOutput()
+		require.NoError(t, err, string(probe))
+		assert.Equal(t, "opus", strings.TrimSpace(string(probe)))
+
+		left, _ := os.ReadDir(config.PathSendItems)
+		assert.Empty(t, left)
+	})
+
+	t.Run("bytes invalidos devolvem MEDIA_BUILD_FAILED", func(t *testing.T) {
+		_, err := convertNewsletterAudioToOpus(context.Background(), []byte("nao e audio"), "x.mp3")
+		require.Error(t, err)
+		var generic pkgError.GenericError
+		require.True(t, errors.As(err, &generic))
+		assert.Equal(t, "MEDIA_BUILD_FAILED", generic.ErrCode())
+	})
 }

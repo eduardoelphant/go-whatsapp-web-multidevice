@@ -4422,7 +4422,9 @@ paths:
         `remove_picture` do not go together. An empty `description` clears it. The query id is
         `7150902998257522` (whatsmeow) unless `WHATSAPP_NEWSLETTER_UPDATE_QUERY_ID` is set. The answer
         is the channel read from `xwa2_newsletter_update`, completed with a channel info read when the
-        answer lacks a field. Needs a channel role that may edit (owner or admin).
+        answer lacks a field, and always when a picture is set or removed (`picture_id`,
+        `picture_checked`). `subscribers_count` is omitted from this answer. Needs a channel role that may edit
+        (owner or admin).
       parameters:
         - $ref: '#/components/parameters/DeviceIdHeader'
       requestBody:
@@ -4478,7 +4480,10 @@ paths:
         generated. `CheckPermissions` and the reach-out guard are not applied. `text` is the text
         (type `text`) or the caption. `link_preview` only applies to `text`; when the preview cannot
         be fetched the plain text is sent. `audio` sent as OGG goes out as a voice note (PTT), any
-        other format as a file. `sticker` is converted to WebP like `/send/sticker`. `poll_options`
+        other format as a file (fork `.9`: every audio is converted to ogg/opus and sent as PTT). `video` is
+        transcoded to H.264 yuv420p faststart. `type=document` is refused with 422 `TYPE_UNSUPPORTED`. Polls go
+        without `MessageContextInfo`; `WHATSAPP_NEWSLETTER_POLL_MODE` is `plain` (default) or `node`
+        (node `type=poll` with meta `polltype`, V3 for a single answer). `sticker` is converted to WebP like `/send/sticker`. `poll_options`
         is a repeated field (2 to 12); `poll_max_answer` 0 or absent becomes 1.
       parameters:
         - $ref: '#/components/parameters/DeviceIdHeader'
@@ -4550,6 +4555,8 @@ paths:
           description: '`NOT_AUTHORIZED`, the device is not admin of the channel'
         '404':
           description: '`NOT_FOUND`, the channel does not exist'
+        '422':
+          description: '`SEND_REFUSED` (WhatsApp refused the post), `MEDIA_BUILD_FAILED` (video or sticker could not be built) or `TYPE_UNSUPPORTED` (`document`); `message` carries the detail'
 
   /newsletter/messages:
     get:
@@ -6327,7 +6334,9 @@ components:
             name: {type: string}
             description: {type: string}
             invite: {type: string}
-            subscribers_count: {type: integer}
+            subscribers_count: {type: integer, description: Omitted by /newsletter/update}
+            picture_id: {type: string, description: Only on /newsletter/update after a picture reread}
+            picture_checked: {type: boolean, description: Only on /newsletter/update; true when the channel was reread}
             state: {type: string, example: active}
             role: {type: string, example: owner}
             verification: {type: string, example: verified}

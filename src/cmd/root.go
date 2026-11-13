@@ -209,6 +209,9 @@ func initEnvConfig() {
 	if viper.IsSet("whatsapp_newsletter_update_query_id") {
 		config.WhatsappNewsletterUpdateQueryID = viper.GetString("whatsapp_newsletter_update_query_id")
 	}
+	if viper.IsSet("whatsapp_newsletter_poll_mode") {
+		config.WhatsappNewsletterPollMode = viper.GetString("whatsapp_newsletter_poll_mode")
+	}
 	if viper.IsSet("whatsapp_reachout_guard") {
 		config.WhatsappReachoutGuard = viper.GetBool("whatsapp_reachout_guard")
 	}

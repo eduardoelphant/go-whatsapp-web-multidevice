@@ -81,6 +81,43 @@ func TestNewsletterUpdateUsesAnswerOfMutation(t *testing.T) {
 	assert.Equal(t, updateTestJID, got.NewsletterID)
 	assert.Equal(t, "Novo", got.Name)
 	assert.Equal(t, "Desc", got.Description)
+	assert.False(t, got.PictureChecked)
+	assert.Nil(t, got.SubscribersCount)
+	out, _ := json.Marshal(got)
+	assert.NotContains(t, string(out), "subscribers_count")
+	assert.NotContains(t, string(out), "picture_checked")
+}
+
+func TestNewsletterUpdateRemovePictureRereadsAndFlagsChecked(t *testing.T) {
+	meta := sampleNewsletterMetadata()
+	meta.ThreadMeta.Picture = nil
+	api := &fakeNewsletterAPI{mexData: json.RawMessage(updateFullAnswer), info: meta}
+	got, err := newTestNewsletterService(api).Update(context.Background(), domainNewsletter.UpdateRequest{
+		NewsletterID: updateTestJID, RemovePicture: true,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"mex", "info"}, api.calls)
+	assert.True(t, got.PictureChecked)
+	assert.Empty(t, got.PictureID)
+	assert.Empty(t, got.PictureURL)
+	assert.Nil(t, got.SubscribersCount)
+}
+
+func TestNewsletterUpdateNewPictureRereadsAndReturnsPictureID(t *testing.T) {
+	meta := sampleNewsletterMetadata()
+	meta.ThreadMeta.Picture = &types.ProfilePictureInfo{ID: "pic-9", URL: "https://pps.whatsapp.net/x.jpg"}
+	api := &fakeNewsletterAPI{mexData: json.RawMessage(updateFullAnswer), info: meta}
+	got, err := newTestNewsletterService(api).Update(context.Background(), domainNewsletter.UpdateRequest{
+		NewsletterID: updateTestJID, Picture: []byte{0xff, 0xd8, 0xff, 0xe0},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"mex", "info"}, api.calls)
+	assert.True(t, got.PictureChecked)
+	assert.Equal(t, "pic-9", got.PictureID)
+	out, _ := json.Marshal(got)
+	assert.NotContains(t, string(out), "subscribers_count")
 }
 
 func TestNewsletterUpdateCompletesWithInfoWhenPictureIsMissing(t *testing.T) {

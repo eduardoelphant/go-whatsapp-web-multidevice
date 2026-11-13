@@ -640,7 +640,10 @@ Both routes read `X-Device-Id` like the other newsletter routes; existing routes
   converted to WebP as `/send/sticker` does (512 px box, ffmpeg or cwebp). `poll` uses `BuildPollCreation`.
 - `CheckPermissions` and the reach-out guard are not applied; WhatsApp's own answer decides.
 - Errors: 400 `MEDIA_REJECTED` (upload 4xx or a 400 on a send that carried a media handle), 403 `NOT_AUTHORIZED`
-  (`not-authorized`), 404 `NOT_FOUND` (`item-not-found`), 400 validation otherwise.
+  (`not-authorized`), 404 `NOT_FOUND` (`item-not-found`), 400 validation otherwise. Live findings (`.9`): a send
+  WhatsApp refuses (`bad-request`, `not-acceptable`, `ErrIQBadRequest`, `ErrServerReturnedError`) is 422
+  `SEND_REFUSED` carrying the server text; a media build failure (video transcode, sticker conversion) is 422
+  `MEDIA_BUILD_FAILED`; `type=document` is refused with 422 `TYPE_UNSUPPORTED` (channels do not take it).
 - The post is stored in the device `chatstorage` like the other send routes, in a goroutine that does not hold the
   answer.
 - Animated WebP stickers (ANIM chunk) are refused with 400 on this route; the `/send/sticker` animated branch is
@@ -648,6 +651,12 @@ Both routes read `X-Device-Id` like the other newsletter routes; existing routes
 - Debt: the message assembly (image, video, audio, document, sticker) is duplicated from the inline code of the
   `/send/*` handlers, which were left untouched; a shared builder would remove the copy.
 - Video goes out with an inline JPEG preview, size and duration from ffmpeg/ffprobe; if they fail it goes without.
+- Live findings (`.9`): every channel `audio` is converted to ogg/opus and sent as a voice note (`PTT`), whatever the
+  input format. `video` is always transcoded to H.264 yuv420p with faststart; a failed transcode is 422
+  `MEDIA_BUILD_FAILED` (no raw fallback). A sticker that cannot be built is also 422 `MEDIA_BUILD_FAILED`.
+- Poll: the message goes without `MessageContextInfo` (no `messageSecret`). `WHATSAPP_NEWSLETTER_POLL_MODE` picks
+  the wire form: `plain` (default) sends the poll as a regular message; `node` sends a node with `type=poll` and a
+  meta `polltype` (`creation`; V3 when the poll has a single answer allowed).
 
 ## Newsletter (channel) edit, revoke and full read metrics
 
@@ -687,6 +696,10 @@ its multipart key is present (an empty `description` clears it); at least one is
   the Baileys id `24250201037901610`), no new image needed. Which id the server accepts is unverified until the live test.
 - Answer completion: when the mutation answer has no id, no name, or no picture after one was set, the usecase reads
   `GetNewsletterInfo` and answers from that.
+- Live findings (`.9`): when the update carries a picture or `remove_picture`, the usecase always rereads the channel
+  and the answer adds `picture_id` and `picture_checked` (true when that reread happened). The update answer omits
+  `subscribers_count` (the mutation does not carry it); `GET /newsletter/info` and the list routes keep it,
+  including `0`.
 - Errors (`GraphQLErrorExtensions.ErrorCode`): 401 or 403 is 403 `NOT_AUTHORIZED`, 404 is 404 `NOT_FOUND`, any other
   GraphQL error is 422 `UPDATE_REFUSED` carrying the server text. Non-GraphQL errors use the send mapping.
 - `POST /newsletter/messages/:message_id/edit` replaces the text of a text post; a media caption is not editable.
