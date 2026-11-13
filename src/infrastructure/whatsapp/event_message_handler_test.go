@@ -10,6 +10,7 @@ import (
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/stablepayload"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -567,7 +568,14 @@ func TestStatusReactionToOwnStatusIsForwarded(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		select {
 		case payload := <-delivered:
-			got[payload["payload"].(map[string]any)["id"].(string)] = true
+			inner := payload["payload"].(map[string]any)
+			got[inner["id"].(string)] = true
+			if inner["id"] == "react-own-wrapped" {
+				stable, _ := inner["stable"].(stablepayload.Reaction)
+				if payload["event"] != EventTypeMessageReaction || stable.Status == nil || !stable.Status.IsOwn {
+					t.Fatalf("wrapped reaction not built as own-status reaction: event=%v stable=%+v", payload["event"], inner["stable"])
+				}
+			}
 		case <-time.After(2 * time.Second):
 			t.Fatalf("timed out; got %v", got)
 		}
