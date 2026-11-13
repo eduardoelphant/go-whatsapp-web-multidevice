@@ -16,18 +16,41 @@ import (
 type stableResolver struct{ client *whatsmeow.Client }
 
 func newStableResolver(client *whatsmeow.Client) stablepayload.Resolver {
-	if client == nil || client.Store == nil || client.Store.LIDs == nil {
+	if client == nil || client.Store == nil {
 		return nil
 	}
 	return stableResolver{client: client}
 }
 
+// OwnJIDs returns the connected account's phone and LID JIDs. Fork (elphant).
+func (r stableResolver) OwnJIDs() []types.JID { return ownJIDs(r.client) }
+
+func ownJIDs(client *whatsmeow.Client) []types.JID {
+	if client == nil || client.Store == nil {
+		return nil
+	}
+	var own []types.JID
+	if client.Store.ID != nil {
+		own = append(own, *client.Store.ID)
+	}
+	if !client.Store.LID.IsEmpty() {
+		own = append(own, client.Store.LID)
+	}
+	return own
+}
+
 func (r stableResolver) PNForLID(ctx context.Context, lid types.JID) (types.JID, bool) {
+	if r.client.Store.LIDs == nil {
+		return types.JID{}, false
+	}
 	pn, err := r.client.Store.LIDs.GetPNForLID(ctx, lid)
 	return pn, err == nil && !pn.IsEmpty()
 }
 
 func (r stableResolver) LIDForPN(ctx context.Context, pn types.JID) (types.JID, bool) {
+	if r.client.Store.LIDs == nil {
+		return types.JID{}, false
+	}
 	lid, err := r.client.Store.LIDs.GetLIDForPN(ctx, pn)
 	return lid, err == nil && !lid.IsEmpty()
 }

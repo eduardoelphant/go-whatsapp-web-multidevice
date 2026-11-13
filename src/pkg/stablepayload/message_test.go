@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -269,5 +270,38 @@ func TestMentionsFromContextInfo(t *testing.T) {
 				t.Fatalf("all=%v non_jid=%d, want %v %d", m.MentionsAll, m.NonJIDMentions, tt.all, tt.nonJID)
 			}
 		})
+	}
+}
+
+// Fork (elphant): quem é dono do status vem do participante da chave, não de FromMe.
+func TestIsReactionToOwnStatusByParticipant(t *testing.T) {
+	own := []types.JID{pnMe, lidMe}
+	react := func(participant string, fromMe, isFromMe bool, chat types.JID) *events.Message {
+		key := &waCommon.MessageKey{ID: proto.String("S1"), FromMe: proto.Bool(fromMe)}
+		if participant != "" {
+			key.Participant = proto.String(participant)
+		}
+		return newMessageEvent(&waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: key, Text: proto.String("❤")}}, func(e *events.Message) {
+			e.Info.Chat = chat
+			e.Info.IsFromMe = isFromMe
+		})
+	}
+	cases := []struct {
+		name string
+		evt  *events.Message
+		want bool
+	}{
+		{"participante pn", react(pnMe.String(), false, false, types.StatusBroadcastJID), true},
+		{"participante lid", react(lidMe.String(), false, false, types.StatusBroadcastJID), true},
+		{"participante com dispositivo", react("5511900000009:12@s.whatsapp.net", false, false, types.StatusBroadcastJID), true},
+		{"fromMe", react("", true, false, types.StatusBroadcastJID), true},
+		{"participante de outro", react(pnContact.String(), false, false, types.StatusBroadcastJID), false},
+		{"reação nossa", react(pnMe.String(), false, true, types.StatusBroadcastJID), false},
+		{"chat comum", react(pnMe.String(), false, false, pnContact), false},
+	}
+	for _, c := range cases {
+		if got := IsReactionToOwnStatus(c.evt, nil, own); got != c.want {
+			t.Errorf("%s: got %v want %v", c.name, got, c.want)
+		}
 	}
 }
