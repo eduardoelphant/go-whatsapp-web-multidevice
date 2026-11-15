@@ -409,15 +409,16 @@ func (m *CallManager) waitTracked(ctx context.Context, callID string) (*trackedC
 }
 
 // admission waits, like waitTracked, for the engine to report an offer, and returns why the
-// manager refused it ("" when it was tracked, is unknown, or the wait ran out). call.offer uses
-// it so that a refused offer never reaches the webhook (D-31).
-func (m *CallManager) admission(ctx context.Context, callID string) string {
+// manager refused it. tracked is true when the call was admitted; with tracked false and an
+// empty reason the call is unknown or the wait ran out. call.offer uses it so that a refused
+// offer never reaches the webhook, and so that it waits only once (D-31).
+func (m *CallManager) admission(ctx context.Context, callID string) (reason string, tracked bool) {
 	if _, err := m.waitTracked(ctx, callID); err == nil {
-		return ""
+		return "", true
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.refused[callID]
+	return m.refused[callID], false
 }
 
 // dropWaiter removes one waiter that gave up, leaving the others in place.

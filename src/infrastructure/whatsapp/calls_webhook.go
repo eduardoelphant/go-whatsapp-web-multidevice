@@ -154,9 +154,14 @@ func addCallOfferFields(ctx context.Context, payload map[string]any, evt *events
 	if !enabled {
 		return false
 	}
-	if reason := m.admission(ctx, evt.CallID); reason != "" {
+	reason, tracked := m.admission(ctx, evt.CallID)
+	if reason != "" {
 		logrus.Infof("[CALLS] call.offer %s not sent: refused (%s)", evt.CallID, reason)
 		return true
+	}
+	if !tracked { // the wait already ran out: send as today, without waiting again
+		logrus.Warnf("[CALLS] call.offer %s without offer_sdp: offer not reported", evt.CallID)
+		return false
 	}
 	sdp, err := m.OfferSDP(ctx, evt.CallID)
 	if err != nil {

@@ -351,5 +351,28 @@ func TestRefusedOfferSendsNoCallOfferWithoutMedia(t *testing.T) {
 	go func() { done <- addCallOfferFields(context.Background(), map[string]any{}, evt, client) }()
 	time.Sleep(50 * time.Millisecond)
 	eng.incoming(&fakeCall{id: "IN-2"})
-	assert.True(t, <-done)
+	select {
+	case suppress := <-done:
+		assert.True(t, suppress)
+	case <-time.After(2 * time.Second):
+		t.Fatal("addCallOfferFields did not return")
+	}
+}
+
+// An offer the engine never reports waits once (OfferWait), then goes out as today.
+func TestUnreportedOfferWaitsOnce(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	client := &whatsmeow.Client{}
+	m := newCallManager(&fakeEngine{}, callManagerOptions{Media: &fakeMediaFactory{}, OfferWait: 300 * time.Millisecond})
+	callsByClient.Store(client, m)
+	t.Cleanup(func() { callsByClient.Delete(client) })
+	evt := &events.CallOffer{}
+	evt.CallID = "IN-9"
+	evt.CallCreator = types.NewJID("123456789012345", types.HiddenUserServer)
+	payload := map[string]any{}
+	start := time.Now()
+	assert.False(t, addCallOfferFields(context.Background(), payload, evt, client))
+	assert.Less(t, time.Since(start), 500*time.Millisecond, "one OfferWait, not two")
+	assert.Equal(t, true, payload["calls_enabled"])
+	assert.NotContains(t, payload, "offer_sdp")
 }
