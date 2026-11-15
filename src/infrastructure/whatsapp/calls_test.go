@@ -321,7 +321,7 @@ func TestIncomingAboveCapIsRejectedAndMissed(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "IN-2", ended.Call.CallID)
 	assert.Equal(t, "MISSED", ended.Status)
-	assert.Equal(t, "rejected", ended.EndReason)
+	assert.Equal(t, "device_limit", ended.EndReason)
 }
 
 func TestStartRespectsCap(t *testing.T) {
