@@ -205,7 +205,7 @@ func TestCallOfferFields(t *testing.T) {
 	client := &whatsmeow.Client{}
 
 	payload := map[string]any{}
-	addCallOfferFields(context.Background(), payload, evt, client)
+	assert.False(t, addCallOfferFields(context.Background(), payload, evt, client))
 	assert.Empty(t, payload, "flag off: call.offer stays as upstream builds it")
 
 	config.WhatsappCallsEnabled = true
@@ -215,7 +215,7 @@ func TestCallOfferFields(t *testing.T) {
 	t.Cleanup(func() { callsByClient.Delete(client) })
 	eng.incoming(&fakeCall{id: "IN-1"})
 
-	addCallOfferFields(context.Background(), payload, evt, client)
+	assert.False(t, addCallOfferFields(context.Background(), payload, evt, client))
 	assert.Equal(t, true, payload["calls_enabled"])
 	assert.Equal(t, DirectionUser, payload["direction"])
 	assert.Equal(t, map[string]any{"pn": "", "lid": "123456789012345@lid"}, payload["peer"])
@@ -226,14 +226,14 @@ func TestCallOfferFields(t *testing.T) {
 	group.CallCreator = evt.CallCreator
 	group.GroupJID = types.NewJID("120363000000000000", types.GroupServer)
 	grp := map[string]any{}
-	addCallOfferFields(context.Background(), grp, group, client)
+	assert.False(t, addCallOfferFields(context.Background(), grp, group, client))
 	assert.Equal(t, false, grp["calls_enabled"])
 	assert.NotContains(t, grp, "offer_sdp")
 
 	config.WhatsappCallsDevices = []string{"another-device"}
 	resetDeviceCallsCache()
 	off := map[string]any{}
-	addCallOfferFields(context.Background(), off, evt, client)
+	assert.False(t, addCallOfferFields(context.Background(), off, evt, client))
 	assert.Equal(t, false, off["calls_enabled"])
 	assert.NotContains(t, off, "offer_sdp")
 }
@@ -288,4 +288,68 @@ func TestShutdownCallsNoOpWhenCallsOff(t *testing.T) {
 	ringing.mu.Lock()
 	defer ringing.mu.Unlock()
 	assert.False(t, ringing.rejected)
+}
+
+// An offer refused by a limit sends no call.offer, only call.ended (D-31). The webhook can run
+// before the engine reports the offer, so the refusal is decided while it waits.
+func TestRefusedOfferSendsNoCallOffer(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	client := &whatsmeow.Client{Store: &store.Device{LIDs: &callOfferLIDStore{}}} // createCallOfferPayload reads Store
+	eng := &fakeEngine{}
+	m := newCallManager(eng, callManagerOptions{MaxCalls: 1, Media: &fakeMediaFactory{}, OfferWait: time.Second})
+	callsByClient.Store(client, m)
+	t.Cleanup(func() { callsByClient.Delete(client) })
+	eng.incoming(&fakeCall{id: "IN-1"}) // holds the only slot
+
+	evt := &events.CallOffer{}
+	evt.CallID = "IN-2"
+	evt.CallCreator = types.NewJID("123456789012345", types.HiddenUserServer)
+
+	done := make(chan bool, 1)
+	go func() { done <- addCallOfferFields(context.Background(), map[string]any{}, evt, client) }()
+	time.Sleep(50 * time.Millisecond) // the webhook runs first and waits
+	eng.incoming(&fakeCall{id: "IN-2"})
+	select {
+	case suppress := <-done:
+		assert.True(t, suppress, "a refused offer is not sent")
+	case <-time.After(2 * time.Second):
+		t.Fatal("addCallOfferFields did not return")
+	}
+	assert.Nil(t, createCallOfferPayload(context.Background(), evt, "dev", client, false), "no call.offer body")
+
+	// Refused before the webhook runs: same result, without waiting.
+	evt3 := &events.CallOffer{}
+	evt3.CallID = "IN-3"
+	evt3.CallCreator = evt.CallCreator
+	eng.incoming(&fakeCall{id: "IN-3"})
+	assert.True(t, addCallOfferFields(context.Background(), map[string]any{}, evt3, client))
+
+	// The admitted offer is still sent, with its offer_sdp.
+	first := &events.CallOffer{}
+	first.CallID = "IN-1"
+	first.CallCreator = evt.CallCreator
+	payload := map[string]any{}
+	assert.False(t, addCallOfferFields(context.Background(), payload, first, client))
+	assert.Equal(t, "v=0 gowa-offer", payload["offer_sdp"])
+	assert.NotNil(t, createCallOfferPayload(context.Background(), first, "dev", client, false))
+}
+
+// Without a browser leg, OfferSDP fails at once; the refusal must still be waited for.
+func TestRefusedOfferSendsNoCallOfferWithoutMedia(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	client := &whatsmeow.Client{}
+	eng := &fakeEngine{}
+	m := newCallManager(eng, callManagerOptions{MaxCalls: 1, OfferWait: time.Second})
+	callsByClient.Store(client, m)
+	t.Cleanup(func() { callsByClient.Delete(client) })
+	eng.incoming(&fakeCall{id: "IN-1"})
+
+	evt := &events.CallOffer{}
+	evt.CallID = "IN-2"
+	evt.CallCreator = types.NewJID("123456789012345", types.HiddenUserServer)
+	done := make(chan bool, 1)
+	go func() { done <- addCallOfferFields(context.Background(), map[string]any{}, evt, client) }()
+	time.Sleep(50 * time.Millisecond)
+	eng.incoming(&fakeCall{id: "IN-2"})
+	assert.True(t, <-done)
 }

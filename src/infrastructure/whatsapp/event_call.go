@@ -69,7 +69,9 @@ func createCallOfferPayload(ctx context.Context, evt *events.CallOffer, deviceID
 	payload["from"] = normalizedSenderJID.ToNonAD().String()
 	addSenderDisplayName(ctx, client, payload, false, "")
 	payload["auto_rejected"] = autoRejected
-	addCallOfferFields(ctx, payload, evt, client) // Fork (elphant): calls_enabled, direction, peer and offer_sdp (voice calls 2b).
+	if addCallOfferFields(ctx, payload, evt, client) { // Fork (elphant): voice calls 2b fields; nil when a limit refused the offer (D-31).
+		return nil
+	}
 
 	// Add caller platform info if available
 	if evt.RemotePlatform != "" {
@@ -98,5 +100,8 @@ func createCallOfferPayload(ctx context.Context, evt *events.CallOffer, deviceID
 // forwardCallOfferToWebhook forwards incoming call events to the configured webhook URLs
 func forwardCallOfferToWebhook(ctx context.Context, evt *events.CallOffer, deviceID string, client *whatsmeow.Client, autoRejected bool) error {
 	payload := createCallOfferPayload(ctx, evt, deviceID, client, autoRejected)
+	if payload == nil { // Fork (elphant): refused by a call limit; call.ended alone reports it (D-31).
+		return nil
+	}
 	return forwardPayloadToConfiguredWebhooks(ctx, payload, "call.offer")
 }

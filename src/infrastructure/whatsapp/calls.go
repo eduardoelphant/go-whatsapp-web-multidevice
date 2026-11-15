@@ -191,6 +191,7 @@ type CallManager struct {
 	mu       sync.Mutex
 	calls    map[string]*trackedCall
 	gone     map[string]time.Time // recently ended or refused call ids
+	refused  map[string]string    // call id -> refusal reason (device_limit, gateway_limit); pruned with gone (D-31)
 	waiters  map[string][]chan struct{}
 	reserved int    // slots claimed for calls about to be tracked (inbound and outbound, D-21)
 	slotID   string // slot the manager was attached with
@@ -213,7 +214,7 @@ func newCallManager(engine callEngine, opts callManagerOptions) *CallManager {
 	}
 	m := &CallManager{
 		engine: engine, opts: opts,
-		calls: map[string]*trackedCall{}, gone: map[string]time.Time{}, waiters: map[string][]chan struct{}{},
+		calls: map[string]*trackedCall{}, gone: map[string]time.Time{}, refused: map[string]string{}, waiters: map[string][]chan struct{}{},
 	}
 	engine.OnIncomingCall(m.onIncoming)
 	return m
@@ -243,6 +244,7 @@ func (m *CallManager) onIncoming(h callHandle) {
 	refusal := m.reserveLocked(limit)
 	if refusal != "" {
 		m.gone[id] = m.opts.Now()
+		m.refused[id] = refusal
 		m.notifyLocked(id)
 	}
 	m.mu.Unlock()
@@ -310,6 +312,7 @@ func (m *CallManager) prune() {
 	for id, at := range m.gone {
 		if now.Sub(at) > m.opts.RingWindow {
 			delete(m.gone, id)
+			delete(m.refused, id)
 		}
 	}
 	m.mu.Unlock()
@@ -403,6 +406,18 @@ func (m *CallManager) waitTracked(ctx context.Context, callID string) (*trackedC
 			return nil, ErrCallNotFound
 		}
 	}
+}
+
+// admission waits, like waitTracked, for the engine to report an offer, and returns why the
+// manager refused it ("" when it was tracked, is unknown, or the wait ran out). call.offer uses
+// it so that a refused offer never reaches the webhook (D-31).
+func (m *CallManager) admission(ctx context.Context, callID string) string {
+	if _, err := m.waitTracked(ctx, callID); err == nil {
+		return ""
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.refused[callID]
 }
 
 // dropWaiter removes one waiter that gave up, leaving the others in place.
