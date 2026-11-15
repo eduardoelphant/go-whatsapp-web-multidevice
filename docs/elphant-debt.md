@@ -222,6 +222,14 @@ label change; unrelated to it. Fix: wait for `hungUp` inside the `require.Eventu
 - A ringing spam call holds a slot for up to the 1-minute ring window; a per-call timer expires it
   even on a device with no other traffic.
 - No metric for slots in use; `GET /calls/active` is per device.
+- Minor items left from the final review (test or log only, no runtime impact):
+  - no test for the store-error path of `deviceMaxCalls` (warn, returns 1, not cached);
+  - the `RemoveDevice` test does not check that the `max_calls` cache entry is dropped;
+  - the limit cache keeps the AD JID entry after the startup client moves to its ULID slot;
+  - the refusal log reads the gateway cap again after unlocking, so it can show a value that changed;
+  - two webhook tests use a 50 ms sleep, which does not guarantee the mid-wait path;
+  - `contract/call.schema.json` forces only `MISSED` for the limit reasons, not `duration` 0 and no `recording`;
+  - `deviceCallsSchemaReady` keeps closed database handles for the life of the process (tests only).
 
 ## Won't do
 
