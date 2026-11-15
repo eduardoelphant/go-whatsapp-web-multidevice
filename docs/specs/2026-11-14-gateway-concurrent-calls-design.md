@@ -167,6 +167,10 @@ never saw offered. Today it gets a `call.offer` first.
   the offer in time, `call.offer` goes out without `offer_sdp`, as today, and no `call.ended`
   follows from the manager. A device with calls off, a group call and the master switch off keep
   upstream's `call.offer`.
+- **A refusal after the offer wait.** A refusal that lands after `OfferWait` (3 s) yields `call.offer`
+  without `offer_sdp`, then `call.ended` `MISSED` with the limit reason.
+- **A repeated offer for a tracked call.** meowcaller replaces its call handle and ends only the
+  newest, so the manager rebinds the tracked call to the new handle: no new slot, no event.
 - **Group calls** never reach the manager (offer filter) and never count.
 - **A second offer to a number already on a call.** Whether WhatsApp delivers it, sends a busy
   signal, or rings only the phone is unknown. D-30 measures it.

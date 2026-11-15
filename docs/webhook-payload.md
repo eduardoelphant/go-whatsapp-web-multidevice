@@ -1096,12 +1096,12 @@ offer again while the call rings. Group calls have `calls_enabled: false` and ri
   a secret it is the bare path. The route also accepts Basic Auth, so a webhook delivered late by
   the durable retry can still fetch the file. Files are deleted after
   `WHATSAPP_CALLS_RECORDING_RETENTION_DAYS` (default 7); the route then answers 410.
-- A ringing inbound call holds its slot until it is answered, rejected, answered elsewhere or
-  rings out.
+- Every tracked call holds one slot on its number and one in the gateway pool from the offer (or the start) until the call ends; a ringing inbound call already counts.
 - A call's events arrive in order (status, answered, ended). `call.offer` leaves from its own
   path and is not ordered with them (for example a call cancelled at once); match events by
-  `call_id`. An offer refused by a call limit sends no `call.offer` at all, only `call.ended`
-  `MISSED` with `end_reason` `device_limit` or `gateway_limit`. Devices with calls off, group
+  `call_id`. An offer refused by a call limit sends no `call.offer`, only `call.ended`
+  `MISSED` with `end_reason` `device_limit` or `gateway_limit`; a refusal that lands after the
+  offer wait (3 s) yields `call.offer` without `offer_sdp`, then `call.ended` `MISSED` with the limit reason. Devices with calls off, group
   calls and `WHATSAPP_CALLS_ENABLED=false` keep upstream's `call.offer`.
 - Call events leave through one ordered worker. With direct (non-durable) delivery a slow
   endpoint delays every call event behind it; `WHATSAPP_WEBHOOK_DELIVERY=durable` is

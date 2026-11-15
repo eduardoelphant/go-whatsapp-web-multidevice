@@ -509,7 +509,7 @@ every link already handed out.
 ## Voice calls (stages 2a and 2b, concurrent calls; off by default)
 
 GOWA carries WhatsApp voice calls through the fork
-[eduardoelphant/meowcaller](https://github.com/eduardoelphant/meowcaller) (`v0.2.0-elphant.5`),
+[eduardoelphant/meowcaller](https://github.com/eduardoelphant/meowcaller) (`v0.2.0-elphant.8`),
 in the shape of Meta's Cloud Calling: the gateway offers SDP on an incoming call and the
 browser answers; the browser offers on an outbound call and the gateway answers. Designs:
 [2a](../specs/2026-10-14-gateway-voice-calls-design.md),
@@ -586,7 +586,7 @@ calls stay on MLow and the browser leg reports itself unavailable.
   wait goes out once without `offer_sdp`.
 - Edge case: a refusal that lands after that wait can still produce `call.offer` followed by
   `call.ended` `MISSED` with the limit reason.
-- A ringing inbound call holds its slot until it is answered, rejected or missed.
+- Every tracked call holds one slot on its number and one in the gateway pool from the offer (or the start) until the call ends; a ringing inbound call already counts.
 
 ### Concurrent calls: measurement
 

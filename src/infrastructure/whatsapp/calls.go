@@ -155,6 +155,9 @@ const (
 	refusalGateway = "gateway_limit"
 )
 
+// ringPruneMargin keeps the ring-window prune just past the window, so the strict > holds.
+const ringPruneMargin = 50 * time.Millisecond
+
 type callManagerOptions struct {
 	MaxCalls    int           // ceiling per device (WHATSAPP_CALLS_MAX_PER_DEVICE)
 	Limit       func() int    // the device's own limit (stored max_calls); nil: MaxCalls. Called without m.mu (D-24)
@@ -178,6 +181,7 @@ type trackedCall struct {
 	local     string
 	mediaAt   time.Time // both legs flowing
 	timer     *time.Timer
+	ringTimer *time.Timer // prunes a ringing inbound call at the end of the ring window
 	// emitMu orders this call's events: an event decided before the call ended is sent before
 	// call.ended, and none is sent after it. Taken before m.mu, never inside it.
 	emitMu sync.Mutex
@@ -193,8 +197,9 @@ type CallManager struct {
 	gone     map[string]time.Time // recently ended or refused call ids
 	refused  map[string]string    // call id -> refusal reason (device_limit, gateway_limit); pruned with gone (D-31)
 	waiters  map[string][]chan struct{}
-	reserved int    // slots claimed for calls about to be tracked (inbound and outbound, D-21)
-	slotID   string // slot the manager was attached with
+	pending  map[string]callHandle // inbound ids reserved but not yet tracked -> latest handle seen
+	reserved int                   // slots claimed for calls about to be tracked (inbound and outbound, D-21)
+	slotID   string                // slot the manager was attached with
 
 	beforeEmit func(CallEvent) // tests only: runs just before an event is sent
 }
@@ -214,7 +219,7 @@ func newCallManager(engine callEngine, opts callManagerOptions) *CallManager {
 	}
 	m := &CallManager{
 		engine: engine, opts: opts,
-		calls: map[string]*trackedCall{}, gone: map[string]time.Time{}, refused: map[string]string{}, waiters: map[string][]chan struct{}{},
+		calls: map[string]*trackedCall{}, gone: map[string]time.Time{}, refused: map[string]string{}, pending: map[string]callHandle{}, waiters: map[string][]chan struct{}{},
 	}
 	engine.OnIncomingCall(m.onIncoming)
 	return m
@@ -234,14 +239,33 @@ func (m *CallManager) onIncoming(h callHandle) {
 	limit := m.deviceLimit()
 	id := h.ID()
 	m.mu.Lock()
-	_, tracked := m.calls[id]
+	existing, tracked := m.calls[id]
 	_, refused := m.gone[id]
-	if tracked || refused {
+	_, isPending := m.pending[id]
+	if refused {
 		m.mu.Unlock()
 		logrus.Debugf("[CALLS] ignoring a duplicate offer for %s", id)
 		return
 	}
+	if isPending {
+		// The first offer is still being tracked; remember the newest handle so settle rebinds it.
+		m.pending[id] = h
+		m.mu.Unlock()
+		logrus.Debugf("[CALLS] duplicate offer for %s while it is being tracked", id)
+		return
+	}
+	if tracked {
+		// meowcaller replaced its call with h and will only end h: follow it, no new slot (D-33).
+		existing.handle = h
+		m.mu.Unlock()
+		m.wire(existing, h)
+		logrus.Debugf("[CALLS] rebound %s to its repeated offer", id)
+		return
+	}
 	refusal := m.reserveLocked(limit)
+	if refusal == "" {
+		m.pending[id] = h
+	}
 	if refusal != "" {
 		m.gone[id] = m.opts.Now()
 		m.refused[id] = refusal
@@ -257,8 +281,17 @@ func (m *CallManager) onIncoming(h callHandle) {
 	}
 	tc := m.newTracked(h, DirectionUser, stateRinging, nil)
 	m.mu.Lock()
+	latest := m.pending[id]
+	delete(m.pending, id)
 	m.settleLocked(tc)
+	rebind := latest != nil && latest != h && !tc.ended
+	if rebind {
+		tc.handle = latest
+	}
 	m.mu.Unlock()
+	if rebind {
+		m.wire(tc, latest)
+	}
 }
 
 // newTracked builds a tracked call and wires the engine callbacks. It must be called without
@@ -267,11 +300,16 @@ func (m *CallManager) newTracked(h callHandle, direction, state string, media ca
 	tc := &trackedCall{handle: h, media: media, info: CallInfo{
 		CallID: h.ID(), Direction: direction, Peer: h.Peer(), State: state, StartedAt: m.opts.Now(),
 	}}
+	m.wire(tc, h)
+	return tc
+}
+
+// wire points the engine callbacks of h at tc. Without m.mu: OnEnd may fire synchronously.
+func (m *CallManager) wire(tc *trackedCall, h callHandle) {
 	h.OnRinging(func() { m.onPeerRinging(tc) })
 	h.OnAccept(func() { m.onPeerAccept(tc) })
 	h.OnMedia(func() { m.onWhatsAppMedia(tc) })
 	h.OnEnd(func(reason string) { m.finish(tc, reason) })
-	return tc
 }
 
 // insertLocked registers a call unless it already ended, and arms its max duration.
@@ -279,6 +317,13 @@ func (m *CallManager) insertLocked(tc *trackedCall) {
 	id := tc.info.CallID
 	if !tc.ended {
 		m.calls[id] = tc
+		if tc.info.Direction == DirectionUser && tc.info.State == stateRinging {
+			// A quiet device gets no prune from traffic: expire the ring on its own (D-32).
+			tc.ringTimer = time.AfterFunc(m.opts.RingWindow+ringPruneMargin, func() {
+				defer safego.Recover("calls_ring_window")
+				m.prune()
+			})
+		}
 		if m.opts.MaxDuration > 0 {
 			tc.timer = time.AfterFunc(m.opts.MaxDuration, func() {
 				defer safego.Recover("calls_max_duration")
@@ -772,11 +817,14 @@ func (m *CallManager) finish(tc *trackedCall, engineReason string) {
 	now := m.opts.Now()
 	m.gone[id] = now
 	m.notifyLocked(id)
-	info, local, answered, mediaAt, media, timer := tc.info, tc.local, tc.answered, tc.mediaAt, tc.media, tc.timer
+	info, local, answered, mediaAt, media, timer, ringTimer := tc.info, tc.local, tc.answered, tc.mediaAt, tc.media, tc.timer, tc.ringTimer
 	m.mu.Unlock()
 
 	if timer != nil {
 		timer.Stop()
+	}
+	if ringTimer != nil {
+		ringTimer.Stop()
 	}
 	var rec *RecordingInfo
 	if media != nil {

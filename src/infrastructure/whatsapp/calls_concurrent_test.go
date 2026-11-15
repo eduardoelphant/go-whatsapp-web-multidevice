@@ -158,6 +158,8 @@ func TestConcurrentStartsAcrossManagersRespectTheGatewayCap(t *testing.T) {
 				ok++
 			case errors.Is(err, ErrCallLimit), errors.Is(err, ErrGatewayCallLimit):
 				limited++
+			default:
+				t.Errorf("unexpected Start error: %v", err)
 			}
 		}(i)
 	}
@@ -277,6 +279,64 @@ func TestDuplicateInboundOfferHoldsOneSlot(t *testing.T) {
 	require.NoError(t, m.Reject("IN-DUP"))
 	assert.Equal(t, 0, pool.inUse())
 	assert.Equal(t, 0, heldOf(m))
+}
+
+// meowcaller replaces its call on a repeated offer and only ends the newest one (D-33).
+func TestDuplicateOfferRebindsToTheNewestHandle(t *testing.T) {
+	now := time.Now()
+	pool := newCallSlots(func() int { return 0 })
+	m, eng, log := newPooledManager(t, 4, nil, pool, &now, nil)
+	eng.incoming(&fakeCall{id: "IN-RB"})
+	second := &fakeCall{id: "IN-RB"}
+	eng.incoming(second)
+	assert.Equal(t, 1, pool.inUse())
+	second.end("") // the peer ends the newest handle only
+	assert.Equal(t, 0, pool.inUse())
+	assert.Equal(t, 0, heldOf(m))
+	assert.Len(t, m.Active(), 0)
+	n := 0
+	for _, ev := range log.all() {
+		if ev.Type == EventCallEnded {
+			n++
+		}
+	}
+	assert.Equal(t, 1, n, "one call.ended")
+}
+
+// A repeated offer that lands between the reservation and the insert is rebound at settle.
+func TestDuplicateOfferWhileTrackingIsRebound(t *testing.T) {
+	now := time.Now()
+	pool := newCallSlots(func() int { return 0 })
+	m, eng, _ := newPooledManager(t, 4, nil, pool, &now, nil)
+	second := &fakeCall{id: "IN-PD"}
+	first := &fakeCall{id: "IN-PD"}
+	// The first handle's OnRinging runs inside newTracked, after the reservation.
+	first.onWire = func() { eng.incoming(second) }
+	eng.incoming(first)
+	assert.Equal(t, 1, pool.inUse())
+	second.end("")
+	assert.Equal(t, 0, pool.inUse())
+	assert.Equal(t, 0, heldOf(m))
+}
+
+func TestRingingCallOnAQuietDeviceExpiresByItself(t *testing.T) {
+	pool := newCallSlots(func() int { return 0 })
+	eng := &fakeEngine{}
+	log := &eventLog{}
+	m := newCallManager(eng, callManagerOptions{
+		MaxCalls: 2, Pool: pool, RingWindow: 30 * time.Millisecond, Emit: log.add, Now: time.Now,
+	})
+	call := &fakeCall{id: "IN-QUIET"}
+	eng.incoming(call)
+	require.Equal(t, 1, pool.inUse())
+	require.Eventually(t, func() bool {
+		_, ok := log.last(EventCallEnded) // the event follows the slot release
+		return ok && pool.inUse() == 0 && heldOf(m) == 0
+	}, 2*time.Second, 10*time.Millisecond)
+	ended, _ := log.last(EventCallEnded)
+	assert.Equal(t, "MISSED", ended.Status)
+	assert.Equal(t, "timeout", ended.EndReason)
+	assert.True(t, call.rejected)
 }
 
 func TestMaxDurationReleasesTheGatewaySlot(t *testing.T) {
