@@ -556,7 +556,7 @@ func initFlags() {
 	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsCodec, "calls-codec", "", config.WhatsappCallsCodec,
 		`call audio codec --calls-codec <opus|mlow> | example: --calls-codec=opus`)
 	rootCmd.PersistentFlags().IntVarP(&config.WhatsappCallsMaxPerDevice, "calls-max-per-device", "", config.WhatsappCallsMaxPerDevice,
-		`simultaneous calls per device --calls-max-per-device <n> | example: --calls-max-per-device=1`)
+		`ceiling of simultaneous calls per device; each device's max_calls is capped by it --calls-max-per-device <n> | example: --calls-max-per-device=3`)
 	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsLogLevel, "calls-log-level", "", config.WhatsappCallsLogLevel,
 		`call engine log level --calls-log-level <debug|info|warn|error> | example: --calls-log-level=debug`)
 	rootCmd.PersistentFlags().StringVarP(&config.WhatsappCallsEarlyMedia, "calls-early-media", "", config.WhatsappCallsEarlyMedia,

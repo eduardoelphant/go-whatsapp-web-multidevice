@@ -7,6 +7,7 @@ import (
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
+	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mau.fi/whatsmeow"
@@ -16,11 +17,14 @@ import (
 )
 
 type fakeCallsStore struct {
-	mu   sync.Mutex
-	rows map[string]bool
+	mu     sync.Mutex
+	rows   map[string]bool
+	limits map[string]int
 }
 
-func newFakeCallsStore() *fakeCallsStore { return &fakeCallsStore{rows: map[string]bool{}} }
+func newFakeCallsStore() *fakeCallsStore {
+	return &fakeCallsStore{rows: map[string]bool{}, limits: map[string]int{}}
+}
 
 func (s *fakeCallsStore) SetDeviceCallsEnabled(id string, on bool) error {
 	s.mu.Lock()
@@ -208,4 +212,93 @@ func TestCallsStoreOfUnwrapsTheDeviceWrapper(t *testing.T) {
 	if callsStoreOf(nil) != nil {
 		t.Fatal("no repository means no registry")
 	}
+}
+
+func (s *fakeCallsStore) SetDeviceCallsConfig(id string, on bool, maxCalls *int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rows[id] = on
+	if maxCalls != nil {
+		s.limits[id] = *maxCalls
+	}
+	return nil
+}
+
+func (s *fakeCallsStore) GetDeviceCallsMaxCalls(id string) (int, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, ok := s.limits[id]
+	return n, ok, nil
+}
+
+func intPtr(v int) *int { return &v }
+
+// withCallsLimits sets the two env limits for one test.
+func withCallsLimits(t *testing.T, ceiling, total int) {
+	per, tot := config.WhatsappCallsMaxPerDevice, config.WhatsappCallsMaxTotal
+	t.Cleanup(func() { config.WhatsappCallsMaxPerDevice, config.WhatsappCallsMaxTotal = per, tot })
+	config.WhatsappCallsMaxPerDevice, config.WhatsappCallsMaxTotal = ceiling, total
+}
+
+func TestConfigureDeviceCallsStoresTheLimit(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	withCallsLimits(t, 3, 6)
+	reg := newFakeCallsStore()
+	withCallsStore(t, reg)
+	withResolvedSlot(t, "slot-a", &whatsmeow.Client{Store: &store.Device{}})
+
+	got, err := DeviceCallsSettings("slot-a")
+	require.NoError(t, err)
+	assert.Equal(t, DeviceCallsState{Enabled: true, MaxCalls: 1, MaxCallsCeiling: 3, MaxCallsTotal: 6}, got, "never set reads 1")
+
+	got, err = ConfigureDeviceCalls("slot-a", true, intPtr(3))
+	require.NoError(t, err)
+	assert.Equal(t, DeviceCallsState{Enabled: true, MaxCalls: 3, MaxCallsCeiling: 3, MaxCallsTotal: 6}, got)
+	assert.Equal(t, 3, deviceMaxCalls("slot-a"))
+
+	got, err = ConfigureDeviceCalls("slot-a", true, nil) // omitted: unchanged
+	require.NoError(t, err)
+	assert.Equal(t, 3, got.MaxCalls)
+
+	got, err = ConfigureDeviceCalls("slot-a", false, intPtr(2)) // both stored
+	require.NoError(t, err)
+	assert.False(t, got.Enabled)
+	assert.Equal(t, 2, got.MaxCalls)
+	assert.Equal(t, 2, reg.limits["slot-a"])
+}
+
+func TestConfigureDeviceCallsValidatesTheRange(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	withCallsLimits(t, 3, 0)
+	reg := newFakeCallsStore()
+	withCallsStore(t, reg)
+	withResolvedSlot(t, "slot-a", &whatsmeow.Client{Store: &store.Device{}})
+
+	for _, v := range []int{0, -1, 4} {
+		_, err := ConfigureDeviceCalls("slot-a", true, intPtr(v))
+		require.Error(t, err, "max_calls %d", v)
+		assert.Equal(t, "max_calls must be between 1 and 3", err.Error())
+		var ge pkgError.GenericError
+		require.ErrorAs(t, err, &ge)
+		assert.Equal(t, 400, ge.StatusCode())
+	}
+	assert.Empty(t, reg.snapshot(), "a refused value stores nothing")
+
+	config.WhatsappCallsEnabled = false
+	_, err := ConfigureDeviceCalls("slot-a", true, intPtr(9))
+	assert.ErrorIs(t, err, ErrCallsMasterOff, "the master switch is checked first")
+}
+
+func TestDeviceMaxCallsClampsAndCaches(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	reg := newFakeCallsStore()
+	reg.limits["slot-bad"] = 0
+	withCallsStore(t, reg)
+	assert.Equal(t, 1, deviceMaxCalls("slot-none"))
+	assert.Equal(t, 1, deviceMaxCalls("slot-bad"), "a stored value below 1 reads 1")
+
+	reg.limits["slot-none"] = 3 // written behind the cache's back
+	assert.Equal(t, 1, deviceMaxCalls("slot-none"), "cached")
+	forgetDeviceCallsCache("slot-none")
+	assert.Equal(t, 3, deviceMaxCalls("slot-none"))
 }

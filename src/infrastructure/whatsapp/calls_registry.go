@@ -96,7 +96,9 @@ func attachCalls(slotID string, client *whatsmeow.Client) {
 		effectiveCodecName = codec
 	})
 	m := newCallManager(newMeowEngine(client, offerFilter(slotID, client)), callManagerOptions{
-		MaxCalls:    config.WhatsappCallsMaxPerDevice,
+		MaxCalls:    config.CallsMaxPerDeviceCeiling(),
+		Limit:       func() int { return deviceMaxCalls(callsSlotOf(client, slotID)) }, // concurrent calls, D-24
+		Pool:        gatewayCallSlots,                                                  // concurrent calls, D-20
 		RingWindow:  time.Minute,
 		MaxDuration: time.Duration(config.WhatsappCallsMaxDurationMinutes) * time.Minute,
 		Media:       callsMedia,
@@ -104,7 +106,7 @@ func attachCalls(slotID string, client *whatsmeow.Client) {
 	})
 	m.slotID = slotID
 	callsByClient.Store(client, m)
-	logrus.Infof("[CALLS] calls enabled for device %s (codec %s, early media %s)", maskSlot(slotID), effectiveCodecName, parseCallsEarlyMedia(config.WhatsappCallsEarlyMedia))
+	logrus.Infof("[CALLS] calls enabled for device %s (codec %s, early media %s, ceiling %d, gateway cap %d)", maskSlot(slotID), effectiveCodecName, parseCallsEarlyMedia(config.WhatsappCallsEarlyMedia), config.CallsMaxPerDeviceCeiling(), config.CallsMaxTotal())
 }
 
 // forgetCalls drops the manager of a client that is being discarded and ends its live

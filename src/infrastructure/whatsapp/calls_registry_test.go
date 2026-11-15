@@ -218,3 +218,22 @@ func TestNewBridgeFactoryClampsGrace(t *testing.T) {
 		assert.Equal(t, time.Second, newBridgeFactory(&fakeRTC{}).grace)
 	}
 }
+
+func TestAttachCallsWiresTheLimitAndThePool(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	withCallsLimits(t, 3, 6)
+	reg := newFakeCallsStore()
+	reg.limits["slot-a"] = 2
+	withCallsStore(t, reg)
+
+	client := &whatsmeow.Client{Store: &store.Device{}}
+	attachCalls("slot-a", client)
+	t.Cleanup(func() { forgetCalls(client) })
+	v, ok := callsByClient.Load(client)
+	require.True(t, ok)
+	m := v.(*CallManager)
+	assert.Equal(t, 3, m.opts.MaxCalls)
+	assert.Same(t, gatewayCallSlots, m.opts.Pool)
+	require.NotNil(t, m.opts.Limit)
+	assert.Equal(t, 2, m.deviceLimit())
+}

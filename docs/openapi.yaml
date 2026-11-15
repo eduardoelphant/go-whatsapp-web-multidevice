@@ -2890,7 +2890,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericResponse'
         '400':
-          description: Bad Request (missing or invalid fields, calls not enabled for this device, unknown call, or an engine error with phone numbers masked)
+          description: Bad Request (missing or invalid fields, calls not enabled for this device, unknown call, or an engine error with phone numbers masked; "too many calls on this device" (device limit) or "call capacity of this gateway reached" (WHATSAPP_CALLS_MAX_TOTAL))
           content:
             application/json:
               schema:
@@ -3049,7 +3049,7 @@ paths:
       operationId: getDeviceCalls
       tags:
         - call
-      summary: Whether calls are on for a device
+      summary: Calls switch and call limits of a device
       parameters:
         - name: device_id
           in: path
@@ -3058,7 +3058,7 @@ paths:
             type: string
       responses:
         '200':
-          description: '`results.enabled`'
+          description: '`results`: `enabled`, `max_calls` (stored limit, 1 when never set), `max_calls_ceiling` (`WHATSAPP_CALLS_MAX_PER_DEVICE`), `max_calls_total` (`WHATSAPP_CALLS_MAX_TOTAL`, 0 = no gateway cap)'
           content:
             application/json:
               schema:
@@ -3067,11 +3067,15 @@ paths:
       operationId: setDeviceCalls
       tags:
         - call
-      summary: Switch calls on or off for a device
+      summary: Switch calls and set the call limit of a device
       description: |
         Stored in the device registry and applied at once: off ends the device's live calls and
         leaves its next offers to the phone. Needs `WHATSAPP_CALLS_ENABLED=true` (400 otherwise).
         Calls carry a ban risk for the number.
+
+        `max_calls` (optional) is the device's limit of simultaneous calls, from 1
+        to `WHATSAPP_CALLS_MAX_PER_DEVICE`. Omitted or null keeps the stored value. It applies to the
+        next offer or start and never ends a live call.
       parameters:
         - name: device_id
           in: path
@@ -3089,15 +3093,19 @@ paths:
               properties:
                 enabled:
                   type: boolean
+                max_calls:
+                  type: integer
+                  minimum: 1
+                  nullable: true
       responses:
         '200':
-          description: '`results.enabled`'
+          description: '`results`: `enabled`, `max_calls` (stored limit, 1 when never set), `max_calls_ceiling` (`WHATSAPP_CALLS_MAX_PER_DEVICE`), `max_calls_total` (`WHATSAPP_CALLS_MAX_TOTAL`, 0 = no gateway cap)'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericResponse'
         '400':
-          description: Bad Request (missing `enabled`, unknown device, or calls off on the gateway)
+          description: Bad Request (missing enabled, max_calls out of range ("max_calls must be between 1 and N"), unknown device, or calls off on the gateway)
           content:
             application/json:
               schema:

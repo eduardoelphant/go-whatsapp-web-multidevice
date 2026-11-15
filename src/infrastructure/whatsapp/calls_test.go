@@ -25,6 +25,7 @@ type fakeCall struct {
 	syncEnd                      bool
 	onEnd                        func(string)
 	onRinging, onAccept, onMedia func()
+	onWire                       func() // tests: runs once when OnRinging is wired
 	src                          pcmSource
 	sink                         pcmSink
 }
@@ -80,9 +81,18 @@ func (f *fakeCall) OnEnd(fn func(string)) {
 		fn("already-ended")
 	}
 }
-func (f *fakeCall) OnRinging(fn func()) { f.mu.Lock(); f.onRinging = fn; f.mu.Unlock() }
-func (f *fakeCall) OnAccept(fn func())  { f.mu.Lock(); f.onAccept = fn; f.mu.Unlock() }
-func (f *fakeCall) OnMedia(fn func())   { f.mu.Lock(); f.onMedia = fn; f.mu.Unlock() }
+func (f *fakeCall) OnRinging(fn func()) {
+	f.mu.Lock()
+	f.onRinging = fn
+	w := f.onWire
+	f.onWire = nil
+	f.mu.Unlock()
+	if w != nil {
+		w()
+	}
+}
+func (f *fakeCall) OnAccept(fn func()) { f.mu.Lock(); f.onAccept = fn; f.mu.Unlock() }
+func (f *fakeCall) OnMedia(fn func())  { f.mu.Lock(); f.onMedia = fn; f.mu.Unlock() }
 func (f *fakeCall) Bridge(src pcmSource, sink pcmSink) {
 	f.mu.Lock()
 	f.src, f.sink = src, sink
@@ -321,7 +331,7 @@ func TestIncomingAboveCapIsRejectedAndMissed(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "IN-2", ended.Call.CallID)
 	assert.Equal(t, "MISSED", ended.Status)
-	assert.Equal(t, "rejected", ended.EndReason)
+	assert.Equal(t, "device_limit", ended.EndReason)
 }
 
 func TestStartRespectsCap(t *testing.T) {

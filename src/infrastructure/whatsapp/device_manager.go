@@ -279,7 +279,7 @@ func (m *DeviceManager) RemoveDevice(id string) {
 	if inst := m.devices[id]; inst != nil {
 		forgetCalls(inst.GetClient()) // Fork (elphant): drop the call manager with the slot.
 	}
-	deviceCallsCache.Delete(id) // Fork (elphant): the slot's calls switch goes with it.
+	forgetDeviceCallsCache(id) // Fork (elphant): the slot's calls switch and limit go with it.
 	delete(m.devices, id)
 
 	if m.storage != nil && strings.TrimSpace(id) != "" {

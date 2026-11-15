@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -18,12 +19,13 @@ import (
 // stage 2b (browser leg, events, recording): docs/specs/2026-10-14-gateway-voice-calls-2b-design.md.
 
 var (
-	ErrCallNotFound = pkgError.ValidationError("call not found, already ended, or no longer ringing")
-	ErrCallLimit    = pkgError.ValidationError("too many calls on this device")
-	ErrCallsOff     = pkgError.ValidationError("calls are not enabled for this device")
-	ErrCallAnswered = pkgError.ConflictError("call already answered")
-	ErrCallsNoMedia = pkgError.ValidationError("browser audio is unavailable on this gateway (check WHATSAPP_CALLS_RTC_PORT and the start log)")
-	ErrCallNoOffer  = pkgError.ValidationError("no offer was made for this call yet; fetch offer_sdp with GET /call/:call_id first")
+	ErrCallNotFound     = pkgError.ValidationError("call not found, already ended, or no longer ringing")
+	ErrCallLimit        = pkgError.ValidationError("too many calls on this device")
+	ErrGatewayCallLimit = pkgError.ValidationError("call capacity of this gateway reached") // never "too many calls": the CRM matches substrings (D-26)
+	ErrCallsOff         = pkgError.ValidationError("calls are not enabled for this device")
+	ErrCallAnswered     = pkgError.ConflictError("call already answered")
+	ErrCallsNoMedia     = pkgError.ValidationError("browser audio is unavailable on this gateway (check WHATSAPP_CALLS_RTC_PORT and the start log)")
+	ErrCallNoOffer      = pkgError.ValidationError("no offer was made for this call yet; fetch offer_sdp with GET /call/:call_id first")
 )
 
 // Meta's words for the direction of a call (B5).
@@ -147,8 +149,19 @@ type mediaFactory interface {
 	Outbound(offerSDP string) (callMedia, error)
 }
 
+// Why an offer or a start was refused for capacity; also call.ended's end_reason (D-25).
+const (
+	refusalDevice  = "device_limit"
+	refusalGateway = "gateway_limit"
+)
+
+// ringPruneMargin keeps the ring-window prune just past the window, so the strict > holds.
+const ringPruneMargin = 50 * time.Millisecond
+
 type callManagerOptions struct {
-	MaxCalls    int
+	MaxCalls    int           // ceiling per device (WHATSAPP_CALLS_MAX_PER_DEVICE)
+	Limit       func() int    // the device's own limit (stored max_calls); nil: MaxCalls. Called without m.mu (D-24)
+	Pool        *callSlots    // the gateway-wide slot pool; nil: no gateway accounting (D-20)
 	RingWindow  time.Duration // an inbound offer older than this is rejected as missed
 	MaxDuration time.Duration // a tracked call older than this is hung up (0: no limit)
 	OfferWait   time.Duration // how long OfferSDP waits for the engine to report an offer
@@ -168,6 +181,7 @@ type trackedCall struct {
 	local     string
 	mediaAt   time.Time // both legs flowing
 	timer     *time.Timer
+	ringTimer *time.Timer // prunes a ringing inbound call at the end of the ring window
 	// emitMu orders this call's events: an event decided before the call ended is sent before
 	// call.ended, and none is sent after it. Taken before m.mu, never inside it.
 	emitMu sync.Mutex
@@ -181,9 +195,11 @@ type CallManager struct {
 	mu       sync.Mutex
 	calls    map[string]*trackedCall
 	gone     map[string]time.Time // recently ended or refused call ids
+	refused  map[string]string    // call id -> refusal reason (device_limit, gateway_limit); pruned with gone (D-31)
 	waiters  map[string][]chan struct{}
-	reserved int    // outbound slots claimed before dialing
-	slotID   string // slot the manager was attached with
+	pending  map[string]callHandle // inbound ids reserved but not yet tracked -> latest handle seen
+	reserved int                   // slots claimed for calls about to be tracked (inbound and outbound, D-21)
+	slotID   string                // slot the manager was attached with
 
 	beforeEmit func(CallEvent) // tests only: runs just before an event is sent
 }
@@ -203,7 +219,7 @@ func newCallManager(engine callEngine, opts callManagerOptions) *CallManager {
 	}
 	m := &CallManager{
 		engine: engine, opts: opts,
-		calls: map[string]*trackedCall{}, gone: map[string]time.Time{}, waiters: map[string][]chan struct{}{},
+		calls: map[string]*trackedCall{}, gone: map[string]time.Time{}, refused: map[string]string{}, pending: map[string]callHandle{}, waiters: map[string][]chan struct{}{},
 	}
 	engine.OnIncomingCall(m.onIncoming)
 	return m
@@ -220,25 +236,66 @@ func (m *CallManager) emit(ev CallEvent) {
 
 func (m *CallManager) onIncoming(h callHandle) {
 	m.prune()
+	limit := m.deviceLimit()
 	id := h.ID()
 	m.mu.Lock()
-	full := m.activeCountLocked() >= m.opts.MaxCalls
-	if full {
+	existing, tracked := m.calls[id]
+	_, refused := m.gone[id]
+	_, isPending := m.pending[id]
+	if refused {
+		m.mu.Unlock()
+		logrus.Debugf("[CALLS] ignoring a duplicate offer for %s", id)
+		return
+	}
+	if isPending {
+		// The first offer is still being tracked; remember the newest handle so settle rebinds it.
+		m.pending[id] = h
+		m.mu.Unlock()
+		logrus.Debugf("[CALLS] duplicate offer for %s while it is being tracked", id)
+		return
+	}
+	if tracked {
+		// meowcaller replaced its call with h and will only end h: follow it, no new slot (D-33).
+		existing.handle = h
+		m.mu.Unlock()
+		m.wire(existing, h)
+		logrus.Debugf("[CALLS] rebound %s to its repeated offer", id)
+		return
+	}
+	refusal := m.reserveLocked(limit)
+	if refusal == "" {
+		m.pending[id] = h
+	}
+	if refusal != "" {
 		m.gone[id] = m.opts.Now()
+		m.refused[id] = refusal
 		m.notifyLocked(id)
 	}
 	m.mu.Unlock()
-	if full {
+	if refusal != "" {
 		info := CallInfo{CallID: id, Direction: DirectionUser, Peer: h.Peer(), State: stateRinging, StartedAt: m.opts.Now()}
-		logrus.Infof("[CALLS] rejecting %s from %s: device at its call limit", id, maskPeer(info.Peer))
+		logrus.Infof("[CALLS] rejecting %s from %s: %s", id, maskPeer(info.Peer), m.refusalText(refusal, limit))
 		_ = h.Reject()
-		m.emit(CallEvent{Type: EventCallEnded, Call: info, Status: "MISSED", EndReason: "rejected", At: m.opts.Now()})
+		m.emit(CallEvent{Type: EventCallEnded, Call: info, Status: "MISSED", EndReason: refusal, At: m.opts.Now()})
 		return
 	}
 	tc := m.newTracked(h, DirectionUser, stateRinging, nil)
 	m.mu.Lock()
-	m.insertLocked(tc)
+	latest := m.pending[id]
+	delete(m.pending, id)
+	m.settleLocked(tc)
+	rebind := latest != nil && latest != h && !tc.ended
+	if rebind {
+		tc.handle = latest
+	}
+	orphan := latest != nil && latest != h && tc.ended
 	m.mu.Unlock()
+	if rebind {
+		m.wire(tc, latest)
+	}
+	if orphan {
+		_ = latest.Reject() // the call ended first: the newer handle must not keep ringing
+	}
 }
 
 // newTracked builds a tracked call and wires the engine callbacks. It must be called without
@@ -247,11 +304,23 @@ func (m *CallManager) newTracked(h callHandle, direction, state string, media ca
 	tc := &trackedCall{handle: h, media: media, info: CallInfo{
 		CallID: h.ID(), Direction: direction, Peer: h.Peer(), State: state, StartedAt: m.opts.Now(),
 	}}
+	m.wire(tc, h)
+	return tc
+}
+
+// handleOf reads tc's current handle: a repeated offer can rebind it (D-33).
+func (m *CallManager) handleOf(tc *trackedCall) callHandle {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return tc.handle
+}
+
+// wire points the engine callbacks of h at tc. Without m.mu: OnEnd may fire synchronously.
+func (m *CallManager) wire(tc *trackedCall, h callHandle) {
 	h.OnRinging(func() { m.onPeerRinging(tc) })
 	h.OnAccept(func() { m.onPeerAccept(tc) })
 	h.OnMedia(func() { m.onWhatsAppMedia(tc) })
 	h.OnEnd(func(reason string) { m.finish(tc, reason) })
-	return tc
 }
 
 // insertLocked registers a call unless it already ended, and arms its max duration.
@@ -259,6 +328,13 @@ func (m *CallManager) insertLocked(tc *trackedCall) {
 	id := tc.info.CallID
 	if !tc.ended {
 		m.calls[id] = tc
+		if tc.info.Direction == DirectionUser && tc.info.State == stateRinging {
+			// A quiet device gets no prune from traffic: expire the ring on its own (D-32).
+			tc.ringTimer = time.AfterFunc(m.opts.RingWindow+ringPruneMargin, func() {
+				defer safego.Recover("calls_ring_window")
+				m.prune()
+			})
+		}
 		if m.opts.MaxDuration > 0 {
 			tc.timer = time.AfterFunc(m.opts.MaxDuration, func() {
 				defer safego.Recover("calls_max_duration")
@@ -292,6 +368,7 @@ func (m *CallManager) prune() {
 	for id, at := range m.gone {
 		if now.Sub(at) > m.opts.RingWindow {
 			delete(m.gone, id)
+			delete(m.refused, id)
 		}
 	}
 	m.mu.Unlock()
@@ -300,14 +377,61 @@ func (m *CallManager) prune() {
 	}
 }
 
-func (m *CallManager) activeCountLocked() int {
-	n := m.reserved
-	for _, tc := range m.calls {
-		if tc.info.State == stateActive || tc.answering || tc.info.Direction == DirectionBusiness {
-			n++
+// deviceLimit is the device's effective limit now: min(own limit, ceiling), the own limit read
+// as at least 1 (D-24). Limit may read the store, so callers must not hold m.mu.
+func (m *CallManager) deviceLimit() int {
+	limit := m.opts.MaxCalls
+	if m.opts.Limit != nil {
+		own := m.opts.Limit()
+		if own < 1 {
+			own = 1
+		}
+		if own < limit {
+			limit = own
 		}
 	}
-	return n
+	return limit
+}
+
+// heldLocked counts the device's slots: reservations plus tracked calls. Every tracked call
+// holds one, ringing inbound calls included (D-21).
+func (m *CallManager) heldLocked() int { return m.reserved + len(m.calls) }
+
+// reserveLocked claims a device slot and a gateway slot for a call about to be tracked, or
+// returns why it cannot. The device check runs first (D-25, D-26).
+func (m *CallManager) reserveLocked(limit int) string {
+	if m.heldLocked() >= limit {
+		return refusalDevice
+	}
+	if !m.opts.Pool.tryAcquire() {
+		return refusalGateway
+	}
+	m.reserved++
+	return ""
+}
+
+// unreserveLocked gives back a reservation that never became a tracked call.
+func (m *CallManager) unreserveLocked() {
+	m.reserved--
+	m.opts.Pool.release()
+}
+
+// settleLocked hands a reservation over to tc. A call that ended while it was being tracked is
+// not inserted, so its gateway slot is given back here; otherwise finish gives it back.
+func (m *CallManager) settleLocked(tc *trackedCall) {
+	m.reserved--
+	m.insertLocked(tc)
+	if tc.ended {
+		m.opts.Pool.release()
+	}
+}
+
+// refusalText is the log text of a refusal (D-28).
+func (m *CallManager) refusalText(refusal string, limit int) string {
+	if refusal == refusalGateway {
+		return fmt.Sprintf("gateway at its call capacity (%d)", m.opts.Pool.limit())
+	}
+	return fmt.Sprintf("device at its call limit (%d)", limit)
 }
 
 // waitTracked returns a tracked call, waiting up to OfferWait for the engine to report it:
@@ -338,6 +462,19 @@ func (m *CallManager) waitTracked(ctx context.Context, callID string) (*trackedC
 			return nil, ErrCallNotFound
 		}
 	}
+}
+
+// admission waits, like waitTracked, for the engine to report an offer, and returns why the
+// manager refused it. tracked is true when the call was admitted; with tracked false and an
+// empty reason the call is unknown or the wait ran out. call.offer uses it so that a refused
+// offer never reaches the webhook, and so that it waits only once (D-31).
+func (m *CallManager) admission(ctx context.Context, callID string) (reason string, tracked bool) {
+	if _, err := m.waitTracked(ctx, callID); err == nil {
+		return "", true
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.refused[callID], false
 }
 
 // dropWaiter removes one waiter that gave up, leaving the others in place.
@@ -415,10 +552,6 @@ func (m *CallManager) Answer(callID, answerSDP string) error {
 		m.mu.Unlock()
 		return ErrCallAnswered
 	}
-	if m.activeCountLocked() >= m.opts.MaxCalls {
-		m.mu.Unlock()
-		return ErrCallLimit
-	}
 	media := tc.media
 	if m.opts.Media != nil && media == nil {
 		m.mu.Unlock()
@@ -447,7 +580,7 @@ func (m *CallManager) Answer(callID, answerSDP string) error {
 	if ended {
 		return ErrCallNotFound
 	}
-	if err := tc.handle.Answer(); err != nil {
+	if err := m.handleOf(tc).Answer(); err != nil {
 		m.mu.Lock()
 		ended := tc.ended
 		if tc.local == "" {
@@ -457,7 +590,7 @@ func (m *CallManager) Answer(callID, answerSDP string) error {
 		if ended {
 			return ErrCallNotFound
 		}
-		_ = tc.handle.Reject()
+		_ = m.handleOf(tc).Reject()
 		m.finish(tc, "")
 		return err
 	}
@@ -470,7 +603,7 @@ func (m *CallManager) Answer(callID, answerSDP string) error {
 	ready := tc.waReady
 	m.mu.Unlock()
 	if media != nil {
-		media.Start(tc.handle, m.mediaEvents(tc))
+		media.Start(m.handleOf(tc), m.mediaEvents(tc))
 	}
 	if ready {
 		m.whatsAppReady(tc, media)
@@ -485,16 +618,20 @@ func (m *CallManager) Start(ctx context.Context, target, offerSDP string) (CallI
 		return CallInfo{}, "", ErrCallsNoMedia
 	}
 	m.prune()
+	limit := m.deviceLimit()
 	m.mu.Lock()
-	if m.activeCountLocked() >= m.opts.MaxCalls {
-		m.mu.Unlock()
+	refusal := m.reserveLocked(limit)
+	m.mu.Unlock()
+	if refusal != "" {
+		logrus.Infof("[CALLS] refusing an outbound call on device %s: %s", maskSlot(m.slotID), m.refusalText(refusal, limit))
+		if refusal == refusalGateway {
+			return CallInfo{}, "", ErrGatewayCallLimit
+		}
 		return CallInfo{}, "", ErrCallLimit
 	}
-	m.reserved++
-	m.mu.Unlock()
 	release := func() {
 		m.mu.Lock()
-		m.reserved--
+		m.unreserveLocked()
 		m.mu.Unlock()
 	}
 
@@ -520,8 +657,7 @@ func (m *CallManager) Start(ctx context.Context, target, offerSDP string) (CallI
 	}
 	tc := m.newTracked(h, DirectionBusiness, stateRinging, media)
 	m.mu.Lock()
-	m.reserved--
-	m.insertLocked(tc)
+	m.settleLocked(tc)
 	ended, info := tc.ended, tc.info
 	m.mu.Unlock()
 	if ended {
@@ -687,15 +823,19 @@ func (m *CallManager) finish(tc *trackedCall, engineReason string) {
 	id := tc.info.CallID
 	if m.calls[id] == tc {
 		delete(m.calls, id)
+		m.opts.Pool.release() // a tracked call holds a gateway slot until it ends (D-21)
 	}
 	now := m.opts.Now()
 	m.gone[id] = now
 	m.notifyLocked(id)
-	info, local, answered, mediaAt, media, timer := tc.info, tc.local, tc.answered, tc.mediaAt, tc.media, tc.timer
+	info, local, answered, mediaAt, media, timer, ringTimer := tc.info, tc.local, tc.answered, tc.mediaAt, tc.media, tc.timer, tc.ringTimer
 	m.mu.Unlock()
 
 	if timer != nil {
 		timer.Stop()
+	}
+	if ringTimer != nil {
+		ringTimer.Stop()
 	}
 	var rec *RecordingInfo
 	if media != nil {

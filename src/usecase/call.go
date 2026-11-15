@@ -168,18 +168,24 @@ func (service serviceCall) ActiveCalls(ctx context.Context) ([]domainCall.CallIn
 	return out, nil
 }
 
-func (service serviceCall) SetDeviceCalls(_ context.Context, deviceID string, enabled bool) (domainCall.DeviceCallsResponse, error) {
-	on, err := whatsapp.SetDeviceCalls(deviceID, enabled)
+func (service serviceCall) SetDeviceCalls(_ context.Context, deviceID string, enabled bool, maxCalls *int) (domainCall.DeviceCallsResponse, error) {
+	state, err := whatsapp.ConfigureDeviceCalls(deviceID, enabled, maxCalls)
 	if err != nil {
 		return domainCall.DeviceCallsResponse{}, err
 	}
-	return domainCall.DeviceCallsResponse{Enabled: on}, nil
+	return toDeviceCallsResponse(state), nil
 }
 
 func (service serviceCall) GetDeviceCalls(_ context.Context, deviceID string) (domainCall.DeviceCallsResponse, error) {
-	on, err := whatsapp.DeviceCalls(deviceID)
+	state, err := whatsapp.DeviceCallsSettings(deviceID)
 	if err != nil {
 		return domainCall.DeviceCallsResponse{}, err
 	}
-	return domainCall.DeviceCallsResponse{Enabled: on}, nil
+	return toDeviceCallsResponse(state), nil
+}
+
+func toDeviceCallsResponse(s whatsapp.DeviceCallsState) domainCall.DeviceCallsResponse {
+	return domainCall.DeviceCallsResponse{
+		Enabled: s.Enabled, MaxCalls: s.MaxCalls, MaxCallsCeiling: s.MaxCallsCeiling, MaxCallsTotal: s.MaxCallsTotal,
+	}
 }

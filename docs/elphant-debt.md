@@ -163,8 +163,9 @@ history of the work.
     end to end, inbound answered in the page, per-call CPU and Chrome `jitterBufferDelay`.
   - Group calls stay out (offer filter): meowcaller's group mixer calls `sink.WriteFrame` outside
     `audioPlayoutMu`. A group offer on a call-enabled device is neither handled nor auto-rejected.
-  - For a call refused by the cap, `call.ended` can reach the webhook before `call.offer`
-    (different paths); consumers match by `call_id`.
+  - CLOSED (D-31): for a call refused by the cap, `call.ended` could reach the webhook before
+    `call.offer`; a refusal now sends no `call.offer`. Only a late refusal (after the 3 s offer
+    wait) still yields `call.offer` without `offer_sdp` before `call.ended`; match by `call_id`.
   - CLOSED: the bridge sent the three 20 ms browser packets of each 60 ms WhatsApp frame at once,
     and DTX gaps made Chrome's jitter buffer drop speech; a 48 kHz jitter buffer (80 ms prefill,
     300 ms max) now feeds the browser from a 20 ms pacer goroutine.
@@ -211,6 +212,16 @@ history of the work.
 ./infrastructure/whatsapp/`, 2026-10-22): `assert.True(t, placed.hungUp)` runs right after
 `m.Active()` empties, before the fake engine records the hang-up. Seen while testing the companion
 label change; unrelated to it. Fix: wait for `hungUp` inside the `require.Eventually` condition.
+
+### D-32 Concurrent calls: open items after the code
+
+- Live measurement on the gateway host (plan `2026-11-14-gateway-concurrent-calls.md`, Task 10),
+  owner present. Until then `3`/`6` are estimates.
+- What WhatsApp does with a second offer to a number already on a call is unknown (busy, phone
+  only, or delivered).
+- A ringing spam call holds a slot for up to the 1-minute ring window; a per-call timer expires it
+  even on a device with no other traffic.
+- No metric for slots in use; `GET /calls/active` is per device.
 
 ## Won't do
 

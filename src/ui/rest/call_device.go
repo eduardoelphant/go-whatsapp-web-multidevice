@@ -7,7 +7,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// Fork (elphant): the per-device voice calls switch (stage 2b, B7). The routes sit with the
+// Fork (elphant): the per-device voice calls switch (stage 2b, B7) and call limit (concurrent calls, D-23). The routes sit with the
 // other /devices/:device_id routes, before the header-scoped device group.
 
 func InitRestDeviceCalls(app fiber.Router, service domainCall.ICallUsecase) {
@@ -22,7 +22,7 @@ func (controller *Call) SetDeviceCalls(c fiber.Ctx) error {
 	if request.Enabled == nil {
 		utils.PanicIfNeeded(pkgError.ValidationError("enabled is required"))
 	}
-	res, err := controller.Service.SetDeviceCalls(c.Context(), pathDeviceID(c), *request.Enabled)
+	res, err := controller.Service.SetDeviceCalls(c.Context(), pathDeviceID(c), *request.Enabled, request.MaxCalls)
 	utils.PanicIfNeeded(err)
 	return c.JSON(utils.ResponseData{Status: 200, Code: "SUCCESS", Message: "Calls switch updated", Results: res})
 }

@@ -506,30 +506,38 @@ that exact path opens that one file without credentials; anything else still nee
 `path` fields of webhook payloads stay relative and unsigned. Changing the secret invalidates
 every link already handed out.
 
-## Voice calls (stages 2a and 2b, off by default)
+## Voice calls (stages 2a and 2b, concurrent calls; off by default)
 
 GOWA carries WhatsApp voice calls through the fork
-[eduardoelphant/meowcaller](https://github.com/eduardoelphant/meowcaller) (`v0.2.0-elphant.5`),
+[eduardoelphant/meowcaller](https://github.com/eduardoelphant/meowcaller) (`v0.2.0-elphant.8`),
 in the shape of Meta's Cloud Calling: the gateway offers SDP on an incoming call and the
 browser answers; the browser offers on an outbound call and the gateway answers. Designs:
 [2a](../specs/2026-10-14-gateway-voice-calls-design.md),
-[2b](../specs/2026-10-14-gateway-voice-calls-2b-design.md).
+[2b](../specs/2026-10-14-gateway-voice-calls-2b-design.md),
+[concurrent calls](../specs/2026-11-14-gateway-concurrent-calls-design.md).
 
 Settings:
 
 - `WHATSAPP_CALLS_ENABLED` (default `false`) is the master switch. Off means no change: `call.offer`,
   `POST /call/reject` and `WHATSAPP_AUTO_REJECT_CALL` behave as upstream. On call-enabled devices
   `WHATSAPP_AUTO_REJECT_CALL` is ignored.
-- Per device: `PUT /devices/:device_id/calls {"enabled": true|false}` and
+- Per device: `PUT /devices/:device_id/calls {"enabled": true|false, "max_calls": n}` and
   `GET /devices/:device_id/calls`, stored in the chat storage database (table
   `elphant_device_calls`) and applied at once: off ends the device's live calls and leaves its
   next offers to the phone (`meowcaller.WithOfferFilter`). `WHATSAPP_CALLS_DEVICES` only seeds a
-  device that has no stored value yet. Calls carry a ban risk for the number.
+  device that has no stored value yet. Calls carry a ban risk for the number. `max_calls`
+  (optional, from 1 to the ceiling; omitted keeps the stored value, `NULL` reads 1) is the
+  number's own limit of simultaneous calls, applied at the next offer or start. Both routes return
+  `{enabled, max_calls, max_calls_ceiling, max_calls_total}`.
 - `WHATSAPP_CALLS_CODEC` (`opus`), `WHATSAPP_CALLS_LOG_LEVEL` (`info`; `debug`, `info`, `warn`,
   `error`), `WHATSAPP_CALLS_EARLY_MEDIA` (`off`; `off`, `listen` or `full`; `listen` is
   recommended for the CRM, where a human answers late; never use `full`, the caller sees the call
-  answered at the first ring), `WHATSAPP_CALLS_MAX_PER_DEVICE` (`1`; above it the offer is
-  rejected and `call.ended` is `MISSED`), `WHATSAPP_CALLS_MAX_DURATION_MINUTES` (`120`; then GOWA
+  answered at the first ring), `WHATSAPP_CALLS_MAX_PER_DEVICE` (`1`): the ceiling per number; each
+  device's `max_calls` is capped by it. `WHATSAPP_CALLS_MAX_TOTAL` (`0`: none): simultaneous calls
+  summed over every device of the gateway. Every tracked call holds a slot, a ringing inbound call
+  included. An offer over a limit is rejected with `call.ended` `MISSED` and `end_reason`
+  `device_limit` or `gateway_limit`. A start over a limit gets 400 "too many calls on this device"
+  or "call capacity of this gateway reached". `WHATSAPP_CALLS_MAX_DURATION_MINUTES` (`120`; then GOWA
   hangs up and reports `FAILED`; `0`: no limit).
 - Browser leg (pion, ICE-lite, DTLS server, Opus 48 kHz, non-trickle SDP): `WHATSAPP_CALLS_RTC_PORT`
   (`3478`, one UDP port for every call), `WHATSAPP_CALLS_RTC_PUBLIC_IP` (the host's public IPv4),
@@ -543,7 +551,7 @@ Settings:
   signed links and do not copy them out of `storages/calls`.
 
 Routes: `GET /call/:call_id` (with `offer_sdp` while it rings), `POST /call/answer {call_id, sdp}`
-(409 when already answered), `POST /call/start {phone, sdp}` (`{call_id, sdp_answer}`),
+(409 when already answered; never refused for capacity, the slot is already held), `POST /call/start {phone, sdp}` (`{call_id, sdp_answer}`),
 `POST /call/hangup`, `POST /call/reject`, `GET /calls/active`, `GET /call/:call_id/recording`.
 Webhooks: `call.offer` (extended), `call.status`, `call.answered`, `call.ended`; see
 [webhook-payload.md](../webhook-payload.md) and `contract/call.schema.json`. Durable webhook
@@ -563,13 +571,29 @@ Infrastructure (gateway host, owner's OK each time):
 - No TURN: an agent behind a network that blocks UDP to the host gets no audio; add coturn only
   if that happens.
 - CPU: 2a measured 10% to 25% of a core per call with one leg; the bridge adds a 48 kHz encode,
-  a decode and resampling. Measure before raising `WHATSAPP_CALLS_MAX_PER_DEVICE`.
+  a decode and resampling. See "Concurrent calls: measurement" below before
+  raising the two caps.
 
 Build: meowcaller's `opus/` uses cgo (libopus and `pkg-config`; `libopus-dev pkg-config` on
 Debian/Ubuntu, `opus-dev pkgconf` on Alpine, already in the Dockerfile and CI). pion is pure Go.
 The upstream release workflow (goreleaser cross-builds with CGO) is disabled in this fork; if it
 is re-enabled it needs libopus too. `CGO_ENABLED=0 -tags purego` builds still compile; there
 calls stay on MLow and the browser leg reports itself unavailable.
+
+### Concurrent calls: limits and edge cases
+
+- A refused offer sends no `call.offer`. An offer that meowcaller does not report within the offer
+  wait goes out once without `offer_sdp`.
+- Edge case: a refusal that lands after that wait can still produce `call.offer` followed by
+  `call.ended` `MISSED` with the limit reason.
+- Every tracked call holds one slot on its number and one in the gateway pool from the offer (or the start) until the call ends; a ringing inbound call already counts.
+
+### Concurrent calls: measurement
+
+Pending (plan 2026-11-14, Task 10, owner present). Until it runs, the deploy values
+(`WHATSAPP_CALLS_MAX_PER_DEVICE=3`, `WHATSAPP_CALLS_MAX_TOTAL=6`) are estimates. They rest on 2a's
+10% to 25% of a core per call with one leg; the browser bridge's cost is unmeasured. The host has
+4 vCPU shared with other services, and the GOWA container is limited to 1 GiB.
 
 ## Poll vote: `POST /send/poll-vote`
 

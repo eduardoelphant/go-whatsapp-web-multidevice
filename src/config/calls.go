@@ -8,7 +8,8 @@ var (
 	WhatsappCallsEnabled                = false  // answer and place calls on allowed devices
 	WhatsappCallsDevices                []string // seeds the per-device switch of a device that has none yet (stage 2b); later changes go through PUT /devices/:device_id/calls
 	WhatsappCallsCodec                  = "opus" // "opus" or "mlow"
-	WhatsappCallsMaxPerDevice           = 1      // simultaneous calls per device
+	WhatsappCallsMaxPerDevice           = 1      // ceiling of simultaneous calls per number; each device's own max_calls is capped by it (concurrent calls, D-19)
+	WhatsappCallsMaxTotal               = 0      // simultaneous calls summed over every device of this gateway; 0: no cap (concurrent calls, D-20)
 	WhatsappCallsLogLevel               = "info" // call engine log level: debug, info, warn or error
 	WhatsappCallsEarlyMedia             = "off"  // inbound ringing media: off, listen or full (full shows the call as answered to the caller; do not use)
 	WhatsappCallsMaxDurationMinutes     = 120    // stage 2b: hang up a call after this many minutes and report it FAILED (0: no limit)
@@ -38,4 +39,22 @@ func CallsAllowed(slotID, jidUser, jidString string) bool {
 		}
 	}
 	return false
+}
+
+// CallsMaxPerDeviceCeiling is the effective per-number ceiling: WHATSAPP_CALLS_MAX_PER_DEVICE,
+// at least 1 (concurrent calls, D-19).
+func CallsMaxPerDeviceCeiling() int {
+	if WhatsappCallsMaxPerDevice < 1 {
+		return 1
+	}
+	return WhatsappCallsMaxPerDevice
+}
+
+// CallsMaxTotal is the effective gateway-wide cap: WHATSAPP_CALLS_MAX_TOTAL, where 0 and
+// negative values mean no cap (concurrent calls, D-20).
+func CallsMaxTotal() int {
+	if WhatsappCallsMaxTotal < 0 {
+		return 0
+	}
+	return WhatsappCallsMaxTotal
 }

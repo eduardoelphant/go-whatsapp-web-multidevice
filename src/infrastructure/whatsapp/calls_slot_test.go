@@ -1,9 +1,11 @@
 package whatsapp
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -112,4 +114,41 @@ func TestCallEndedKeepsDeviceIDAfterLogout(t *testing.T) {
 	require.Eventually(t, func() bool { return deviceIDOf(EventCallEnded) != nil }, 2*time.Second, 5*time.Millisecond)
 	assert.Equal(t, ad.ToNonAD().String(), deviceIDOf(EventCallStatus))
 	assert.Equal(t, ad.ToNonAD().String(), deviceIDOf(EventCallEnded))
+}
+
+// The call limit is keyed by the registry slot too; the manager's Limit closure must follow the
+// startup client there (D-24).
+func TestCallLimitFollowsTheStartupClientToItsRegistrySlot(t *testing.T) {
+	withCallsConfig(t, true, nil)
+	withCallsLimits(t, 3, 0)
+	reg := newFakeCallsStore()
+	withCallsStore(t, reg)
+	dm := NewDeviceManager(nil, nil, nil)
+	withDeviceManager(t, dm)
+
+	ad := types.NewADJID("5511900000002", 0, 3)
+	client := &whatsmeow.Client{Store: &store.Device{ID: &ad}}
+	adSlot := ad.String()
+	dm.EnsureDefault(NewDeviceInstance(adSlot, client, nil))
+
+	eng := &fakeEngine{}
+	m := newCallManager(eng, callManagerOptions{
+		MaxCalls: config.CallsMaxPerDeviceCeiling(),
+		Limit:    func() int { return deviceMaxCalls(callsSlotOf(client, adSlot)) },
+	})
+	m.slotID = adSlot
+
+	const ulid = "01JTESTSLOT0000000000000001"
+	dm.loadFromRegistry([]*domainChatStorage.DeviceRecord{{DeviceID: ulid, JID: ad.ToNonAD().String(), ADJID: adSlot}})
+	_, err := ConfigureDeviceCalls(ulid, true, intPtr(2))
+	require.NoError(t, err)
+
+	_, _, err = m.Start(context.Background(), "+5511900000001", "")
+	require.NoError(t, err)
+	_, _, err = m.Start(context.Background(), "+5511900000003", "")
+	require.NoError(t, err, "the ULID slot's limit of 2 applies")
+	_, _, err = m.Start(context.Background(), "+5511900000004", "")
+	assert.ErrorIs(t, err, ErrCallLimit)
+	_, onAD := reg.limits[adSlot]
+	assert.False(t, onAD, "no limit row under the AD JID")
 }

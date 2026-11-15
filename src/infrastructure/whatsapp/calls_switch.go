@@ -1,6 +1,7 @@
 package whatsapp
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
@@ -23,6 +24,11 @@ type DeviceCallsStore interface {
 	GetDeviceCallsEnabled(deviceID string) (enabled, found bool, err error)
 	// SeedDeviceCallsEnabled stores a first value without overwriting an existing one.
 	SeedDeviceCallsEnabled(deviceID string, enabled bool) error
+	// SetDeviceCallsConfig stores the switch and, when maxCalls is not nil, the call limit
+	// (concurrent calls, D-22, D-23); a nil maxCalls keeps the stored limit.
+	SetDeviceCallsConfig(deviceID string, enabled bool, maxCalls *int) error
+	// GetDeviceCallsMaxCalls reads the call limit; set is false when it was never stored.
+	GetDeviceCallsMaxCalls(deviceID string) (maxCalls int, set bool, err error)
 }
 
 // deviceCallsMu serializes the cache-miss path and SetDeviceCalls, so a lookup cannot write
@@ -59,11 +65,48 @@ var resolveCallsSlot = func(deviceID string) (string, *whatsmeow.Client, error) 
 
 var deviceCallsCache sync.Map // slot id -> bool
 
+var deviceMaxCallsCache sync.Map // slot id -> int (stored max_calls, 1 when unset)
+
 func resetDeviceCallsCache() {
-	deviceCallsCache.Range(func(k, _ any) bool {
-		deviceCallsCache.Delete(k)
-		return true
-	})
+	for _, c := range []*sync.Map{&deviceCallsCache, &deviceMaxCallsCache} {
+		c.Range(func(k, _ any) bool {
+			c.Delete(k)
+			return true
+		})
+	}
+}
+
+// forgetDeviceCallsCache drops a slot's cached switch and limit (the slot was removed).
+func forgetDeviceCallsCache(slotID string) {
+	deviceCallsCache.Delete(slotID)
+	deviceMaxCallsCache.Delete(slotID)
+}
+
+// deviceMaxCalls returns a slot's stored call limit, 1 when it was never set or reads below 1
+// (D-22). A store error falls back to 1 and is not cached.
+func deviceMaxCalls(slotID string) int {
+	if v, ok := deviceMaxCallsCache.Load(slotID); ok {
+		return v.(int)
+	}
+	deviceCallsMu.Lock()
+	defer deviceCallsMu.Unlock()
+	if v, ok := deviceMaxCallsCache.Load(slotID); ok {
+		return v.(int)
+	}
+	reg := callsStoreFn()
+	if reg == nil {
+		return 1
+	}
+	n, set, err := reg.GetDeviceCallsMaxCalls(slotID)
+	if err != nil {
+		logrus.Warnf("[CALLS] read the call limit of %s: %v", maskSlot(slotID), err)
+		return 1
+	}
+	if !set || n < 1 {
+		n = 1
+	}
+	deviceMaxCallsCache.Store(slotID, n)
+	return n
 }
 
 // deviceCallsEnabled reports whether calls are on for a slot now: the master switch, then the
@@ -107,43 +150,82 @@ func deviceCallsEnabled(slotID, jidUser, jidString string) bool {
 	return enabled
 }
 
-// SetDeviceCalls switches calls on or off for a device. Off ends the device's live calls; its
-// next offers are left to the phone (the offer filter reads the switch on every offer).
-func SetDeviceCalls(deviceID string, enabled bool) (bool, error) {
+// DeviceCallsState is what GET and PUT /devices/:device_id/calls report (D-23).
+type DeviceCallsState struct {
+	Enabled         bool
+	MaxCalls        int // stored max_calls, 1 when never set
+	MaxCallsCeiling int // WHATSAPP_CALLS_MAX_PER_DEVICE, at least 1
+	MaxCallsTotal   int // WHATSAPP_CALLS_MAX_TOTAL, 0: no gateway cap
+}
+
+func deviceCallsState(slotID string, enabled bool) DeviceCallsState {
+	return DeviceCallsState{
+		Enabled:         enabled,
+		MaxCalls:        deviceMaxCalls(slotID),
+		MaxCallsCeiling: config.CallsMaxPerDeviceCeiling(),
+		MaxCallsTotal:   config.CallsMaxTotal(),
+	}
+}
+
+// ConfigureDeviceCalls switches calls on or off for a device and, when maxCalls is not nil,
+// stores its call limit. Off ends the device's live calls; its next offers are left to the phone
+// (the offer filter reads the switch on every offer). A new limit applies to the next offer or
+// start and never ends a live call (D-24).
+func ConfigureDeviceCalls(deviceID string, enabled bool, maxCalls *int) (DeviceCallsState, error) {
 	if !config.WhatsappCallsEnabled {
-		return false, ErrCallsMasterOff
+		return DeviceCallsState{}, ErrCallsMasterOff
+	}
+	ceiling := config.CallsMaxPerDeviceCeiling()
+	if maxCalls != nil && (*maxCalls < 1 || *maxCalls > ceiling) {
+		return DeviceCallsState{}, pkgError.ValidationError(fmt.Sprintf("max_calls must be between 1 and %d", ceiling))
 	}
 	slotID, client, err := resolveCallsSlot(deviceID)
 	if err != nil {
-		return false, err
+		return DeviceCallsState{}, err
 	}
 	reg := callsStoreFn()
 	if reg == nil {
-		return false, pkgError.InternalServerError("device registry unavailable")
+		return DeviceCallsState{}, pkgError.InternalServerError("device registry unavailable")
 	}
 	deviceCallsMu.Lock()
-	err = reg.SetDeviceCallsEnabled(slotID, enabled)
+	err = reg.SetDeviceCallsConfig(slotID, enabled, maxCalls)
 	if err == nil {
 		deviceCallsCache.Store(slotID, enabled)
+		if maxCalls != nil {
+			deviceMaxCallsCache.Store(slotID, *maxCalls)
+		}
 	}
 	deviceCallsMu.Unlock()
 	if err != nil {
-		return false, err
+		return DeviceCallsState{}, err
 	}
 	if !enabled {
 		endCallsOfSlot(slotID, client)
 	}
-	logrus.Infof("[CALLS] calls switched %s for device %s", onOff(enabled), maskSlot(slotID))
-	return enabled, nil
+	state := deviceCallsState(slotID, enabled) // after the unlock: deviceMaxCalls takes deviceCallsMu
+	logrus.Infof("[CALLS] calls switched %s for device %s (max_calls %d, ceiling %d)", onOff(enabled), maskSlot(slotID), state.MaxCalls, state.MaxCallsCeiling)
+	return state, nil
+}
+
+// SetDeviceCalls switches calls on or off and keeps the stored call limit.
+func SetDeviceCalls(deviceID string, enabled bool) (bool, error) {
+	state, err := ConfigureDeviceCalls(deviceID, enabled, nil)
+	return state.Enabled, err
+}
+
+// DeviceCallsSettings reports a device's switch and limits right now.
+func DeviceCallsSettings(deviceID string) (DeviceCallsState, error) {
+	slotID, client, err := resolveCallsSlot(deviceID)
+	if err != nil {
+		return DeviceCallsState{}, err
+	}
+	return deviceCallsState(slotID, callsAllowedNow(slotID, client)), nil
 }
 
 // DeviceCalls reports whether calls are on for a device right now.
 func DeviceCalls(deviceID string) (bool, error) {
-	slotID, client, err := resolveCallsSlot(deviceID)
-	if err != nil {
-		return false, err
-	}
-	return callsAllowedNow(slotID, client), nil
+	state, err := DeviceCallsSettings(deviceID)
+	return state.Enabled, err
 }
 
 // endCallsOfSlot ends the live calls of the slot's client. A manager is matched by that

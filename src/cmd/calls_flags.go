@@ -27,6 +27,9 @@ func initCallsEnv() {
 	if viper.IsSet("whatsapp_calls_rtc_grace_seconds") {
 		config.WhatsappCallsRTCGraceSeconds = viper.GetInt("whatsapp_calls_rtc_grace_seconds")
 	}
+	if viper.IsSet("whatsapp_calls_max_total") {
+		config.WhatsappCallsMaxTotal = viper.GetInt("whatsapp_calls_max_total")
+	}
 }
 
 func initCallsFlags() {
@@ -43,4 +46,6 @@ func initCallsFlags() {
 		`public IPv4 announced to browsers --calls-rtc-public-ip <ip> | example: --calls-rtc-public-ip=203.0.113.7`)
 	flags.IntVarP(&config.WhatsappCallsRTCGraceSeconds, "calls-rtc-grace-seconds", "", config.WhatsappCallsRTCGraceSeconds,
 		`hang up after the browser leg is down this long (minimum 1) --calls-rtc-grace-seconds <n> | example: --calls-rtc-grace-seconds=10`)
+	flags.IntVarP(&config.WhatsappCallsMaxTotal, "calls-max-total", "", config.WhatsappCallsMaxTotal,
+		`simultaneous calls summed over every device (0: no cap) --calls-max-total <n> | example: --calls-max-total=6`)
 }

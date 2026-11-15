@@ -135,10 +135,11 @@ func recordingPayload(callID string, rec *RecordingInfo, now time.Time) map[stri
 
 // addCallOfferFields adds stage 2b's fields to call.offer: calls_enabled, direction, peer and,
 // for a device with calls on, offer_sdp (GOWA's SDP offer, B3). With the master switch off the
-// payload stays as upstream builds it. Group calls are left to the phone.
-func addCallOfferFields(ctx context.Context, payload map[string]any, evt *events.CallOffer, client *whatsmeow.Client) {
+// payload stays as upstream builds it. Group calls are left to the phone. It returns true
+// when the manager refused the offer for a limit; the caller then sends no call.offer (D-31).
+func addCallOfferFields(ctx context.Context, payload map[string]any, evt *events.CallOffer, client *whatsmeow.Client) (suppress bool) {
 	if !config.WhatsappCallsEnabled || evt == nil {
-		return
+		return false
 	}
 	var m *CallManager
 	if client != nil {
@@ -151,14 +152,24 @@ func addCallOfferFields(ctx context.Context, payload map[string]any, evt *events
 	payload["direction"] = DirectionUser
 	payload["peer"] = peerPayload(resolvePeer(client, evt.CallCreator, ""))
 	if !enabled {
-		return
+		return false
+	}
+	reason, tracked := m.admission(ctx, evt.CallID)
+	if reason != "" {
+		logrus.Infof("[CALLS] call.offer %s not sent: refused (%s)", evt.CallID, reason)
+		return true
+	}
+	if !tracked { // the wait already ran out: send as today, without waiting again
+		logrus.Warnf("[CALLS] call.offer %s without offer_sdp: offer not reported", evt.CallID)
+		return false
 	}
 	sdp, err := m.OfferSDP(ctx, evt.CallID)
 	if err != nil {
 		logrus.Warnf("[CALLS] call.offer %s without offer_sdp: %v", evt.CallID, MaskDigits(err.Error()))
-		return
+		return false
 	}
 	payload["offer_sdp"] = sdp
+	return false
 }
 
 // callsShutdownWait bounds ShutdownCalls; tests shorten it.
