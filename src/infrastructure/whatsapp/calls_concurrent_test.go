@@ -260,3 +260,32 @@ func TestRefusalLogNamesTheReason(t *testing.T) {
 	assert.True(t, strings.Contains(a.refusalText(refusalDevice, 1), "device at its call limit (1)"))
 	assert.True(t, strings.Contains(a.refusalText(refusalGateway, 1), "gateway at its call capacity (1)"))
 }
+
+func TestDuplicateInboundOfferHoldsOneSlot(t *testing.T) {
+	now := time.Now()
+	pool := newCallSlots(func() int { return 0 })
+	m, eng, log := newPooledManager(t, 4, nil, pool, &now, nil)
+	first := &fakeCall{id: "IN-DUP"}
+	eng.incoming(first)
+	eng.incoming(&fakeCall{id: "IN-DUP"})
+	assert.Len(t, m.Active(), 1)
+	assert.Equal(t, 1, pool.inUse())
+	assert.Equal(t, 1, heldOf(m))
+	assert.False(t, first.rejected, "the live call is not rejected")
+	_, ended := log.last(EventCallEnded)
+	assert.False(t, ended, "a duplicate offer emits nothing")
+	require.NoError(t, m.Reject("IN-DUP"))
+	assert.Equal(t, 0, pool.inUse())
+	assert.Equal(t, 0, heldOf(m))
+}
+
+func TestMaxDurationReleasesTheGatewaySlot(t *testing.T) {
+	pool := newCallSlots(func() int { return 0 })
+	eng := &fakeEngine{}
+	m := newCallManager(eng, callManagerOptions{
+		MaxCalls: 2, Pool: pool, MaxDuration: 20 * time.Millisecond, Now: time.Now,
+	})
+	eng.incoming(&fakeCall{id: "IN-LONG"})
+	require.Equal(t, 1, pool.inUse())
+	require.Eventually(t, func() bool { return pool.inUse() == 0 && heldOf(m) == 0 }, 2*time.Second, 10*time.Millisecond)
+}

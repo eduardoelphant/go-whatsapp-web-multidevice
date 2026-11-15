@@ -233,6 +233,13 @@ func (m *CallManager) onIncoming(h callHandle) {
 	limit := m.deviceLimit()
 	id := h.ID()
 	m.mu.Lock()
+	_, tracked := m.calls[id]
+	_, refused := m.gone[id]
+	if tracked || refused {
+		m.mu.Unlock()
+		logrus.Debugf("[CALLS] ignoring a duplicate offer for %s", id)
+		return
+	}
 	refusal := m.reserveLocked(limit)
 	if refusal != "" {
 		m.gone[id] = m.opts.Now()
