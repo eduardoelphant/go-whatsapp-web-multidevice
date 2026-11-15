@@ -349,3 +349,29 @@ func TestMaxDurationReleasesTheGatewaySlot(t *testing.T) {
 	require.Equal(t, 1, pool.inUse())
 	require.Eventually(t, func() bool { return pool.inUse() == 0 && heldOf(m) == 0 }, 2*time.Second, 10*time.Millisecond)
 }
+
+// A repeated offer rebinding the handle while Answer runs must not race its reads.
+func TestRepeatedOfferDuringAnswerDoesNotRace(t *testing.T) {
+	now := time.Now()
+	m, eng, _ := newPooledManager(t, 2, nil, nil, &now, nil)
+	eng.incoming(&fakeCall{id: "IN-RACE"})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); _ = m.Answer("IN-RACE", "") }()
+	go func() { defer wg.Done(); eng.incoming(&fakeCall{id: "IN-RACE"}) }()
+	wg.Wait()
+}
+
+// The first handle ends while a repeated offer is pending: the newer handle is rejected.
+func TestPendingDuplicateIsRejectedWhenTheFirstEnds(t *testing.T) {
+	now := time.Now()
+	pool := newCallSlots(func() int { return 0 })
+	m, eng, _ := newPooledManager(t, 4, nil, pool, &now, nil)
+	first := &fakeCall{id: "IN-OR", syncEnd: true} // ends as soon as OnEnd is wired
+	second := &fakeCall{id: "IN-OR"}
+	first.onWire = func() { eng.incoming(second) }
+	eng.incoming(first)
+	assert.True(t, second.rejected)
+	assert.Equal(t, 0, pool.inUse())
+	assert.Equal(t, 0, heldOf(m))
+}

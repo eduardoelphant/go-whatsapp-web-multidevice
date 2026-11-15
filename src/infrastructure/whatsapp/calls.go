@@ -288,9 +288,13 @@ func (m *CallManager) onIncoming(h callHandle) {
 	if rebind {
 		tc.handle = latest
 	}
+	orphan := latest != nil && latest != h && tc.ended
 	m.mu.Unlock()
 	if rebind {
 		m.wire(tc, latest)
+	}
+	if orphan {
+		_ = latest.Reject() // the call ended first: the newer handle must not keep ringing
 	}
 }
 
@@ -302,6 +306,13 @@ func (m *CallManager) newTracked(h callHandle, direction, state string, media ca
 	}}
 	m.wire(tc, h)
 	return tc
+}
+
+// handleOf reads tc's current handle: a repeated offer can rebind it (D-33).
+func (m *CallManager) handleOf(tc *trackedCall) callHandle {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return tc.handle
 }
 
 // wire points the engine callbacks of h at tc. Without m.mu: OnEnd may fire synchronously.
@@ -569,7 +580,7 @@ func (m *CallManager) Answer(callID, answerSDP string) error {
 	if ended {
 		return ErrCallNotFound
 	}
-	if err := tc.handle.Answer(); err != nil {
+	if err := m.handleOf(tc).Answer(); err != nil {
 		m.mu.Lock()
 		ended := tc.ended
 		if tc.local == "" {
@@ -579,7 +590,7 @@ func (m *CallManager) Answer(callID, answerSDP string) error {
 		if ended {
 			return ErrCallNotFound
 		}
-		_ = tc.handle.Reject()
+		_ = m.handleOf(tc).Reject()
 		m.finish(tc, "")
 		return err
 	}
@@ -592,7 +603,7 @@ func (m *CallManager) Answer(callID, answerSDP string) error {
 	ready := tc.waReady
 	m.mu.Unlock()
 	if media != nil {
-		media.Start(tc.handle, m.mediaEvents(tc))
+		media.Start(m.handleOf(tc), m.mediaEvents(tc))
 	}
 	if ready {
 		m.whatsAppReady(tc, media)
