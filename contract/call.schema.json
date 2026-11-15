@@ -65,10 +65,12 @@
       "required": ["status", "end_reason", "duration"],
       "properties": {
         "status": { "enum": ["COMPLETED", "FAILED", "MISSED", "REJECTED"] },
-        "end_reason": { "enum": ["hangup_agent", "hangup_peer", "rejected", "timeout", "answered_elsewhere", "error"] },
+        "end_reason": { "enum": ["hangup_agent", "hangup_peer", "rejected", "timeout", "answered_elsewhere", "error", "device_limit", "gateway_limit"] },
         "duration": { "type": "integer", "minimum": 0 },
         "recording": { "$ref": "#/$defs/recording" }
       },
+      "if": { "properties": { "end_reason": { "enum": ["device_limit", "gateway_limit"] } }, "required": ["end_reason"] },
+      "then": { "properties": { "status": { "const": "MISSED" } } },
       "unevaluatedProperties": false
     },
     "recording": {

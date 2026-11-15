@@ -1062,8 +1062,8 @@ offer again while the call rings. Group calls have `calls_enabled: false` and ri
 
 | Field | Values |
 |---|---|
-| `status` | `COMPLETED` (media flowed on both legs, or answered elsewhere), `FAILED`, `MISSED` (rang out, cancelled, or refused by `WHATSAPP_CALLS_MAX_PER_DEVICE`), `REJECTED` |
-| `end_reason` | `hangup_agent`, `hangup_peer`, `rejected`, `timeout` (ring window or `WHATSAPP_CALLS_MAX_DURATION_MINUTES`), `answered_elsewhere`, `error` (the browser leg was lost for `WHATSAPP_CALLS_RTC_GRACE_SECONDS`, or a signalling error) |
+| `status` | `COMPLETED` (media flowed on both legs, or answered elsewhere), `FAILED`, `MISSED` (rang out, cancelled, or refused for capacity (`end_reason` `device_limit` or `gateway_limit`)), `REJECTED` |
+| `end_reason` | `hangup_agent`, `hangup_peer`, `rejected`, `timeout` (ring window or `WHATSAPP_CALLS_MAX_DURATION_MINUTES`), `answered_elsewhere`, `error` (the browser leg was lost for `WHATSAPP_CALLS_RTC_GRACE_SECONDS`, or a signalling error), `device_limit` (refused: the number is at its call limit, `max_calls` capped by `WHATSAPP_CALLS_MAX_PER_DEVICE`), `gateway_limit` (refused: the gateway is at `WHATSAPP_CALLS_MAX_TOTAL`). Both always come with `MISSED`, `duration` 0 and no recording |
 | `duration` | Seconds of media on both legs (0 when none) |
 | `recording` | Present when audio was recorded: `url`, `expires_at`, `bytes`, `duration`, `format` (`ogg_opus_stereo`), `channels` (`left: agent`, `right: customer`) |
 
@@ -1096,6 +1096,8 @@ offer again while the call rings. Group calls have `calls_enabled: false` and ri
   a secret it is the bare path. The route also accepts Basic Auth, so a webhook delivered late by
   the durable retry can still fetch the file. Files are deleted after
   `WHATSAPP_CALLS_RECORDING_RETENTION_DAYS` (default 7); the route then answers 410.
+- A ringing inbound call holds its slot until it is answered, rejected, answered elsewhere or
+  rings out.
 - A call's events arrive in order (status, answered, ended). `call.offer` leaves from its own
   path and is not ordered with the other call events (for example a call refused by the cap or
   cancelled at once); match events by `call_id`.

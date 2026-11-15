@@ -21,8 +21,8 @@ func compileCallSchema(t *testing.T) *jsonschema.Schema {
 func TestCallFixturesMatchSchema(t *testing.T) {
 	schema := compileCallSchema(t)
 	files, _ := filepath.Glob(filepath.Join("call-fixtures", "*.json"))
-	if len(files) < 5 {
-		t.Fatalf("found %d call fixtures, want 5", len(files))
+	if len(files) < 6 {
+		t.Fatalf("found %d call fixtures, want 6", len(files))
 	}
 	for _, f := range files {
 		t.Run(f, func(t *testing.T) {
@@ -58,13 +58,14 @@ func TestCallSchemaRejectsViolations(t *testing.T) {
 		"channels swapped": ended(func(p map[string]any) {
 			p["recording"].(map[string]any)["channels"] = map[string]any{"left": "customer", "right": "agent"}
 		}),
-		"negative duration": ended(func(p map[string]any) { p["duration"] = json.Number("-1") }),
-		"status extra key":  mutate("call-status.json", func(p map[string]any) { p["answered_by"] = "api" }),
-		"ended status":      mutate("call-status.json", func(p map[string]any) { p["status"] = "COMPLETED" }),
-		"answered by phone": mutate("call-answered.json", func(p map[string]any) { p["answered_by"] = "phone" }),
-		"offer no switch":   mutate("call-offer.json", func(p map[string]any) { delete(p, "calls_enabled") }),
-		"offer outbound":    mutate("call-offer.json", func(p map[string]any) { p["direction"] = "BUSINESS_INITIATED" }),
-		"offer lf sdp":      mutate("call-offer.json", func(p map[string]any) { p["offer_sdp"] = "v=0\no=-\n" }),
+		"negative duration":                ended(func(p map[string]any) { p["duration"] = json.Number("-1") }),
+		"status extra key":                 mutate("call-status.json", func(p map[string]any) { p["answered_by"] = "api" }),
+		"ended status":                     mutate("call-status.json", func(p map[string]any) { p["status"] = "COMPLETED" }),
+		"answered by phone":                mutate("call-answered.json", func(p map[string]any) { p["answered_by"] = "phone" }),
+		"offer no switch":                  mutate("call-offer.json", func(p map[string]any) { delete(p, "calls_enabled") }),
+		"offer outbound":                   mutate("call-offer.json", func(p map[string]any) { p["direction"] = "BUSINESS_INITIATED" }),
+		"offer lf sdp":                     mutate("call-offer.json", func(p map[string]any) { p["offer_sdp"] = "v=0\no=-\n" }),
+		"limit reason with another status": mutate("call-ended-limit.json", func(p map[string]any) { p["status"] = "REJECTED" }),
 	}
 	for name, doc := range cases {
 		if err := schema.Validate(doc); err == nil {

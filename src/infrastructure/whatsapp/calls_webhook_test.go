@@ -86,6 +86,7 @@ func TestCallEventBodiesMatchTheContractFixtures(t *testing.T) {
 		"call-ended.json": {Type: EventCallEnded, Call: in, Status: "COMPLETED", EndReason: "hangup_peer", Duration: 64, At: at,
 			Recording: &RecordingInfo{Path: "storages/calls/A1B2C3D4E5F60718293A4B5C6D7E8F90.ogg", Bytes: 190464, Duration: 64 * time.Second}},
 		"call-ended-missed.json": {Type: EventCallEnded, Call: missed, Status: "MISSED", EndReason: "timeout", At: at},
+		"call-ended-limit.json":  {Type: EventCallEnded, Call: in, Status: "MISSED", EndReason: "gateway_limit", At: at},
 	}
 	for name, ev := range cases {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contract", "call-fixtures", name))
