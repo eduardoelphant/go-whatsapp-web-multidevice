@@ -44,3 +44,20 @@ func TestInitCallsEnvRTC(t *testing.T) {
 		}
 	}
 }
+
+func TestInitCallsEnvMaxTotal(t *testing.T) {
+	orig := config.WhatsappCallsMaxTotal
+	t.Cleanup(func() {
+		config.WhatsappCallsMaxTotal = orig
+		viper.Set("whatsapp_calls_max_total", nil)
+	})
+	viper.Set("whatsapp_calls_max_total", 6)
+
+	initCallsEnv()
+	if config.WhatsappCallsMaxTotal != 6 {
+		t.Fatalf("got %d, want 6", config.WhatsappCallsMaxTotal)
+	}
+	if rootCmd.PersistentFlags().Lookup("calls-max-total") == nil {
+		t.Fatal("flag not registered")
+	}
+}

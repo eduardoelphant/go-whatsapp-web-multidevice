@@ -50,3 +50,21 @@ func TestCallsStage2bDefaults(t *testing.T) {
 		t.Fatalf("RTC defaults %d %q %d, want 3478 \"\" 10", WhatsappCallsRTCPort, WhatsappCallsRTCPublicIP, WhatsappCallsRTCGraceSeconds)
 	}
 }
+
+func TestCallsLimitsHelpers(t *testing.T) {
+	origPer, origTotal := WhatsappCallsMaxPerDevice, WhatsappCallsMaxTotal
+	t.Cleanup(func() { WhatsappCallsMaxPerDevice, WhatsappCallsMaxTotal = origPer, origTotal })
+
+	for _, c := range []struct{ per, want int }{{1, 1}, {3, 3}, {0, 1}, {-2, 1}} {
+		WhatsappCallsMaxPerDevice = c.per
+		if got := CallsMaxPerDeviceCeiling(); got != c.want {
+			t.Fatalf("ceiling for %d: got %d, want %d", c.per, got, c.want)
+		}
+	}
+	for _, c := range []struct{ total, want int }{{0, 0}, {6, 6}, {-1, 0}} {
+		WhatsappCallsMaxTotal = c.total
+		if got := CallsMaxTotal(); got != c.want {
+			t.Fatalf("total for %d: got %d, want %d", c.total, got, c.want)
+		}
+	}
+}
