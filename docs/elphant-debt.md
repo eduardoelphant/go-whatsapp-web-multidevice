@@ -212,6 +212,15 @@ history of the work.
 `m.Active()` empties, before the fake engine records the hang-up. Seen while testing the companion
 label change; unrelated to it. Fix: wait for `hungUp` inside the `require.Eventually` condition.
 
+### D-32 Concurrent calls: open items after the code
+
+- Live measurement on the gateway host (plan `2026-11-14-gateway-concurrent-calls.md`, Task 10),
+  owner present. Until then `3`/`6` are estimates.
+- What WhatsApp does with a second offer to a number already on a call is unknown (busy, phone
+  only, or delivered).
+- A ringing spam call holds a slot for up to the 1-minute ring window.
+- No metric for slots in use; `GET /calls/active` is per device.
+
 ## Won't do
 
 - **Runtime on the gateway host (2026-10-14, `v9.6.0-elphant.3`, calls on the DDD 11 device only):**
