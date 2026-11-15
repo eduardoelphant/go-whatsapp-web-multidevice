@@ -25,6 +25,7 @@ type callServiceStub struct {
 	contextDevice *whatsapp.DeviceInstance
 	switchDevice  string
 	switchValue   bool
+	switchMax     *int
 }
 
 func (s *callServiceStub) AnswerCall(ctx context.Context, request domainCall.AnswerCallRequest) (domainCall.AnswerCallResponse, error) {

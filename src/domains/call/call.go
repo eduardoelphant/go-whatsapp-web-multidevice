@@ -10,7 +10,7 @@ type ICallUsecase interface {
 	HangupCall(ctx context.Context, callID string) error
 	ActiveCalls(ctx context.Context) ([]CallInfo, error)
 	GetCall(ctx context.Context, callID string) (CallDetail, error)
-	SetDeviceCalls(ctx context.Context, deviceID string, enabled bool) (DeviceCallsResponse, error)
+	SetDeviceCalls(ctx context.Context, deviceID string, enabled bool, maxCalls *int) (DeviceCallsResponse, error)
 	GetDeviceCalls(ctx context.Context, deviceID string) (DeviceCallsResponse, error)
 }
 
@@ -68,9 +68,13 @@ type CallInfo struct {
 }
 
 type DeviceCallsRequest struct {
-	Enabled *bool `json:"enabled" form:"enabled"`
+	Enabled  *bool `json:"enabled" form:"enabled"`
+	MaxCalls *int  `json:"max_calls" form:"max_calls"` // nil: keep the stored limit (concurrent calls, D-23)
 }
 
 type DeviceCallsResponse struct {
-	Enabled bool `json:"enabled"`
+	Enabled         bool `json:"enabled"`
+	MaxCalls        int  `json:"max_calls"`
+	MaxCallsCeiling int  `json:"max_calls_ceiling"`
+	MaxCallsTotal   int  `json:"max_calls_total"`
 }
