@@ -26,6 +26,7 @@ The following events can be received via webhook:
 | `group.info`         | Group setting changed (name, topic, locked, announce, ephemeral, approval, invite_link_reset) |
 | `label.edit`         | WhatsApp label metadata changed                         |
 | `label.association`  | Label applied to or removed from a chat                 |
+| `label.sync.completed` | Full label sync started by `POST /labels/sync` finished |
 | `newsletter.joined`  | You subscribed to a newsletter/channel                  |
 | `newsletter.left`    | You unsubscribed from a newsletter                      |
 | `newsletter.message` | New message(s) posted in a newsletter                   |
@@ -193,7 +194,7 @@ All webhook payloads follow a consistent top-level structure:
 
 | **Field**    | **Type** | **Description**                                                                                                     |
 |--------------|----------|---------------------------------------------------------------------------------------------------------------------|
-| `event`      | string   | Event type: `message`, `message.reaction`, `message.revoked`, `message.edited`, `message.ack`, `message.deleted`, `chat_presence`, `group.participants`, `group.joined`, `label.edit`, `label.association`, `newsletter.joined`, `newsletter.left`, `newsletter.message`, `newsletter.mute`, `call.offer`, `call.status`, `call.answered`, `call.ended` |
+| `event`      | string   | Event type: `message`, `message.reaction`, `message.revoked`, `message.edited`, `message.ack`, `message.deleted`, `chat_presence`, `group.participants`, `group.joined`, `label.edit`, `label.association`, `label.sync.completed`, `newsletter.joined`, `newsletter.left`, `newsletter.message`, `newsletter.mute`, `call.offer`, `call.status`, `call.answered`, `call.ended` |
 | `device_id`  | string   | JID of the device that received this event (e.g., `628123456789@s.whatsapp.net`)                                    |
 | `session_id` | string   | Session ID registered via `POST /devices` (e.g., `org_2`), for correlating the event back to a tenant. Omitted when the JID can't be mapped to a session. |
 | `payload`    | object   | Event-specific payload data                                                                                         |
@@ -640,6 +641,26 @@ Triggered when a chat-level label is applied to or removed from a chat.
 }
 ```
 
+### Label Full Sync
+
+`POST /labels/sync` (header `X-Device-Id`) returns `202 {"results": {"sync_id": "..."}}` and re-reads all labels and
+chat associations from WhatsApp app state in the background. A second call while a sync runs for the same device
+returns `409`. While it runs, every `label.edit` and `label.association` event of that device carries two extra
+payload fields, `full_sync: true` and `sync_id`. Live events (outside a sync) never carry them. When the sync ends,
+one `label.sync.completed` event is sent after all the label events of that sync:
+
+```json
+{
+  "event": "label.sync.completed",
+  "device_id": "628123456789@s.whatsapp.net",
+  "timestamp": "2026-01-22T12:05:00Z",
+  "payload": { "sync_id": "9f1c2a...", "labels": 12, "links": 340 }
+}
+```
+
+`labels` counts the `label.edit` events and `links` the `label.association` events emitted in that sync. If the fetch
+fails, no `label.sync.completed` is sent. Message-level labels are not forwarded.
+
 ### Label Event Fields
 
 | **Field**                | **Type** | **Description**                                                                  |
@@ -657,6 +678,8 @@ Triggered when a chat-level label is applied to or removed from a chat.
 | `payload.type`           | string   | WhatsApp label type (only when included by WhatsApp on `label.edit`)              |
 | `payload.is_immutable`   | boolean  | Whether the label is immutable (only when included by WhatsApp on `label.edit`)   |
 | `payload.mute_end_time_ms` | number | Label mute end time in milliseconds (only when included by WhatsApp on `label.edit`) |
+| `payload.full_sync`      | boolean  | `true` only on events emitted by a `POST /labels/sync` run                        |
+| `payload.sync_id`        | string   | Sync identifier, present together with `full_sync`                                |
 | `payload.labeled`        | boolean  | Whether the label was applied (`true`) or removed (`false`) on `label.association` |
 | `payload.chat_id`        | string   | Chat JID associated with the label on `label.association`                         |
 | `payload.chat_lid`       | string   | Original LID chat identifier when WhatsApp supplied a LID before normalization    |

@@ -3431,6 +3431,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorInternalServer'
 
+  /labels/sync:
+    post:
+      operationId: syncLabels
+      tags:
+        - chat
+      summary: Start a full sync of WhatsApp labels
+      description: Re-reads all labels and chat associations in the background. Events are sent as `label.edit` and `label.association` with `full_sync` and `sync_id`, followed by `label.sync.completed`.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+      responses:
+        '202':
+          description: Sync started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    example: 202
+                  code:
+                    type: string
+                    example: SUCCESS
+                  message:
+                    type: string
+                  results:
+                    type: object
+                    properties:
+                      sync_id:
+                        type: string
+        '409':
+          description: A label sync is already running for this device
   /chat/{chat_jid}/archive:
     post:
       operationId: archiveChat
