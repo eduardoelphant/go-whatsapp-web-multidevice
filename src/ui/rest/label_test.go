@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -47,4 +48,17 @@ func TestSyncLabelsReturns202WithSyncID(t *testing.T) {
 	raw, _ := io.ReadAll(resp.Body)
 	require.NoError(t, json.Unmarshal(raw, &out))
 	assert.Equal(t, "abc123", out.Results.SyncID)
+}
+
+type conflictErr struct{}
+
+func (conflictErr) Error() string   { return "label sync already running for this device" }
+func (conflictErr) ErrCode() string { return "LABEL_SYNC_RUNNING" }
+func (conflictErr) StatusCode() int { return http.StatusConflict }
+
+func TestSyncLabelsReturns409WhenAlreadyRunning(t *testing.T) {
+	app := newLabelApp(&labelServiceStub{err: conflictErr{}})
+	resp, err := app.Test(httptest.NewRequest("POST", "/labels/sync", nil))
+	require.NoError(t, err)
+	assert.Equal(t, 409, resp.StatusCode)
 }

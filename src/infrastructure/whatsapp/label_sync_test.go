@@ -118,7 +118,7 @@ func TestRunLabelSyncEmitsCompletedWithCountsAndRestoresFlag(t *testing.T) {
 	if client.EmitAppStateEventsOnFullSync {
 		t.Fatal("flag must be restored")
 	}
-	if got["sync_id"] != run.id || got["labels"] != int64(2) || got["links"] != int64(1) {
+	if got["sync_id"] != run.id || got["ok"] != true || got["labels"] != int64(2) || got["links"] != int64(1) {
 		t.Fatalf("completed = %#v", got)
 	}
 	if labelSyncFor(client) != nil {
@@ -126,15 +126,15 @@ func TestRunLabelSyncEmitsCompletedWithCountsAndRestoresFlag(t *testing.T) {
 	}
 }
 
-func TestRunLabelSyncFetchErrorSkipsCompletedAndReleases(t *testing.T) {
+func TestRunLabelSyncFetchErrorStillNotifiesWithOkFalse(t *testing.T) {
 	client := &whatsmeow.Client{EmitAppStateEventsOnFullSync: false}
 	run, _ := beginLabelSync(client)
-	called := false
+	var got map[string]any
 	err := runLabelSync(context.Background(), client, "dev", run,
 		func(context.Context, *whatsmeow.Client) error { return errors.New("boom") },
-		func(context.Context, string, map[string]any) { called = true })
-	if err == nil || called {
-		t.Fatalf("err=%v called=%v", err, called)
+		func(_ context.Context, _ string, p map[string]any) { got = p })
+	if err == nil || got == nil || got["ok"] != false || got["error"] != "boom" || got["sync_id"] != run.id {
+		t.Fatalf("err=%v got=%#v", err, got)
 	}
 	if client.EmitAppStateEventsOnFullSync || labelSyncFor(client) != nil {
 		t.Fatal("state must be restored")

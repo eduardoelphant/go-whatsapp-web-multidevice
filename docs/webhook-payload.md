@@ -654,12 +654,13 @@ one `label.sync.completed` event is sent after all the label events of that sync
   "event": "label.sync.completed",
   "device_id": "628123456789@s.whatsapp.net",
   "timestamp": "2026-01-22T12:05:00Z",
-  "payload": { "sync_id": "9f1c2a...", "labels": 12, "links": 340 }
+  "payload": { "sync_id": "9f1c2a...", "ok": true, "labels": 12, "links": 340 }
 }
 ```
 
-`labels` counts the `label.edit` events and `links` the `label.association` events emitted in that sync. If the fetch
-fails, no `label.sync.completed` is sent. Message-level labels are not forwarded.
+`labels` counts the `label.edit` events and `links` the `label.association` events emitted in that sync. `ok` is `true` when the fetch succeeded. If it
+failed, the event is still sent with `ok: false` and a short `error` message (counts cover whatever was emitted before
+the failure); consumers must reconcile only on `ok: true`. Message-level labels are not forwarded.
 
 ### Label Event Fields
 

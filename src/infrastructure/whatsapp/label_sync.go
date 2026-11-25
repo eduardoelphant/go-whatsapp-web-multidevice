@@ -94,21 +94,31 @@ func runLabelSync(ctx context.Context, client *whatsmeow.Client, deviceID string
 	client.EmitAppStateEventsOnFullSync = true
 	err := fetch(ctx, client)
 	client.EmitAppStateEventsOnFullSync = previous
-	if err != nil {
-		run.wg.Wait()
-
-		return err
-	}
 
 	// Os eventos saem em goroutines: espera todos antes de fechar a contagem.
 	run.wg.Wait()
-	notify(context.WithoutCancel(ctx), deviceID, map[string]any{
+
+	payload := map[string]any{
 		"sync_id": run.id,
+		"ok":      err == nil,
 		"labels":  run.labels.Load(),
 		"links":   run.links.Load(),
-	})
+	}
+	if err != nil {
+		payload["error"] = shortLabelSyncError(err)
+	}
+	notify(context.WithoutCancel(ctx), deviceID, payload)
 
-	return nil
+	return err
+}
+
+func shortLabelSyncError(err error) string {
+	msg := err.Error()
+	if len(msg) > 200 {
+		msg = msg[:200]
+	}
+
+	return msg
 }
 
 func sendLabelSyncCompleted(ctx context.Context, deviceID string, payload map[string]any) {
