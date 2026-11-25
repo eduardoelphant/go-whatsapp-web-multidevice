@@ -3431,6 +3431,197 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorInternalServer'
 
+  /labels/sync:
+    post:
+      operationId: syncLabels
+      tags:
+        - chat
+      summary: Start a full sync of WhatsApp labels
+      description: Re-reads all labels and chat associations in the background. Events are sent as `label.edit` and `label.association` with `full_sync` and `sync_id`, followed by `label.sync.completed`.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+      responses:
+        '202':
+          description: Sync started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    example: 202
+                  code:
+                    type: string
+                    example: SUCCESS
+                  message:
+                    type: string
+                  results:
+                    type: object
+                    properties:
+                      sync_id:
+                        type: string
+        '409':
+          description: A label sync is already running for this device
+  /labels:
+    post:
+      operationId: createLabel
+      tags:
+        - chat
+      summary: Create a WhatsApp Business label
+      description: Creates a label with the next free id (highest label id known for the device plus one). When the device has no known label id yet, runs a full label sync first.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, color]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                color:
+                  type: integer
+                  minimum: 0
+                  maximum: 19
+      responses:
+        '200':
+          description: Label created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                  code:
+                    type: string
+                  message:
+                    type: string
+                  results:
+                    type: object
+                    properties:
+                      label_id:
+                        type: string
+                        example: '18'
+        '400':
+          description: Validation error
+        '404':
+          description: Device not found
+        '409':
+          description: A label sync is already running for this device
+        '502':
+          description: WhatsApp refused or failed the app state write
+  /labels/{label_id}:
+    patch:
+      operationId: updateLabel
+      tags:
+        - chat
+      summary: Rename or recolor a label
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - in: path
+          name: label_id
+          required: true
+          schema:
+            type: string
+          description: Numeric label id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, color]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                color:
+                  type: integer
+                  minimum: 0
+                  maximum: 19
+      responses:
+        '200':
+          description: Label updated
+        '400':
+          description: Validation error
+        '404':
+          description: Device not found
+        '502':
+          description: WhatsApp refused or failed the app state write
+    delete:
+      operationId: deleteLabel
+      tags:
+        - chat
+      summary: Delete a label
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - in: path
+          name: label_id
+          required: true
+          schema:
+            type: string
+          description: Numeric label id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+      responses:
+        '200':
+          description: Label deleted
+        '400':
+          description: Validation error
+        '404':
+          description: Device not found
+        '502':
+          description: WhatsApp refused or failed the app state write
+  /labels/{label_id}/chats:
+    post:
+      operationId: labelChat
+      tags:
+        - chat
+      summary: Apply or remove a label on a chat
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - in: path
+          name: label_id
+          required: true
+          schema:
+            type: string
+          description: Numeric label id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chat_jid, labeled]
+              properties:
+                chat_jid:
+                  type: string
+                  description: User or group JID
+                labeled:
+                  type: boolean
+      responses:
+        '200':
+          description: Label applied or removed
+        '400':
+          description: Validation error
+        '404':
+          description: Device not found
+        '502':
+          description: WhatsApp refused or failed the app state write
   /chat/{chat_jid}/archive:
     post:
       operationId: archiveChat

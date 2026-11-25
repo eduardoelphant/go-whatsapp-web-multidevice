@@ -211,3 +211,17 @@ var (
 	// Fork (elphant): editing or revoking a post that is gone while the channel exists.
 	ErrNewsletterMessageNotFound = newsletterMessageNotFoundError("that newsletter post does not exist")
 )
+
+// upstreamError answers 502 when WhatsApp refuses or fails an app state write.
+type upstreamError string
+
+func (err upstreamError) Error() string { return string(err) }
+
+// ErrCode will return the error code based on the error data type
+func (err upstreamError) ErrCode() string { return "WHATSAPP_ERROR" }
+
+// StatusCode will return the HTTP status code based on the error data type
+func (err upstreamError) StatusCode() int { return http.StatusBadGateway }
+
+// Upstream builds the 502 WHATSAPP_ERROR error carrying the WhatsApp error text.
+func Upstream(text string) error { return upstreamError(text) }

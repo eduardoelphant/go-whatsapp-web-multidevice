@@ -17,6 +17,7 @@ import (
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	domainDevice "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/device"
 	domainGroup "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/group"
+	domainLabel "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/label"
 	domainLID "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/lid"
 	domainMessage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/message"
 	domainNewsletter "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/newsletter"
@@ -46,6 +47,7 @@ var (
 	appUsecase        domainApp.IAppUsecase
 	callUsecase       domainCall.ICallUsecase
 	chatUsecase       domainChat.IChatUsecase
+	labelUsecase      domainLabel.ILabelUsecase
 	sendUsecase       domainSend.ISendUsecase
 	scheduleUsecase   domainSend.IScheduleUsecase
 	userUsecase       domainUser.IUserUsecase
@@ -849,6 +851,7 @@ func initApp() {
 	appUsecase = usecase.NewAppService(chatStorageRepo, dm)
 	callUsecase = usecase.NewCallService()
 	chatUsecase = usecase.NewChatService(chatStorageRepo)
+	labelUsecase = usecase.NewLabelService()
 	baseSendUsecase := usecase.NewSendService(appUsecase, chatStorageRepo)
 	scheduleService := usecase.NewScheduleService(chatStorageRepo, baseSendUsecase, dm, config.PathStorages)
 	scheduleUsecase = scheduleService

@@ -27,9 +27,36 @@ func isLabelAppState(evt *events.AppState) bool {
 }
 
 func forwardLabelAppStateToWebhook(ctx context.Context, evt *events.AppState, deviceID string, client *whatsmeow.Client) error {
-	eventName, payload := buildLabelAppStatePayload(ctx, evt, client)
+	eventName, body := labelWebhookBody(ctx, evt, deviceID, client)
 	if eventName == "" {
 		return nil
+	}
+
+	return forwardPayloadToConfiguredWebhooks(ctx, body, eventName)
+}
+
+// labelWebhookBody monta o corpo do webhook. Durante uma sincronização completa do aparelho,
+// o payload leva full_sync e sync_id e o evento entra na contagem do label.sync.completed.
+func labelWebhookBody(ctx context.Context, evt *events.AppState, deviceID string, client *whatsmeow.Client) (string, map[string]any) {
+	eventName, payload := buildLabelAppStatePayload(ctx, evt, client)
+	if eventName == "" {
+		return "", nil
+	}
+
+	if eventName == eventTypeLabelEdit {
+		if id, ok := payload["label_id"].(string); ok {
+			NoteLabelID(client, id)
+		}
+	}
+
+	if run := labelSyncFor(client); run != nil {
+		payload["full_sync"] = true
+		payload["sync_id"] = run.id
+		if eventName == eventTypeLabelEdit {
+			run.labels.Add(1)
+		} else {
+			run.links.Add(1)
+		}
 	}
 
 	body := map[string]any{
@@ -41,7 +68,7 @@ func forwardLabelAppStateToWebhook(ctx context.Context, evt *events.AppState, de
 		body["device_id"] = deviceID
 	}
 
-	return forwardPayloadToConfiguredWebhooks(ctx, body, eventName)
+	return eventName, body
 }
 
 func buildLabelAppStatePayload(ctx context.Context, evt *events.AppState, client *whatsmeow.Client) (string, map[string]any) {
