@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/safego"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
@@ -71,13 +72,13 @@ func StartLabelSync(client *whatsmeow.Client, deviceID string) (string, error) {
 		return "", err
 	}
 
-	go func() {
+	safego.Go("label_sync", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		if err := runLabelSync(ctx, client, deviceID, run, fetchLabelAppState, sendLabelSyncCompleted); err != nil {
 			logrus.WithError(err).Errorf("Label full sync %s failed", run.id)
 		}
-	}()
+	})
 
 	return run.id, nil
 }

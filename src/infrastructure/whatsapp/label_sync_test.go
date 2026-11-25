@@ -140,3 +140,23 @@ func TestRunLabelSyncFetchErrorStillNotifiesWithOkFalse(t *testing.T) {
 		t.Fatal("state must be restored")
 	}
 }
+
+func TestLabelEditEventTracksMaxID(t *testing.T) {
+	client := &whatsmeow.Client{}
+	if _, ok := KnownMaxLabelID(client); ok {
+		t.Fatal("no id must be known yet")
+	}
+	for _, id := range []string{"3", "17", "5", "abc"} {
+		evt := labelEditEvt()
+		evt.Index = []string{"label_edit", id}
+		labelWebhookBody(context.Background(), evt, "dev", client)
+	}
+	if n, ok := KnownMaxLabelID(client); !ok || n != 17 {
+		t.Fatalf("max = %d ok=%v", n, ok)
+	}
+	// Associação não conta como etiqueta.
+	NoteLabelID(client, "9")
+	if n, _ := KnownMaxLabelID(client); n != 17 {
+		t.Fatalf("max = %d", n)
+	}
+}

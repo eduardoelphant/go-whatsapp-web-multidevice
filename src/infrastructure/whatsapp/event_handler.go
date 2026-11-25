@@ -387,10 +387,10 @@ func handleAppState(ctx context.Context, evt *events.AppState, deviceID string, 
 			run.wg.Add(1)
 		}
 		go func(e *events.AppState, c *whatsmeow.Client) {
+			defer safego.Recover("event_handler#3")
 			if run != nil {
 				defer run.wg.Done()
 			}
-			defer safego.Recover("event_handler#3")
 			webhookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
 			if err := forwardLabelAppStateToWebhook(webhookCtx, e, deviceID, c); err != nil {

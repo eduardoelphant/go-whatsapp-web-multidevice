@@ -43,6 +43,12 @@ func labelWebhookBody(ctx context.Context, evt *events.AppState, deviceID string
 		return "", nil
 	}
 
+	if eventName == eventTypeLabelEdit {
+		if id, ok := payload["label_id"].(string); ok {
+			NoteLabelID(client, id)
+		}
+	}
+
 	if run := labelSyncFor(client); run != nil {
 		payload["full_sync"] = true
 		payload["sync_id"] = run.id
