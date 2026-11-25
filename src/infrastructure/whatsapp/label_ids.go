@@ -33,6 +33,13 @@ func NoteLabelID(client *whatsmeow.Client, labelID string) {
 	}
 }
 
+// MarkLabelIDsKnown marca o aparelho como sincronizado, mesmo sem nenhuma etiqueta (max 0).
+func MarkLabelIDsKnown(client *whatsmeow.Client) {
+	if client != nil {
+		labelMaxIDs.LoadOrStore(client, &atomic.Int64{})
+	}
+}
+
 // KnownMaxLabelID devolve o maior id de etiqueta conhecido; false se nenhum foi visto ainda.
 func KnownMaxLabelID(client *whatsmeow.Client) (int64, bool) {
 	if client == nil {
@@ -42,9 +49,8 @@ func KnownMaxLabelID(client *whatsmeow.Client) (int64, bool) {
 	if !ok {
 		return 0, false
 	}
-	n := v.(*atomic.Int64).Load()
 
-	return n, n > 0
+	return v.(*atomic.Int64).Load(), true
 }
 
 // SyncLabelsNow roda a sincronização completa e espera terminar, sem esperar o webhook de fim.
@@ -57,5 +63,10 @@ func SyncLabelsNow(ctx context.Context, client *whatsmeow.Client, deviceID strin
 		safego.Go("label_sync_notify", func() { sendLabelSyncCompleted(c, id, payload) })
 	}
 
-	return runLabelSync(ctx, client, deviceID, run, fetchLabelAppState, notify)
+	if err := runLabelSync(ctx, client, deviceID, run, fetchLabelAppState, notify); err != nil {
+		return err
+	}
+	MarkLabelIDsKnown(client)
+
+	return nil
 }

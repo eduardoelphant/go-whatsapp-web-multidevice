@@ -4,8 +4,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/types"
 )
@@ -60,4 +62,21 @@ func TestLabelPatchBuilders(t *testing.T) {
 	ch := buildLabelChatPatch(jid, "18", true)
 	assert.Equal(t, []string{appstate.IndexLabelAssociationChat, "18", jid.String()}, ch.Mutations[0].Index)
 	assert.True(t, ch.Mutations[0].Value.GetLabelAssociationAction().GetLabeled())
+}
+
+func TestEmptyAccountSyncedOnceThenIncrements(t *testing.T) {
+	client := &whatsmeow.Client{}
+	syncs := 0
+	known := func() (int64, bool) { return whatsapp.KnownMaxLabelID(client) }
+	syncNow := func() error { syncs++; whatsapp.MarkLabelIDsKnown(client); return nil }
+
+	id1, err := nextLabelID(known, syncNow)
+	require.NoError(t, err)
+	assert.Equal(t, "1", id1)
+	whatsapp.NoteLabelID(client, id1)
+
+	id2, err := nextLabelID(known, syncNow)
+	require.NoError(t, err)
+	assert.Equal(t, "2", id2)
+	assert.Equal(t, 1, syncs)
 }
